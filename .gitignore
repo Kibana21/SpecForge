@@ -64,3 +64,8 @@ Thumbs.db
 exports/
 *.docx
 *.pdf
+
+# ── Secrets / credentials ─────────────────────────────────────────────────────
+video-key.json
+
+
