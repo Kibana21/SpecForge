@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/kartik/.claude/plugins/**)",
+      "Read(//Users/kartik/.claude/plugins/marketplaces/**)"
+    ]
+  }
+}

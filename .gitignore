@@ -1,0 +1,66 @@
+# ── Environment ──────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Python / FastAPI backend ──────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# ── Node / Next.js frontend ───────────────────────────────────────────────────
+node_modules/
+.next/
+out/
+.cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+*.tsbuildinfo
+.turbo/
+
+# ── Database ──────────────────────────────────────────────────────────────────
+*.sqlite
+*.sqlite3
+*.db
+
+# ── File uploads / local storage ─────────────────────────────────────────────
+uploads/
+storage/
+
+# ── OS / editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+*.iml
+
+# ── Exports (generated output files) ─────────────────────────────────────────
+exports/
+*.docx
+*.pdf
