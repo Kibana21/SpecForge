@@ -1,0 +1,25 @@
+{
+  "functional_requirements": [
+    {"id": "FR-1", "text": "Users must be able to upload requirement documents in PDF, DOCX, and TXT formats.", "source_reference": "Upload requirement documents", "confidence": "high"},
+    {"id": "FR-2", "text": "The system must extract plain text from uploaded documents and store it per document.", "source_reference": "The system should generate structured", "confidence": "high"},
+    {"id": "FR-3", "text": "Users must be able to create and manage projects to organise separate requirements efforts.", "source_reference": "Dashboard showing projects", "confidence": "high"},
+    {"id": "FR-4", "text": "The system must generate Functional Specifications from extracted requirements.", "source_reference": "Generate Functional Spec", "confidence": "high"},
+    {"id": "FR-5", "text": "The system must generate Technical Specifications based on the functional specification.", "source_reference": "Generate Technical Spec", "confidence": "high"}
+  ],
+  "non_functional_requirements": [
+    {"id": "NFR-1", "text": "The system must support concurrent document processing without performance degradation.", "source_reference": "enterprise-grade", "confidence": "medium"},
+    {"id": "NFR-2", "text": "Generated specifications must be versioned and retained for historical comparison.", "source_reference": "Generated specs must be versioned", "confidence": "high"}
+  ],
+  "constraints": [
+    {"id": "CON-1", "text": "The system must not expose LLM API keys in frontend network requests.", "source_reference": "Never expose API key in frontend", "confidence": "high"},
+    {"id": "CON-2", "text": "File uploads are limited to PDF, DOCX, and TXT formats only.", "source_reference": "support PDF, DOCX, TXT initially", "confidence": "high"}
+  ],
+  "assumptions": [
+    {"id": "ASM-1", "text": "Users are authenticated business analysts or engineering leads with domain knowledge.", "source_reference": "Business Analysts / Product Managers", "confidence": "medium"},
+    {"id": "ASM-2", "text": "A stable internet connection is available for LLM API calls.", "source_reference": null, "confidence": "low"}
+  ],
+  "stakeholders": [
+    {"id": "STK-1", "text": "Business Analysts and Product Managers — primary consumers of Functional Specs and User Stories.", "source_reference": "Business Analysts / Product Managers", "confidence": "high"},
+    {"id": "STK-2", "text": "Engineering Leads — primary consumers of Technical Specifications.", "source_reference": "Engineering Leads", "confidence": "high"}
+  ]
+}

@@ -1,0 +1,36 @@
+# Web framework
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+
+# Database
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+
+# Validation & settings
+pydantic==2.10.3
+pydantic-settings==2.7.0
+
+# File handling
+python-multipart==0.0.20
+aiofiles==24.1.0
+PyMuPDF==1.25.3
+python-docx==1.1.2
+filetype==1.2.0
+
+# LLM
+langchain-google-vertexai
+langchain-core
+google-auth
+
+# Templating & schema validation
+jinja2==3.1.5
+jsonschema==4.23.0
+
+# Security — rate limiting
+slowapi==0.1.9
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.24.0
+httpx==0.28.1

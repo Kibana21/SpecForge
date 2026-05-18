@@ -1,0 +1,75 @@
+{
+  "overview": "SpecForge AI is a guided workflow portal that transforms unstructured requirements documents into structured, enterprise-grade specifications. Users upload documents, the system extracts and validates requirements, and generates versioned Functional Specs, Technical Specs, User Stories, and Review Comments through a reusable AI Skill Engine.",
+  "objectives": [
+    "Enable non-technical and technical users to produce structured specs from raw requirements in a single guided workflow.",
+    "Surface gaps and open questions automatically without hallucinating missing information.",
+    "Generate versioned, editable, and exportable specs via a reusable Skill Engine."
+  ],
+  "scope": "The MVP covers document upload (PDF/DOCX/TXT), requirement extraction, gap detection, generation of four spec types, inline rich-text editing, and Markdown export. Authentication, real-time collaboration, and Jira/Slack integration are out of scope.",
+  "features": [
+    {
+      "name": "Project Management",
+      "description": "Users can create, view, and soft-delete projects. Each project encapsulates documents, requirements, specs, and gap questions.",
+      "acceptance_criteria": [
+        "User can create a project with a name and optional description.",
+        "Dashboard lists all active projects with document count and latest spec type.",
+        "Soft delete hides the project from listings without destroying data."
+      ]
+    },
+    {
+      "name": "Document Upload and Parsing",
+      "description": "Users upload PDF, DOCX, or TXT files. The system extracts plain text and stores it per document for downstream processing.",
+      "acceptance_criteria": [
+        "Drag-and-drop and file-picker upload are both supported.",
+        "Files larger than 20 MB are rejected with a clear error.",
+        "Unsupported formats are rejected with a 400 error.",
+        "Extracted text is persisted and linked to the project."
+      ]
+    },
+    {
+      "name": "Requirement Extraction",
+      "description": "After upload, users trigger extraction. The system uses the AI Skill Engine to categorise requirements into functional, non-functional, constraints, assumptions, and stakeholders.",
+      "acceptance_criteria": [
+        "Extracted requirements display confidence badges (High/Medium/Low).",
+        "Each requirement shows a source reference tooltip quoting the original document.",
+        "Results are persisted and linked to the project."
+      ]
+    },
+    {
+      "name": "Gap Detection",
+      "description": "The system analyses extracted requirements and surfaces open questions grouped by severity (Blocker / Major / Minor). No gaps are hallucinated — if none exist, the array is empty.",
+      "acceptance_criteria": [
+        "Gap questions are displayed in the right panel grouped by severity.",
+        "Users can mark each gap as resolved and optionally provide a free-text answer.",
+        "Resolved answers are fed into subsequent spec generation."
+      ]
+    },
+    {
+      "name": "Spec Generation",
+      "description": "Users trigger sequential generation of Functional Spec, Technical Spec, User Stories, and Review Comments. Each generation creates a new versioned record.",
+      "acceptance_criteria": [
+        "Each tab populates progressively as its spec arrives.",
+        "A version badge shows when a spec has been regenerated (e.g., v2).",
+        "All four spec types are persisted with version numbers."
+      ]
+    },
+    {
+      "name": "Inline Editing and Auto-Save",
+      "description": "Generated spec content is editable via a rich-text editor. Changes are auto-saved with a 500 ms debounce.",
+      "acceptance_criteria": [
+        "Editor supports bold, italic, headings, bullet lists, and inline code.",
+        "A Saved / Saving… indicator reflects auto-save state.",
+        "Edited content persists on page refresh."
+      ]
+    },
+    {
+      "name": "Markdown Export",
+      "description": "Users can export any spec type or all specs as a formatted Markdown file.",
+      "acceptance_criteria": [
+        "Export button downloads a .md file named {project}-{spec-type}-v{n}.md.",
+        "Export All produces a single combined Markdown file.",
+        "The file is readable without further processing."
+      ]
+    }
+  ]
+}

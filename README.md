@@ -1,146 +1,155 @@
-Build a portal called SpecForge AI.
+# SpecForge AI
 
-Goal:
-Business users should upload messy requirements documents and the system should generate structured Functional Specifications, Technical Specifications, User Stories, Acceptance Criteria, Open Questions, and Review Comments.
+A guided, enterprise-grade portal that transforms messy requirements documents into structured, versioned specs — Functional Spec, Technical Spec, Jira-ready User Stories, Open Questions, and Review Comments — via an AI Skill Engine.
 
-Tech stack:
-- Frontend: Next.js + React + Tailwind
-- Backend: FastAPI
-- Database: Postgres
-- File storage: local filesystem for now, but design so it can later move to Azure Blob
-- LLM layer: create an abstraction so Gemini, Claude, or Azure OpenAI can be swapped later
-- Initial LLM provider: Gemini API
-- Document parsing: support PDF, DOCX, TXT initially
+---
 
-Core UX:
-1. Dashboard showing projects
-2. Create new project
-3. Upload requirement documents
-4. Show extracted requirement summary
-5. Show missing questions / gaps
-6. Generate Functional Spec
-7. Generate Technical Spec
-8. Generate Jira-style user stories
-9. Allow editing generated output
-10. Export as Markdown and DOCX
+## Architecture
 
-Important architecture:
-Implement a reusable “Skill Engine”.
+```
+┌──────────────────────────────────────────────────────────┐
+│  Next.js 14 (App Router)  localhost:3000                 │
+│  Three-panel workspace: Left (docs) · Center (specs) ·   │
+│  Right (gaps / review)                                   │
+└────────────────────┬─────────────────────────────────────┘
+                     │ /api/*  (rewrite → localhost:8000)
+┌────────────────────▼─────────────────────────────────────┐
+│  FastAPI  localhost:8000                                  │
+│  ├── LLMProvider abstraction (Gemini / Mock)             │
+│  └── Skill Engine (Jinja2 + JSON Schema + 1 retry)       │
+│       ├── requirement_extractor                          │
+│       ├── gap_detector                                   │
+│       ├── functional_spec_generator                      │
+│       ├── technical_spec_generator                       │
+│       ├── user_story_generator                           │
+│       └── reviewer                                       │
+└────────────────────┬─────────────────────────────────────┘
+                     │
+┌────────────────────▼─────────────────────────────────────┐
+│  PostgreSQL 16  localhost:5432  (Docker)                  │
+│  projects · documents · extracted_requirements           │
+│  spec_versions · gap_questions · review_comments         │
+└──────────────────────────────────────────────────────────┘
+```
 
-A skill is:
-- system instruction
-- prompt template
-- output schema
-- examples
-- parser
+---
 
-Create these skills:
-1. requirement_extractor
-2. gap_detector
-3. functional_spec_generator
-4. technical_spec_generator
-5. user_story_generator
-6. reviewer
+## Quick start
 
-Folder structure:
+### Prerequisites
+
+- Docker & Docker Compose
+- Python 3.12+
+- Node.js 20+
+
+### 1 — Clone and configure
+
+```bash
+git clone <repo-url>
+cd SpecForge
+cp .env.example .env
+# Edit .env — leave GEMINI_API_KEY blank to run in mock mode
+```
+
+### 2 — Start Postgres
+
+```bash
+docker compose up -d postgres
+```
+
+### 3 — Backend
+
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+
+# Run migrations
+alembic upgrade head
+
+# Start dev server
+uvicorn app.main:app --reload --port 8000
+```
+
+API docs available at http://localhost:8000/docs
+
+### 4 — Frontend
+
+```bash
+cd frontend
+npm install
+cp .env.example .env.local
+npm run dev
+```
+
+Open http://localhost:3000
+
+---
+
+## Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `DATABASE_URL` | `postgresql+asyncpg://...` | Postgres async URL |
+| `UPLOAD_DIR` | `./uploads` | Local file storage path |
+| `MAX_UPLOAD_MB` | `20` | Max upload size per file |
+| `LLM_PROVIDER` | `gemini` | `gemini` or `mock` |
+| `GEMINI_API_KEY` | _(empty)_ | Omit to force mock mode |
+| `GEMINI_MODEL` | `gemini-1.5-flash` | Model name |
+| `CORS_ORIGINS` | `http://localhost:3000` | Allowed frontend origin |
+| `LOG_LEVEL` | `INFO` | Logging verbosity |
+
+---
+
+## Mock mode
+
+Leave `GEMINI_API_KEY` empty (or set `LLM_PROVIDER=mock`) — the system uses pre-written realistic JSON fixtures for all six skills. The full workflow completes without any API calls.
+
+---
+
+## Project structure
+
+```
 backend/
   app/
-    main.py
-    api/
-      projects.py
-      documents.py
-      specs.py
+    main.py            FastAPI app, CORS, security headers, rate limiter
+    config.py          pydantic-settings config
+    db.py              Async SQLAlchemy engine + session factory
+    api/               Route handlers (projects, documents, specs, gaps, reviews)
+    models/            SQLAlchemy ORM models
+    schemas/           Pydantic request/response schemas
     services/
-      llm/
-        base.py
-        gemini_provider.py
-      skills/
-        skill_engine.py
-        requirement_extractor/
-          instruction.md
-          template.md
-          schema.json
-        functional_spec/
-          instruction.md
-          template.md
-          schema.json
-        technical_spec/
-          instruction.md
-          template.md
-          schema.json
-        user_stories/
-          instruction.md
-          template.md
-          schema.json
-        reviewer/
-          instruction.md
-          template.md
-          schema.json
-      documents/
-        parser.py
-      export/
-        markdown_exporter.py
-        docx_exporter.py
-    models/
-      project.py
-      document.py
-      spec.py
-    db.py
+      llm/             LLMProvider abstraction (base, gemini, mock)
+      skills/          Skill Engine + 6 skill directories
+      documents/       File parser + storage abstraction
+      export/          Markdown exporter
+  alembic/             Database migrations
+  uploads/             Local file storage (gitignored)
 
 frontend/
   app/
-    page.tsx
-    projects/
-    components/
-      ProjectCard.tsx
-      UploadPanel.tsx
-      SpecEditor.tsx
-      GapQuestions.tsx
-      OutputTabs.tsx
+    page.tsx           Dashboard
+    projects/[id]/     Project workspace (three-panel)
+    components/        All UI components
+    lib/               API client, types, SWR hooks
+```
 
-Data model:
-- Project
-- Document
-- ExtractedRequirement
-- SpecVersion
-- GapQuestion
-- ReviewComment
+---
 
-Spec generation workflow:
-1. User creates project
-2. User uploads documents
-3. Backend parses documents into text
-4. requirement_extractor skill creates structured requirement JSON
-5. gap_detector skill finds missing information
-6. functional_spec_generator creates functional spec
-7. technical_spec_generator creates technical spec
-8. user_story_generator creates Jira-ready stories
-9. reviewer checks completeness, ambiguity, security, data, and implementation risks
-10. User can edit and export
+## Running tests
 
-Important product requirements:
-- Do not make this a generic chatbot
-- Make it a guided workflow
-- Each generated section should show confidence and source reference where possible
-- Unclear information should go into Open Questions, not hallucinated
-- Generated specs must be versioned
-- UI should look premium, clean, enterprise-grade, and suitable for business users
-- Use tabs for Functional Spec, Technical Spec, User Stories, Review Comments, Open Questions
-- Include a left project/document panel, center spec editor, and right review/gaps panel
+```bash
+cd backend
+pytest -q
+```
 
-Initial implementation:
-Build a working MVP with mocked LLM responses first if API key is missing.
-Then wire Gemini provider using environment variable GEMINI_API_KEY.
+---
 
-Environment:
-- Use .env
-- Never expose API key in frontend
-- Add README with setup steps
+## Adding a new skill
 
-Deliverables:
-1. Working backend
-2. Working frontend
-3. Skill engine implementation
-4. Sample skill prompts
-5. Sample project flow
-6. README
+See `.claude/plans/specforge-implementation-plan.md` §5 for the Skill Engine contract. Each skill is a directory under `backend/app/services/skills/` containing:
+
+- `instruction.md` — system message for the LLM
+- `template.md` — Jinja2 user prompt template
+- `schema.json` — JSON Schema for output validation

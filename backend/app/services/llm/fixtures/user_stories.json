@@ -1,0 +1,78 @@
+{
+  "stories": [
+    {
+      "id": "US-001",
+      "title": "Create and manage projects",
+      "description": "As a Business Analyst, I want to create projects so I can organise separate requirements efforts.",
+      "acceptance_criteria": [
+        "I can create a project with a name and optional description.",
+        "The project appears on the dashboard with its document count.",
+        "I can soft-delete a project to remove it from the dashboard."
+      ],
+      "story_points": 3,
+      "labels": ["project-management", "crud"]
+    },
+    {
+      "id": "US-002",
+      "title": "Upload requirement documents",
+      "description": "As a Business Analyst, I want to upload PDF, DOCX, or TXT documents so the system can extract requirements from them.",
+      "acceptance_criteria": [
+        "I can drag-and-drop or use a file picker to upload documents.",
+        "Files over 20 MB are rejected with a clear error message.",
+        "Unsupported file types show an inline error.",
+        "Uploaded files appear in the document list with their name and size."
+      ],
+      "story_points": 5,
+      "labels": ["upload", "documents"]
+    },
+    {
+      "id": "US-003",
+      "title": "Extract and review requirements",
+      "description": "As a Business Analyst, I want to trigger requirement extraction so I can see what the system understood from my documents.",
+      "acceptance_criteria": [
+        "Clicking 'Extract Requirements' starts extraction and shows a loading state.",
+        "Extracted requirements are grouped by category with confidence badges.",
+        "I can see a source reference tooltip quoting the original document text."
+      ],
+      "story_points": 5,
+      "labels": ["extraction", "ai"]
+    },
+    {
+      "id": "US-004",
+      "title": "Review and resolve gap questions",
+      "description": "As a Business Analyst, I want to see what information is missing so I can resolve gaps before generating specs.",
+      "acceptance_criteria": [
+        "Gap questions appear in the right panel grouped by severity.",
+        "I can mark a gap as resolved and provide a free-text answer.",
+        "Resolved answers are automatically included in subsequent spec generation."
+      ],
+      "story_points": 3,
+      "labels": ["gaps", "ai"]
+    },
+    {
+      "id": "US-005",
+      "title": "Generate and review all spec types",
+      "description": "As an Engineering Lead, I want to generate Functional Spec, Technical Spec, and User Stories so I have a complete implementation-ready document set.",
+      "acceptance_criteria": [
+        "Clicking 'Generate Specs' sequentially produces all four spec types.",
+        "Each tab populates progressively without waiting for all specs.",
+        "A version badge shows when a spec has been regenerated.",
+        "I can edit specs inline and changes are auto-saved within 500 ms."
+      ],
+      "story_points": 8,
+      "labels": ["spec-generation", "ai", "editor"]
+    },
+    {
+      "id": "US-006",
+      "title": "Export specs as Markdown",
+      "description": "As a Business Analyst, I want to export generated specs as Markdown files so I can share them or commit them to a repository.",
+      "acceptance_criteria": [
+        "Each spec tab has an Export Markdown button.",
+        "The downloaded file is named {project}-{spec-type}-v{n}.md.",
+        "Export All downloads a single combined Markdown file."
+      ],
+      "story_points": 2,
+      "labels": ["export", "markdown"]
+    }
+  ]
+}

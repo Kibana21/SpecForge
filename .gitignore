@@ -67,5 +67,6 @@ exports/
 
 # ── Secrets / credentials ─────────────────────────────────────────────────────
 video-key.json
+backend/.env
 
 

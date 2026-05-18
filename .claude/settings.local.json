@@ -2,7 +2,23 @@
   "permissions": {
     "allow": [
       "Read(//Users/kartik/.claude/plugins/**)",
-      "Read(//Users/kartik/.claude/plugins/marketplaces/**)"
+      "Read(//Users/kartik/.claude/plugins/marketplaces/**)",
+      "Bash(python -m venv .venv)",
+      "Bash(.venv/bin/pip install *)",
+      "Bash(.venv/bin/python *)",
+      "Bash(.venv/bin/uvicorn app.main:app --port 8000)",
+      "Bash(curl -s http://localhost:8000/healthz)",
+      "Bash(kill %1)",
+      "Bash(.venv/bin/uvicorn app.main:app --port 8001)",
+      "Bash(curl -s http://localhost:8001/healthz)",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(.venv/bin/pytest *)",
+      "Bash(make dev-be *)",
+      "Bash(wait)",
+      "Bash(xargs kill -9)",
+      "Bash(.venv/bin/pip show *)",
+      "Bash(python3 *)"
     ]
   }
 }

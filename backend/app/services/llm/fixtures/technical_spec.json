@@ -1,0 +1,77 @@
+{
+  "architecture_overview": "SpecForge AI follows a three-tier architecture: a Next.js 14 frontend, a FastAPI backend, and a PostgreSQL database. The backend exposes a REST API consumed by the frontend. All LLM calls are server-side through a provider-agnostic LLM abstraction. A reusable Skill Engine encapsulates each AI capability as a directory of instruction, template, and schema files.",
+  "components": [
+    {
+      "name": "Frontend (Next.js 14)",
+      "description": "App Router with server components for SSR and client components for interactivity. Uses SWR for data fetching, tiptap for rich text editing, and Tailwind CSS for styling. Three-panel workspace layout at /projects/[id]."
+    },
+    {
+      "name": "FastAPI Backend",
+      "description": "Async REST API with Pydantic validation, CORS whitelist, security headers, and slowapi rate limiting. Mounts routers for projects, documents, specs, gaps, and reviews. Global exception handler produces consistent envelope responses."
+    },
+    {
+      "name": "Skill Engine",
+      "description": "Loads skill directories (instruction.md + template.md + schema.json), renders Jinja2 prompts, calls the LLM provider, validates output against JSON Schema, and retries once on validation failure."
+    },
+    {
+      "name": "LLM Abstraction Layer",
+      "description": "LLMProvider ABC with GeminiProvider (google-generativeai SDK) and MockProvider (fixture JSON files). Provider selected via LLM_PROVIDER env var; falls back to mock if GEMINI_API_KEY is absent."
+    },
+    {
+      "name": "Document Parser",
+      "description": "Abstracts PDF (PyMuPDF), DOCX (python-docx), and TXT parsing. Storage abstraction keeps file paths swappable to Azure Blob later."
+    }
+  ],
+  "data_models": [
+    {
+      "name": "Project",
+      "description": "UUID PK, name, description, soft-delete via deleted_at. Parent of all other entities."
+    },
+    {
+      "name": "Document",
+      "description": "UUID PK, project FK (CASCADE), filename, mime_type, size_bytes, storage_path, extracted_text, parse_status (PG enum), parse_error."
+    },
+    {
+      "name": "ExtractedRequirement",
+      "description": "UUID PK, project FK, document FK (SET NULL), category (PG enum), ext_id, text, source_reference, confidence (PG enum)."
+    },
+    {
+      "name": "SpecVersion",
+      "description": "UUID PK, project FK, spec_type (PG enum), version_number (per-project monotonic, allocated via SELECT FOR UPDATE), content_json (JSONB), content_markdown, is_edited."
+    },
+    {
+      "name": "GapQuestion",
+      "description": "UUID PK, project FK, ext_id, question, category (PG enum), severity (PG enum), resolved, resolution_text (free-text answer fed into spec regen), resolved_at."
+    },
+    {
+      "name": "ReviewComment",
+      "description": "UUID PK, project FK, spec_version FK (SET NULL), section, comment, severity (PG enum), category (PG enum), dismissed, dismissed_at."
+    }
+  ],
+  "api_endpoints": [
+    {"method": "POST", "path": "/api/projects", "description": "Create project"},
+    {"method": "GET", "path": "/api/projects", "description": "List projects"},
+    {"method": "GET", "path": "/api/projects/{id}", "description": "Project detail"},
+    {"method": "DELETE", "path": "/api/projects/{id}", "description": "Soft delete project"},
+    {"method": "POST", "path": "/api/projects/{id}/documents", "description": "Upload document"},
+    {"method": "POST", "path": "/api/projects/{id}/extract", "description": "Run requirement_extractor"},
+    {"method": "POST", "path": "/api/projects/{id}/detect-gaps", "description": "Run gap_detector"},
+    {"method": "POST", "path": "/api/projects/{id}/specs/functional", "description": "Generate Functional Spec"},
+    {"method": "POST", "path": "/api/projects/{id}/specs/technical", "description": "Generate Technical Spec"},
+    {"method": "POST", "path": "/api/projects/{id}/specs/user-stories", "description": "Generate User Stories"},
+    {"method": "POST", "path": "/api/projects/{id}/review", "description": "Run reviewer skill"}
+  ],
+  "tech_stack": {
+    "frontend": "Next.js 14, React 18, TypeScript, Tailwind CSS, tiptap, SWR",
+    "backend": "FastAPI, SQLAlchemy 2.0 async, asyncpg, Alembic, Pydantic v2, slowapi",
+    "database": "PostgreSQL 16 (Docker)",
+    "llm": "Google Gemini 1.5 Flash via google-generativeai SDK",
+    "document_parsing": "PyMuPDF (PDF), python-docx (DOCX), built-in open (TXT)"
+  },
+  "risks": [
+    {"risk": "LLM JSON output non-compliance", "mitigation": "JSON Schema validation with one auto-retry and error-correction prompt"},
+    {"risk": "Large document text overflowing prompt context", "mitigation": "Truncate document_text to 60,000 chars; log truncation warning"},
+    {"risk": "Cost runaway without auth", "mitigation": "slowapi rate limit 30 req/min/IP on all LLM-triggering endpoints"},
+    {"risk": "Deferred auth leaves all endpoints open", "mitigation": "CORS whitelist + rate limiting + security headers provide baseline protection in dev; auth planned for v2"}
+  ]
+}

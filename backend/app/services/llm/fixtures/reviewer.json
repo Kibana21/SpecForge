@@ -1,0 +1,39 @@
+{
+  "comments": [
+    {
+      "id": "REV-1",
+      "section": "Functional Spec — Scope",
+      "comment": "The scope section does not address data retention policy. Specify how long uploaded documents and generated specs are stored, and whether users can delete them.",
+      "severity": "critical",
+      "category": "completeness"
+    },
+    {
+      "id": "REV-2",
+      "section": "Technical Spec — Architecture Overview",
+      "comment": "The architecture does not specify how the application handles authentication and authorisation. Even if auth is deferred, a placeholder for the auth boundary should be noted to avoid future breaking changes.",
+      "severity": "warning",
+      "category": "security"
+    },
+    {
+      "id": "REV-3",
+      "section": "User Stories — US-003 (Extract Requirements)",
+      "comment": "The acceptance criteria do not specify behaviour when extraction fails mid-way (e.g., LLM timeout). Add a criterion for error state and retry capability.",
+      "severity": "warning",
+      "category": "ambiguity"
+    },
+    {
+      "id": "REV-4",
+      "section": "Technical Spec — Data Models",
+      "comment": "The ExtractedRequirement model's document_id is nullable (ON DELETE SET NULL), but the UI shows source references. Consider what happens to the source reference tooltip when the source document is deleted.",
+      "severity": "warning",
+      "category": "data"
+    },
+    {
+      "id": "REV-5",
+      "section": "Functional Spec — Features — Inline Editing",
+      "comment": "The auto-save debounce is 500 ms but there is no conflict resolution strategy if two browser tabs have the same spec open. Clarify this is single-session only for MVP.",
+      "severity": "suggestion",
+      "category": "implementation"
+    }
+  ]
+}

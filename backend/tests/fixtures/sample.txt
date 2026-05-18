@@ -1,0 +1,21 @@
+Project: Secure Document Portal
+
+Functional Requirements:
+1. Users must be able to register and log in with MFA.
+2. Users can upload PDF, DOCX, and TXT files up to 20 MB.
+3. System must parse uploaded documents and extract key requirements.
+4. Admins can manage user roles (viewer, editor, admin).
+5. All documents are versioned; previous versions are retained.
+
+Non-Functional Requirements:
+1. System must support 99.9% uptime SLA.
+2. Upload response time must not exceed 2 seconds.
+3. All data at rest must be encrypted with AES-256.
+
+Constraints:
+1. Must run on Azure cloud infrastructure.
+2. Must comply with GDPR and SOC2.
+
+Assumptions:
+1. Users have modern browsers (Chrome 100+, Firefox 100+).
+2. Deployment region is EU-West.

@@ -1,0 +1,34 @@
+{
+  "gaps": [
+    {
+      "id": "GAP-1",
+      "question": "What are the performance SLAs? Are there response time requirements for document processing or LLM generation?",
+      "category": "scope",
+      "severity": "blocker"
+    },
+    {
+      "id": "GAP-2",
+      "question": "What is the maximum total document size allowed per project? Is there a limit on the number of documents?",
+      "category": "data",
+      "severity": "major"
+    },
+    {
+      "id": "GAP-3",
+      "question": "Are there data retention policies for uploaded documents and generated specs? Should documents be deletable?",
+      "category": "security",
+      "severity": "major"
+    },
+    {
+      "id": "GAP-4",
+      "question": "Should the system support exporting User Stories directly to Jira via API integration?",
+      "category": "integration",
+      "severity": "minor"
+    },
+    {
+      "id": "GAP-5",
+      "question": "What error handling UX is expected when the LLM service is unavailable? Should the user see a retry option?",
+      "category": "ux",
+      "severity": "major"
+    }
+  ]
+}

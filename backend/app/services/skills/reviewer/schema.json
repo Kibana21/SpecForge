@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["comments"],
+  "additionalProperties": false,
+  "properties": {
+    "comments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "section", "comment", "severity", "category"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "section": { "type": "string", "minLength": 1 },
+          "comment": { "type": "string", "minLength": 1 },
+          "severity": { "type": "string", "enum": ["critical", "warning", "suggestion"] },
+          "category": { "type": "string", "enum": ["completeness", "ambiguity", "security", "data", "implementation"] }
+        }
+      }
+    }
+  }
+}
