@@ -18,7 +18,16 @@
       "Bash(wait)",
       "Bash(xargs kill -9)",
       "Bash(.venv/bin/pip show *)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(grep -v ':0$')",
+      "Bash(cd \"/Users/kartik/.claude/projects/-Users-kartik-Documents-Work-Projects-SpecForge-SpecForge/memory/\")",
+      "Bash(cat MEMORY.md)",
+      "Bash(echo \"exit:$?\")",
+      "Bash(grep -rn \"security\\\\.md\\\\|skills/security\" --include=*.md .claude/prd .claude/plans)",
+      "Bash(grep -rl \"security\\\\.md\\\\|skills/security\" --include=*.md .claude/prd .claude/plans)",
+      "Bash(grep -rn \"security\\\\.md\\\\|skills/security\\\\|SPEC FORGE security standard\\\\|security standard \\(\\\\`\" --include=*.md .claude/prd .claude/plans)",
+      "Bash(grep -rn \"security.md\\\\|skills/security\" --include='*.md' .claude/prd .claude/plans)",
+      "Bash(grep -rl \"security.md\\\\|skills/security\" --include='*.md' .claude/prd .claude/plans)"
     ]
   }
 }
