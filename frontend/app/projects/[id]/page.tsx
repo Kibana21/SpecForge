@@ -2,7 +2,8 @@
 import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import useSWR from 'swr'
-import { ArrowLeft, Cpu } from 'lucide-react'
+import { ArrowLeft, Cpu, History } from 'lucide-react'
+import { useProjectContext } from '@/lib/context/ProjectContext'
 import type { ExtractedRequirement, GapQuestion, ReviewComment, SpecType, SpecVersion } from '@/lib/types'
 import { api } from '@/lib/api'
 import { useProject } from '@/lib/hooks/useProject'
@@ -30,6 +31,7 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
   const [extracting, setExtracting] = useState(false)
 
   const { project, isLoading: projectLoading, mutate: mutateProject } = useProject(projectId)
+  const { openVersionPanel } = useProjectContext()
 
   const { data: specs, mutate: mutateSpecs } = useSWR<SpecVersion[]>(
     `/api/projects/${projectId}/specs`,
@@ -324,6 +326,14 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
             )}
           </div>
         </div>
+        <button
+          onClick={() => openVersionPanel(`project:${projectId}`)}
+          className="flex items-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-[var(--bg-surface)] px-2.5 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors"
+          title="Version history"
+        >
+          <History size={12} />
+          History
+        </button>
       </header>
 
       <ThreePanel left={leftPanel} center={centerPanel} right={rightPanel} />

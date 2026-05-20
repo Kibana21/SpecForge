@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -15,6 +15,11 @@ class Project(TimestampMixin, Base):
     id: Mapped[uuid.UUID] = uuid_pk()
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
@@ -33,5 +38,34 @@ class Project(TimestampMixin, Base):
     review_comments: Mapped[list["ReviewComment"]] = relationship(  # noqa: F821
         "ReviewComment", back_populates="project", cascade="all, delete-orphan"
     )
+    members: Mapped[list["ProjectMember"]] = relationship(  # noqa: F821
+        "ProjectMember", back_populates="project", cascade="all, delete-orphan"
+    )
 
-    __table_args__ = (Index("idx_projects_deleted_at", "deleted_at"),)
+    __table_args__ = (
+        Index("idx_projects_deleted_at", "deleted_at"),
+        Index("idx_projects_owner_id", "owner_id"),
+    )
+
+
+class ProjectMember(Base):
+    __tablename__ = "project_members"
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    role: Mapped[str] = mapped_column(String(50), nullable=False, default="member")
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    project: Mapped["Project"] = relationship("Project", back_populates="members")
+
+    __table_args__ = (Index("idx_project_members_user_id", "user_id"),)

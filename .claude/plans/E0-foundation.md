@@ -5,6 +5,8 @@
 **Tier-1 decisions:** [`00-foundations-and-decisions.md`](00-foundations-and-decisions.md) · **Roadmap:** [`01-master-roadmap.md`](01-master-roadmap.md) · **Requirements:** [`../prd/prd-module-0-global-architecture.md`](../prd/prd-module-0-global-architecture.md)
 **Binding skills:** `spec-forge-security` (auth/RBAC/API security — read `references/jwt-auth.md`, `fastapi-patterns.md`, `nextjs-patterns.md`, `anti-patterns.md`), `postgres` (models/migrations/queries).
 
+**Model guidance:** Implement on **Sonnet** (well-specified work — fast/cheap); escalate to **Opus** for the auth/security core (**T6–T12**), the open questions in §11, and any non-trivial debugging. Switch with `/model`.
+
 ---
 
 ## Scope boundary for E0

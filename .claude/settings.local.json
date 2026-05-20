@@ -27,7 +27,8 @@
       "Bash(grep -rl \"security\\\\.md\\\\|skills/security\" --include=*.md .claude/prd .claude/plans)",
       "Bash(grep -rn \"security\\\\.md\\\\|skills/security\\\\|SPEC FORGE security standard\\\\|security standard \\(\\\\`\" --include=*.md .claude/prd .claude/plans)",
       "Bash(grep -rn \"security.md\\\\|skills/security\" --include='*.md' .claude/prd .claude/plans)",
-      "Bash(grep -rl \"security.md\\\\|skills/security\" --include='*.md' .claude/prd .claude/plans)"
+      "Bash(grep -rl \"security.md\\\\|skills/security\" --include='*.md' .claude/prd .claude/plans)",
+      "Bash(/Users/kartik/Documents/Work/Projects/SpecForge/SpecForge/backend/.venv/bin/pip install *)"
     ]
   }
 }

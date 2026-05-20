@@ -5,14 +5,14 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_project_or_404
+from app.api.deps import get_current_user, get_project_or_404
 from app.db import get_db
 from app.models.project import Project
 from app.models.review import ReviewComment
 from app.schemas.envelope import err, ok
 from app.schemas.review import ReviewCommentRead, ReviewDismissPatch
 
-router = APIRouter(tags=["reviews"])
+router = APIRouter(tags=["reviews"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("/projects/{project_id}/reviews")

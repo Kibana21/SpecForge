@@ -9,13 +9,75 @@ import type {
   SpecType,
   SpecVersion,
 } from './types'
+import { tokenStore } from './auth/tokenStore'
 
-async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
-  const headers: Record<string, string> = {}
-  if (!(options?.body instanceof FormData)) {
-    headers['Content-Type'] = 'application/json'
+// Deduplicate concurrent refresh calls so only one request goes out
+let refreshInFlight: Promise<string | null> | null = null
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (refreshInFlight) return refreshInFlight
+  refreshInFlight = (async () => {
+    try {
+      const res = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        credentials: 'include',
+      })
+      if (!res.ok) return null
+      const json = await res.json()
+      const token: string | null = json.data?.access_token ?? null
+      tokenStore.set(token)
+      return token
+    } finally {
+      refreshInFlight = null
+    }
+  })()
+  return refreshInFlight
+}
+
+export async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
+  const buildHeaders = (token: string | null): Record<string, string> => {
+    const h: Record<string, string> = {}
+    if (!(options?.body instanceof FormData)) {
+      h['Content-Type'] = 'application/json'
+    }
+    if (token) {
+      h['Authorization'] = `Bearer ${token}`
+    }
+    return h
   }
-  const res = await fetch(url, { headers, ...options })
+
+  const doFetch = (token: string | null) =>
+    fetch(url, {
+      credentials: 'include',
+      ...options,
+      headers: {
+        ...buildHeaders(token),
+        ...(options?.headers as Record<string, string> | undefined),
+      },
+    })
+
+  let res = await doFetch(tokenStore.get())
+
+  if (res.status === 401) {
+    const newToken = await refreshAccessToken()
+    if (newToken) {
+      res = await doFetch(newToken)
+    } else {
+      tokenStore.set(null)
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login'
+      }
+      throw new Error('Session expired')
+    }
+  }
+
+  // document upload returns the raw response — handle non-JSON
+  const contentType = res.headers.get('content-type') ?? ''
+  if (!contentType.includes('application/json')) {
+    if (!res.ok) throw new Error(`Request failed: ${res.status}`)
+    return undefined as unknown as T
+  }
+
   const json = await res.json()
   if (json.error) {
     throw new Error(json.error.message ?? `Request failed: ${res.status}`)
@@ -40,10 +102,13 @@ export const api = {
     list: (projectId: string) =>
       apiFetch<DocumentRead[]>(`/api/projects/${projectId}/documents`),
     upload: async (projectId: string, file: File): Promise<DocumentRead> => {
+      const token = tokenStore.get()
       const form = new FormData()
       form.append('file', file)
       const res = await fetch(`/api/projects/${projectId}/documents`, {
         method: 'POST',
+        credentials: 'include',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: form,
       })
       const json = await res.json()

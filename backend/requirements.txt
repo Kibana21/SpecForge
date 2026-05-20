@@ -8,7 +8,7 @@ asyncpg==0.30.0
 alembic==1.14.0
 
 # Validation & settings
-pydantic==2.10.3
+pydantic[email]==2.10.3
 pydantic-settings==2.7.0
 
 # File handling
@@ -26,6 +26,14 @@ google-auth
 # Templating & schema validation
 jinja2==3.1.5
 jsonschema==4.23.0
+
+# Auth & security
+bcrypt==5.0.0
+python-jose[cryptography]==3.3.0
+redis[asyncio]==5.2.1
+
+# Background jobs
+celery[redis]==5.4.0
 
 # Security — rate limiting
 slowapi==0.1.9

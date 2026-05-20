@@ -1,11 +1,13 @@
 from uuid import UUID
 
 from fastapi import Depends
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.rbac import get_current_user, require_role  # noqa: F401 — re-exported for routers
 from app.db import get_db
 from app.models.project import Project
+from app.models.user import User
 from app.schemas.envelope import err
 from app.services.llm import get_provider
 from app.services.llm.base import LLMProvider
@@ -21,6 +23,39 @@ async def get_project_or_404(
     project = result.scalar_one_or_none()
     if project is None:
         err("not_found", f"Project {project_id} not found", 404)
+    return project  # type: ignore[return-value]
+
+
+async def require_project_access(
+    project_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Project:
+    """Returns the project if the user has access; 404 for both not-found and unauthorized."""
+    from app.models.project import ProjectMember  # noqa: PLC0415
+
+    result = await db.execute(
+        select(Project).where(Project.id == project_id, Project.deleted_at.is_(None))
+    )
+    project = result.scalar_one_or_none()
+    if project is None:
+        err("not_found", "Project not found", 404)
+
+    is_admin = user.role == "platform_admin"
+    is_owner = project.owner_id == user.id  # type: ignore[union-attr]
+    member_result = await db.execute(
+        select(ProjectMember).where(
+            and_(
+                ProjectMember.project_id == project_id,
+                ProjectMember.user_id == user.id,
+            )
+        )
+    )
+    is_member = member_result.scalar_one_or_none() is not None
+
+    if not (is_admin or is_owner or is_member):
+        err("not_found", "Project not found", 404)
+
     return project  # type: ignore[return-value]
 
 

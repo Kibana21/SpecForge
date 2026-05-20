@@ -5,12 +5,13 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_project_or_404
+from app.api.deps import get_current_user, get_project_or_404
 from app.db import get_db
 from app.models.document import Document
 from app.models.gap import GapQuestion
 from app.models.project import Project
 from app.models.spec import SpecVersion
+from app.models.user import User
 from app.schemas.document import DocumentRead
 from app.schemas.envelope import ok
 from app.schemas.project import ProjectCreate, ProjectDetail, ProjectListItem, ProjectRead
@@ -19,8 +20,12 @@ router = APIRouter(tags=["projects"])
 
 
 @router.post("/projects", status_code=201)
-async def create_project(body: ProjectCreate, db: AsyncSession = Depends(get_db)):
-    project = Project(name=body.name, description=body.description)
+async def create_project(
+    body: ProjectCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    project = Project(name=body.name, description=body.description, owner_id=current_user.id)
     db.add(project)
     await db.commit()
     await db.refresh(project)
@@ -32,6 +37,7 @@ async def list_projects(
     limit: int = 50,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     limit = min(limit, 100)
 
@@ -83,6 +89,7 @@ async def get_project(
     project_id: UUID,
     project: Project = Depends(get_project_or_404),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     gap_row = (
         await db.execute(
@@ -127,6 +134,7 @@ async def delete_project(
     project_id: UUID,
     project: Project = Depends(get_project_or_404),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     project.deleted_at = datetime.now(timezone.utc)
     await db.commit()

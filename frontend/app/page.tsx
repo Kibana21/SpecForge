@@ -1,12 +1,15 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Layers } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { useProjects } from '@/lib/hooks/useProjects'
 import { ProjectCard } from '@/app/components/ProjectCard'
 import { NewProjectModal } from '@/app/components/NewProjectModal'
 import { EmptyState } from '@/app/components/EmptyState'
 import { Skeleton } from '@/app/components/Skeleton'
+import { UserMenu } from '@/app/components/UserMenu'
+import { AppShell } from '@/app/components/AppShell'
+import { Layers } from 'lucide-react'
 
 export default function DashboardPage() {
   const { projects, isLoading, mutate } = useProjects()
@@ -20,37 +23,31 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="min-h-screen">
-      {/* Hero header */}
-      <div className="border-b border-[var(--border-default)] bg-[var(--bg-surface)]">
-        <div className="mx-auto max-w-6xl px-6 py-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2.5 mb-1">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent-blue)]">
-                  <Layers size={16} className="text-white" />
-                </div>
-                <h1 className="text-xl font-bold text-[var(--text-primary)] tracking-tight">
-                  SpecForge AI
-                </h1>
-              </div>
-              <p className="text-sm text-[var(--text-secondary)] pl-10">
-                Transform messy requirements into structured, versioned specs.
-              </p>
-            </div>
+    <AppShell>
+      {/* Topbar */}
+      <div className="shrink-0 border-b border-[var(--border-default)] bg-[var(--bg-surface)] px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-bold text-[var(--text-primary)] tracking-tight">Projects</h2>
+            <p className="text-xs text-[var(--text-secondary)]">
+              Transform messy requirements into structured, versioned specs.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
             <button
               onClick={() => setShowModal(true)}
-              className="flex items-center gap-2 rounded-lg bg-[var(--accent-blue)] hover:bg-[var(--accent-blue-hover)] px-4 py-2.5 text-sm font-semibold text-white transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent-blue)] focus:ring-offset-2"
+              className="flex items-center gap-2 rounded-lg bg-[var(--accent-blue)] hover:bg-[var(--accent-blue-hover)] px-4 py-2 text-sm font-semibold text-white transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent-blue)] focus:ring-offset-2"
             >
               <Plus size={15} strokeWidth={2.5} />
               New Project
             </button>
+            <UserMenu />
           </div>
         </div>
       </div>
 
       {/* Project grid */}
-      <div className="mx-auto max-w-6xl px-6 py-8">
+      <div className="flex-1 overflow-y-auto px-6 py-6">
         {isLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -91,6 +88,6 @@ export default function DashboardPage() {
       {showModal && (
         <NewProjectModal onClose={() => setShowModal(false)} onCreated={handleCreated} />
       )}
-    </main>
+    </AppShell>
   )
 }

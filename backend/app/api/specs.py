@@ -8,7 +8,7 @@ from fastapi.responses import Response
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_project_or_404, get_provider_dep
+from app.api.deps import get_current_user, get_project_or_404, get_provider_dep
 from app.db import get_db
 from app.limiter import limiter
 from app.models.gap import GapQuestion
@@ -23,7 +23,7 @@ from app.services.llm.base import LLMProvider
 from app.services.skills.skill_engine import SkillEngine
 
 log = logging.getLogger(__name__)
-router = APIRouter(tags=["specs"])
+router = APIRouter(tags=["specs"], dependencies=[Depends(get_current_user)])
 _skill_engine = SkillEngine()
 
 

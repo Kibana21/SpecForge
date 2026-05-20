@@ -5,14 +5,14 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_project_or_404
+from app.api.deps import get_current_user, get_project_or_404
 from app.db import get_db
 from app.models.gap import GapQuestion
 from app.models.project import Project
 from app.schemas.envelope import err, ok
 from app.schemas.gap import GapQuestionRead, GapResolvePatch
 
-router = APIRouter(tags=["gaps"])
+router = APIRouter(tags=["gaps"], dependencies=[Depends(get_current_user)])
 
 
 @router.patch("/projects/{project_id}/gaps/{gap_id}")

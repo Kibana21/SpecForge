@@ -19,8 +19,8 @@ CYAN  := $(shell printf '\033[36m')
 
 .PHONY: help db-shell \
         install install-fe \
-        migrate migrate-down \
-        dev dev-be dev-fe \
+        migrate migrate-down seed \
+        dev dev-be dev-fe worker beat ping \
         test test-be typecheck lint \
         clean
 
@@ -66,6 +66,9 @@ migrate: ## Run alembic upgrade head
 migrate-down: ## Rollback last alembic migration
 	cd $(BACKEND_DIR) && $(ALEMBIC) downgrade -1
 
+seed: ## Seed 7 test users (one per role) — safe to re-run
+	cd $(BACKEND_DIR) && $(PYTHON) scripts/seed_users.py
+
 ## ── Dev servers ──────────────────────────────────────────────────────────────
 
 dev-be: ## Start backend dev server (hot-reload, port 8000)
@@ -80,6 +83,15 @@ dev: ## Start backend and frontend together (Ctrl-C stops both)
 	  (cd $(BACKEND_DIR) && $(UVICORN) app.main:app --reload --port 8000) & \
 	  (cd $(FRONTEND_DIR) && npm run dev) & \
 	  wait
+
+worker: ## Start Celery worker (requires Redis)
+	cd $(BACKEND_DIR) && $(VENV)/bin/celery -A workers.celery_app worker --loglevel=info
+
+beat: ## Start Celery Beat scheduler (requires Redis)
+	cd $(BACKEND_DIR) && $(VENV)/bin/celery -A workers.celery_app beat --loglevel=info
+
+ping: ## Dispatch a test ping task to verify Celery pipeline
+	cd $(BACKEND_DIR) && $(PYTHON) -c "from workers.tasks import ping; r = ping.delay(); print('task_id:', r.id)"
 
 ## ── Tests / checks ───────────────────────────────────────────────────────────
 

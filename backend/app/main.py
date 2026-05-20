@@ -29,8 +29,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],
+    expose_headers=["X-Request-ID"],
+    max_age=600,
 )
 
 
@@ -40,8 +42,8 @@ async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
     return response
 
 
@@ -93,10 +95,13 @@ async def healthz():
 
 
 # ── Routers ───────────────────────────────────────────────────────────────────
-from app.api import documents, gaps, projects, reviews, specs  # noqa: E402
+from app.api import auth, context, documents, gaps, projects, reviews, specs, versions  # noqa: E402
 
+app.include_router(auth.router)
+app.include_router(context.router)
 app.include_router(projects.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
 app.include_router(specs.router, prefix="/api")
 app.include_router(gaps.router, prefix="/api")
 app.include_router(reviews.router, prefix="/api")
+app.include_router(versions.router)

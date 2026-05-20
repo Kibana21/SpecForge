@@ -9,6 +9,19 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql+asyncpg://spec_forge_user:PASSWORD@localhost:5432/spec_forge_db"
 
+    # Auth — fail loudly at startup if JWT_SECRET is missing or is the placeholder
+    jwt_secret: str = ""
+    access_token_minutes: int = 15
+    refresh_token_days: int = 7
+    bcrypt_rounds: int = 12
+
+    # Redis (rate-limit counters + JTI blocklist)
+    redis_url: str = "redis://localhost:6379"
+
+    # Celery
+    celery_broker_url: str = "redis://localhost:6379/1"
+    celery_result_backend: str = "redis://localhost:6379/2"
+
     # File uploads
     upload_dir: str = "./uploads"
     max_upload_mb: int = 20
@@ -26,6 +39,7 @@ class Settings(BaseSettings):
 
     # Logging
     log_level: str = "INFO"
+    environment: str = "development"
 
     @property
     def cors_origins_list(self) -> list[str]:
