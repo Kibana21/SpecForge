@@ -29,10 +29,16 @@ class Settings(BaseSettings):
     # LLM
     llm_provider: str = "mock"
     gemini_api_key: str = ""
-    gemini_service_account_path: str = ""
+    google_service_account_path: str = ""  # path to service account JSON key (e.g. video-key.json)
     gemini_model: str = "gemini-2.0-flash-001"
     gemini_project_id: str = ""
     gemini_location: str = "us-central1"
+
+    # Embedding
+    embedding_model: str = "text-embedding-004"
+    embedding_dimensions: int = 768
+    corpus_max_upload_mb: int = 50
+    fact_extract_max_chunks: int = 100
 
     # CORS
     cors_origins: str = "http://localhost:3000"

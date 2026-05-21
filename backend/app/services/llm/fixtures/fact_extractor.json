@@ -1,0 +1,28 @@
+{
+  "facts": [
+    {
+      "kind": "capability",
+      "text": "PayHub supports real-time ISO 20022 payment settlement.",
+      "source_ref": "PayHub Architecture v2.pdf §3.1",
+      "confidence": "high"
+    },
+    {
+      "kind": "integration",
+      "text": "PayHub integrates with SWIFT MT103 for cross-border transfers.",
+      "source_ref": "PayHub Architecture v2.pdf §4.2",
+      "confidence": "high"
+    },
+    {
+      "kind": "constraint",
+      "text": "Transaction amounts are capped at $10M per single instruction.",
+      "source_ref": null,
+      "confidence": "medium"
+    },
+    {
+      "kind": "gotcha",
+      "text": "Idempotency keys expire after 24 hours; retrying after expiry creates a duplicate transaction.",
+      "source_ref": "PayHub API Guide §7",
+      "confidence": "high"
+    }
+  ]
+}

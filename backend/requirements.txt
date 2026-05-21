@@ -19,8 +19,9 @@ python-docx==1.1.2
 filetype==1.2.0
 
 # LLM
-langchain-google-vertexai
+langchain-google-genai
 langchain-core
+langgraph
 google-auth
 
 # Templating & schema validation
@@ -37,6 +38,10 @@ celery[redis]==5.4.0
 
 # Security — rate limiting
 slowapi==0.1.9
+
+# Vector + AI pipeline
+pgvector==0.3.6
+tiktoken==0.9.0
 
 # Testing
 pytest==8.3.4

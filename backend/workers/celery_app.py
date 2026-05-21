@@ -25,5 +25,9 @@ celery_app.conf.update(
             "task": "workers.tasks.purge_expired_refresh_tokens",
             "schedule": crontab(hour=3, minute=0),  # daily 03:00 UTC
         },
+        "reset-stale-rebuild-status": {
+            "task": "workers.tasks.reset_stale_rebuild_status",
+            "schedule": crontab(minute="*/30"),  # every 30 minutes
+        },
     },
 )

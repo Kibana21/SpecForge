@@ -11,7 +11,7 @@ def get_provider() -> LLMProvider:
     provider_name = settings.llm_provider.lower()
 
     if provider_name == "gemini":
-        has_credentials = bool(settings.gemini_api_key or settings.gemini_service_account_path)
+        has_credentials = bool(settings.gemini_api_key or settings.google_service_account_path)
         if not has_credentials:
             log.warning("No Gemini credentials set — falling back to MockProvider")
             from app.services.llm.mock_provider import MockProvider

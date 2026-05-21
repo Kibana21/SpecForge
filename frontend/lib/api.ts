@@ -1,6 +1,13 @@
 import type {
+  AppCorpusDoc,
+  AppCreate,
+  AppDetail,
+  AppFact,
+  AppListItem,
+  AppsFilter,
   DocumentRead,
   ExtractedRequirement,
+  FactsFilter,
   GapQuestion,
   ProjectDetail,
   ProjectListItem,
@@ -177,5 +184,44 @@ export const api = {
         method: 'PATCH',
         body: JSON.stringify({ dismissed }),
       }),
+  },
+
+  apps: {
+    list: (filters?: AppsFilter) => {
+      const params = new URLSearchParams()
+      if (filters?.q) params.set('q', filters.q)
+      if (filters?.tier !== undefined) params.set('tier', String(filters.tier))
+      if (filters?.mine) params.set('mine', 'true')
+      const qs = params.toString()
+      return apiFetch<AppListItem[]>(`/api/apps${qs ? `?${qs}` : ''}`)
+    },
+    create: (data: AppCreate) =>
+      apiFetch<AppDetail>('/api/apps', { method: 'POST', body: JSON.stringify(data) }),
+    get: (id: string) => apiFetch<AppDetail>(`/api/apps/${id}`),
+    uploadCorpusDoc: async (appId: string, file: File, isPrimary = false): Promise<AppCorpusDoc> => {
+      const token = tokenStore.get()
+      const form = new FormData()
+      form.append('file', file)
+      form.append('is_primary', isPrimary ? 'true' : 'false')
+      const res = await fetch(`/api/apps/${appId}/corpus`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      })
+      const json = await res.json()
+      if (json.error) throw new Error(json.error.message)
+      return json.data as AppCorpusDoc
+    },
+    reindex: (appId: string) =>
+      apiFetch<{ task_id: string }>(`/api/apps/${appId}/reindex`, { method: 'POST' }),
+    listFacts: (appId: string, filters?: FactsFilter) => {
+      const params = new URLSearchParams()
+      if (filters?.kind) params.set('kind', filters.kind)
+      if (filters?.status) params.set('status', filters.status)
+      if (filters?.confidence) params.set('confidence', filters.confidence)
+      const qs = params.toString()
+      return apiFetch<AppFact[]>(`/api/apps/${appId}/facts${qs ? `?${qs}` : ''}`)
+    },
   },
 }

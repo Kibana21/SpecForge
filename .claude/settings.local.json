@@ -28,7 +28,17 @@
       "Bash(grep -rn \"security\\\\.md\\\\|skills/security\\\\|SPEC FORGE security standard\\\\|security standard \\(\\\\`\" --include=*.md .claude/prd .claude/plans)",
       "Bash(grep -rn \"security.md\\\\|skills/security\" --include='*.md' .claude/prd .claude/plans)",
       "Bash(grep -rl \"security.md\\\\|skills/security\" --include='*.md' .claude/prd .claude/plans)",
-      "Bash(/Users/kartik/Documents/Work/Projects/SpecForge/SpecForge/backend/.venv/bin/pip install *)"
+      "Bash(/Users/kartik/Documents/Work/Projects/SpecForge/SpecForge/backend/.venv/bin/pip install *)",
+      "Bash(git stash *)",
+      "WebFetch(domain:docs.langchain.com)",
+      "WebFetch(domain:python.langchain.com)",
+      "WebFetch(domain:ai.google.dev)",
+      "WebFetch(domain:docs.cloud.google.com)",
+      "Bash(rm /Users/kartik/.claude/skills/langchain-gemini/scripts/example.py)",
+      "Bash(rm /Users/kartik/.claude/skills/langchain-gemini/references/api_reference.md)",
+      "Bash(rm /Users/kartik/.claude/skills/langchain-gemini/assets/example_asset.txt)",
+      "Bash(rmdir /Users/kartik/.claude/skills/langchain-gemini/scripts)",
+      "Bash(rmdir /Users/kartik/.claude/skills/langchain-gemini/assets)"
     ]
   }
 }

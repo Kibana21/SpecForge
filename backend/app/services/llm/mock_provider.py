@@ -1,5 +1,7 @@
+import asyncio
 import json
 import logging
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 from app.services.llm.base import LLMProvider
@@ -16,6 +18,8 @@ _SKILL_FIXTURE_MAP: dict[str, str] = {
     "technical_spec": "technical_spec.json",
     "user_stories": "user_stories.json",
     "reviewer": "reviewer.json",
+    "fact_extractor": "fact_extractor.json",
+    "app_brain_qa": "app_brain_qa.json",
 }
 
 
@@ -38,3 +42,15 @@ class MockProvider(LLMProvider):
 
         log.debug("mock_provider skill=%s fixture=%s", skill_name, filename)
         return fixture_path.read_text(encoding="utf-8")
+
+    async def astream(
+        self, *, prompt: str, system: str, skill_name: str | None = None
+    ) -> AsyncIterator[str]:
+        fixture_answer = (
+            "This is a mock streaming answer from the App Brain. "
+            "It references [Citation 1] and provides illustrative information."
+        )
+        chunk_size = 10
+        for i in range(0, len(fixture_answer), chunk_size):
+            yield fixture_answer[i: i + chunk_size]
+            await asyncio.sleep(0)

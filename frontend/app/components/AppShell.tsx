@@ -6,6 +6,7 @@ import {
   Layers,
   LayoutDashboard,
   BookOpen,
+  Brain,
   ShieldCheck,
   ChevronRight,
   CheckCircle2,
@@ -29,7 +30,8 @@ const SDLC_STAGES = [
 
 const NAV_ITEMS = [
   { href: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { href: '/audit',   icon: ShieldCheck,    label: 'Audit Log',    roles: ['platform_admin', 'compliance_reviewer'] },
+  { href: '/apps', icon: Brain, label: 'App Registry' },
+  { href: '/audit', icon: ShieldCheck, label: 'Audit Log', roles: ['platform_admin', 'compliance_reviewer'] },
 ] as const
 
 interface Props {
