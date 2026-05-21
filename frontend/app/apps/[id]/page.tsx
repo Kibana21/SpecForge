@@ -45,10 +45,10 @@ export default function AppDetailPage({ params }: { params: { id: string } }) {
 
   return (
     <AppShell>
-      <div className="flex h-full overflow-hidden">
-        {/* Left shelf nav */}
-        <aside className="w-48 shrink-0 border-r border-[var(--border-default)] flex flex-col bg-[var(--bg-surface)]">
-          <div className="px-3 py-3 border-b border-[var(--border-subtle)]">
+      <div className="flex flex-col md:flex-row h-full overflow-hidden">
+        {/* Left shelf nav (horizontal tab strip on mobile, vertical shelf on md+) */}
+        <aside className="md:w-48 md:shrink-0 border-b md:border-b-0 md:border-r border-[var(--border-default)] flex flex-col bg-[var(--bg-surface)]">
+          <div className="px-3 py-3 md:border-b border-[var(--border-subtle)]">
             <button
               onClick={() => router.push('/apps')}
               className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] mb-2"
@@ -59,19 +59,19 @@ export default function AppDetailPage({ params }: { params: { id: string } }) {
             <h2 className="text-xs font-semibold text-[var(--text-primary)] truncate">{app.name}</h2>
             <p className="text-[10px] font-mono text-[var(--text-tertiary)]">{app.short_name}</p>
           </div>
-          <nav className="px-2 py-2 space-y-0.5 flex-1">
+          <nav className="flex md:flex-col md:flex-1 gap-1 md:gap-0.5 px-2 pb-2 md:py-2 overflow-x-auto md:overflow-visible">
             {SECTIONS.map(({ key, label, icon: Icon }) => (
               <button
                 key={key}
                 onClick={() => setActiveSection(key)}
-                className={`relative w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs transition-colors ${
+                className={`relative shrink-0 md:w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs transition-colors ${
                   activeSection === key
                     ? 'bg-[var(--accent-subtle)] text-[var(--accent-deep)] font-semibold'
                     : 'text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]'
                 }`}
               >
                 {activeSection === key && (
-                  <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-[var(--accent)]" />
+                  <span className="hidden md:block absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-[var(--accent)]" />
                 )}
                 <Icon size={13} className={activeSection === key ? 'text-[var(--accent)]' : ''} />
                 {label}
@@ -81,7 +81,7 @@ export default function AppDetailPage({ params }: { params: { id: string } }) {
         </aside>
 
         {/* Main content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           {activeSection === 'overview' && (
             <div className="max-w-2xl space-y-6">
               <div>

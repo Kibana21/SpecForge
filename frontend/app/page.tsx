@@ -27,17 +27,17 @@ export default function DashboardPage() {
   return (
     <AppShell>
       {/* Hero topbar */}
-      <div className="shrink-0 relative overflow-hidden border-b border-[var(--border-default)] px-6 py-6">
+      <div className="shrink-0 relative overflow-hidden border-b border-[var(--border-default)] px-4 sm:px-6 py-5 sm:py-6">
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-[var(--accent-subtle)] to-transparent opacity-70" />
-        <div className="relative flex items-start justify-between gap-4">
-          <div>
+        <div className="relative flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--accent-deep)]">Workspace</p>
-            <h2 className="mt-1 text-2xl font-bold text-[var(--text-primary)] tracking-tight">Projects</h2>
+            <h2 className="mt-1 text-xl sm:text-2xl font-bold text-[var(--text-primary)] tracking-tight">Projects</h2>
             <p className="mt-1 text-sm text-[var(--text-secondary)]">
               Transform messy requirements into structured, versioned specs.
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 shrink-0">
             <Button onClick={() => setShowModal(true)}>
               <Plus size={15} strokeWidth={2.5} />
               New Project
@@ -48,9 +48,9 @@ export default function DashboardPage() {
       </div>
 
       {/* Project grid */}
-      <div className="flex-1 overflow-y-auto px-6 py-6">
+      <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 sm:py-6">
         {isLoading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
             {Array.from({ length: 6 }).map((_, i) => (
               <Skeleton key={i} className="h-36 rounded-xl" />
             ))}
@@ -74,7 +74,7 @@ export default function DashboardPage() {
             <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-4">
               {projects.length} {projects.length === 1 ? 'Project' : 'Projects'}
             </p>
-            <Stagger className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <Stagger className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
               {projects.map((p) => (
                 <StaggerItem key={p.id}>
                   <ProjectCard project={p} />

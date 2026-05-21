@@ -1,16 +1,16 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { animate, useReducedMotion } from 'framer-motion'
-import type { LucideIcon } from 'lucide-react'
 import { Card } from '@/app/components/ui/card'
 
-type Tone = 'accent' | 'info' | 'warning' | 'success'
+type Tone = 'default' | 'success' | 'info' | 'warning' | 'danger'
 
-const TONE: Record<Tone, string> = {
-  accent: 'bg-accent-subtle text-accent-deep',
-  info: 'bg-info-bg text-info',
-  warning: 'bg-warning-bg text-warning',
-  success: 'bg-success-bg text-success',
+const VALUE_TONE: Record<Tone, string> = {
+  default: 'text-[var(--text-primary)]',
+  success: 'text-success',
+  info: 'text-info',
+  warning: 'text-warning',
+  danger: 'text-danger',
 }
 
 function CountUp({ value }: { value: number }) {
@@ -29,24 +29,28 @@ function CountUp({ value }: { value: number }) {
 }
 
 interface Props {
-  icon: LucideIcon
   label: string
-  value: string | number
+  /** numeric values animate with a count-up; pass null for an untracked placeholder */
+  value: number | string | null
+  sublabel?: string
   tone?: Tone
 }
 
-export function StatTile({ icon: Icon, label, value, tone = 'accent' }: Props) {
+export function StatTile({ label, value, sublabel, tone = 'default' }: Props) {
+  const isPlaceholder = value === null || value === undefined
   return (
-    <Card className="p-4 flex items-center gap-3 shadow-card">
-      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${TONE[tone]}`}>
-        <Icon size={18} strokeWidth={2} />
-      </div>
-      <div className="min-w-0">
-        <p className="text-xl font-bold leading-none text-[var(--text-primary)]">
-          {typeof value === 'number' ? <CountUp value={value} /> : value}
-        </p>
-        <p className="mt-1 text-[11px] text-[var(--text-tertiary)] truncate">{label}</p>
-      </div>
+    <Card
+      className={`p-4 shadow-card ${tone === 'danger' && !isPlaceholder ? 'border-danger-border bg-danger-bg/40' : ''}`}
+    >
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">
+        {label}
+      </p>
+      <p className={`mt-1.5 text-2xl font-bold leading-none ${isPlaceholder ? 'text-[var(--text-tertiary)]' : VALUE_TONE[tone]}`}>
+        {isPlaceholder ? '—' : typeof value === 'number' ? <CountUp value={value} /> : value}
+      </p>
+      {sublabel && (
+        <p className="mt-1.5 text-[11px] text-[var(--text-tertiary)] truncate">{sublabel}</p>
+      )}
     </Card>
   )
 }
