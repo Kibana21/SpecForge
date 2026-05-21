@@ -1,8 +1,10 @@
 'use client'
 import { useRouter } from 'next/navigation'
+import { motion, useReducedMotion } from 'framer-motion'
 import { FileText, Clock } from 'lucide-react'
 import clsx from 'clsx'
 import type { ProjectListItem, SpecType } from '@/lib/types'
+import { Badge } from '@/app/components/ui/badge'
 
 const specBadge: Record<SpecType, string> = {
   functional:  'Functional',
@@ -22,22 +24,23 @@ function relativeTime(iso: string) {
 
 export function ProjectCard({ project }: { project: ProjectListItem }) {
   const router = useRouter()
+  const reduce = useReducedMotion()
 
   return (
-    <button
+    <motion.button
       onClick={() => router.push(`/projects/${project.id}`)}
+      whileHover={reduce ? undefined : { y: -3 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 28 }}
       className={clsx(
-        'w-full text-left rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)]',
-        'p-5 shadow-sm hover:shadow-md hover:border-[var(--accent-blue)]',
-        'transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[var(--accent-blue)] focus:ring-offset-2 focus:ring-offset-[var(--bg-base)]'
+        'w-full text-left card card-hover',
+        'p-5',
+        'focus:outline-none focus:ring-2 focus:ring-[var(--accent-ring)] focus:ring-offset-2 focus:ring-offset-[var(--bg-base)]'
       )}
     >
       <div className="flex items-start justify-between gap-3">
         <h3 className="font-semibold text-[var(--text-primary)] line-clamp-1 text-sm">{project.name}</h3>
         {project.latest_spec_type && (
-          <span className="shrink-0 text-[10px] font-semibold bg-indigo-100 text-indigo-700 border border-indigo-300 rounded px-1.5 py-0.5">
-            {specBadge[project.latest_spec_type]}
-          </span>
+          <Badge variant="info" className="shrink-0">{specBadge[project.latest_spec_type]}</Badge>
         )}
       </div>
 
@@ -55,6 +58,6 @@ export function ProjectCard({ project }: { project: ProjectListItem }) {
           {relativeTime(project.updated_at)}
         </span>
       </div>
-    </button>
+    </motion.button>
   )
 }

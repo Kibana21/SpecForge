@@ -21,7 +21,7 @@ interface VersionSnapshot {
 
 function GenIcon({ type }: { type: VersionSnapshot['generation_type'] }) {
   if (type === 'ai' || type === 'regeneration') {
-    return <Bot size={11} className="text-violet-500 shrink-0" />
+    return <Bot size={11} className="text-ai shrink-0" />
   }
   return <User size={11} className="text-[var(--text-tertiary)] shrink-0" />
 }
@@ -66,7 +66,7 @@ export function VersionHistoryPanel() {
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-default)]">
           <div className="flex items-center gap-2">
-            <History size={15} className="text-[var(--accent-blue)]" />
+            <History size={15} className="text-[var(--accent)]" />
             <span className="text-sm font-semibold text-[var(--text-primary)]">Version History</span>
           </div>
           <button
@@ -115,7 +115,7 @@ export function VersionHistoryPanel() {
                     {/* Dot */}
                     <div className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--bg-surface)] border border-[var(--border-default)]">
                       {v.is_immutable ? (
-                        <Lock size={9} className="text-amber-500" />
+                        <Lock size={9} className="text-warning" />
                       ) : (
                         <span className="text-[9px] font-bold text-[var(--text-tertiary)]">
                           {v.version_no}
@@ -132,13 +132,13 @@ export function VersionHistoryPanel() {
                             v{v.version_no} · {genLabel(v.generation_type)}
                           </span>
                           {v.is_immutable && (
-                            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">
+                            <span className="rounded-full bg-warning-bg px-1.5 py-0.5 text-[9px] font-semibold text-warning">
                               Locked
                             </span>
                           )}
                         </div>
                         {idx === 0 && (
-                          <span className="rounded-full bg-[var(--accent-blue)] px-1.5 py-0.5 text-[9px] font-semibold text-white">
+                          <span className="rounded-full bg-[var(--accent)] px-1.5 py-0.5 text-[9px] font-semibold text-white">
                             Current
                           </span>
                         )}

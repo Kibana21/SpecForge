@@ -266,7 +266,7 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
           {blockerGaps && blockerGaps.length > 0 ? (
             <ul className="space-y-2">
               {blockerGaps.slice(0, 5).map((g) => (
-                <li key={g.id} className="text-[11px] text-rose-600 leading-relaxed">{g.question}</li>
+                <li key={g.id} className="text-[11px] text-danger leading-relaxed">{g.question}</li>
               ))}
               {blockerGaps.length > 5 && (
                 <li className="text-[10px] text-[var(--text-tertiary)]">+{blockerGaps.length - 5} more</li>
@@ -285,7 +285,7 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
             <ul className="space-y-2.5">
               {criticalReviews.slice(0, 6).map((r) => (
                 <li key={r.id} className="text-[11px] leading-relaxed">
-                  <span className={r.severity === 'critical' ? 'text-rose-600' : 'text-amber-600'}>
+                  <span className={r.severity === 'critical' ? 'text-danger' : 'text-warning'}>
                     [{r.section}]
                   </span>
                   <span className="text-[var(--text-secondary)] ml-1">{r.comment}</span>

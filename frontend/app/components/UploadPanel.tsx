@@ -69,8 +69,8 @@ export function UploadPanel({ projectId, onUploaded }: UploadPanelProps) {
         className={clsx(
           'rounded-xl border-2 border-dashed px-4 py-6 text-center cursor-pointer transition-colors',
           isDragActive
-            ? 'border-[var(--accent-blue)] bg-indigo-50'
-            : 'border-[var(--border-default)] hover:border-[var(--accent-blue)] hover:bg-[var(--bg-elevated)]'
+            ? 'border-[var(--accent)] bg-accent-subtle'
+            : 'border-[var(--border-default)] hover:border-[var(--accent)] hover:bg-[var(--bg-elevated)]'
         )}
       >
         <input {...getInputProps()} />
@@ -95,11 +95,11 @@ export function UploadPanel({ projectId, onUploaded }: UploadPanelProps) {
                 </button>
               </div>
               {item.error ? (
-                <p className="mt-1 text-[10px] text-rose-600">{item.error}</p>
+                <p className="mt-1 text-[10px] text-danger">{item.error}</p>
               ) : (
                 <div className="mt-1.5 h-1 rounded-full bg-[var(--border-default)]">
                   <div
-                    className="h-full rounded-full bg-[var(--accent-blue)] transition-all"
+                    className="h-full rounded-full bg-[var(--accent)] transition-all"
                     style={{ width: `${item.progress}%` }}
                   />
                 </div>

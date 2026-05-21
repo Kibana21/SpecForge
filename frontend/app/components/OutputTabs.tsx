@@ -36,7 +36,7 @@ export function OutputTabs({ activeTab, onTabChange, loadingTabs, versionMap }: 
             className={clsx(
               'shrink-0 flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
               isActive
-                ? 'bg-[var(--accent-blue)] text-white'
+                ? 'bg-[var(--accent-subtle)] text-[var(--accent-deep)] font-semibold'
                 : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]'
             )}
           >

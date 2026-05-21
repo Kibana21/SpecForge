@@ -87,6 +87,21 @@ def _set_refresh_cookie(response: JSONResponse, raw: str) -> None:
     )
 
 
+def _refresh_failure(message: str) -> JSONResponse:
+    """401 response that also clears the refresh cookie.
+
+    A stale/invalid refresh cookie must be removed on failure; otherwise the
+    frontend route guard keeps trusting its presence and bounces between
+    /login and the dashboard (flicker / infinite-loading loop).
+    """
+    response = JSONResponse(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        content={"data": None, "error": {"code": "http_error", "message": message, "details": None}, "meta": {}},
+    )
+    response.delete_cookie("refresh_token", path="/")
+    return response
+
+
 # ── Login ─────────────────────────────────────────────────────────────────────
 
 class LoginRequest(BaseModel):
@@ -169,7 +184,7 @@ async def refresh(
     record = result.scalar_one_or_none()
 
     if not record:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid refresh token")
+        return _refresh_failure("Invalid refresh token")
 
     if record.revoked:
         # Reuse detected — revoke entire token family
@@ -185,15 +200,15 @@ async def refresh(
             ip=ip,
         )
         await db.commit()
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session invalidated")
+        return _refresh_failure("Session invalidated")
 
     if record.expires_at < _now():
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh token expired")
+        return _refresh_failure("Refresh token expired")
 
     result2 = await db.execute(select(User).where(User.id == record.user_id))
     user = result2.scalar_one_or_none()
     if user is None or user.status != "active":
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found or inactive")
+        return _refresh_failure("User not found or inactive")
 
     # Rotate: mark old revoked, issue new with same family
     record.revoked = True

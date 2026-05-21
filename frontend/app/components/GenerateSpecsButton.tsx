@@ -2,8 +2,10 @@
 import { useState } from 'react'
 import { Zap } from 'lucide-react'
 import clsx from 'clsx'
+import { toast } from 'sonner'
 import type { SpecType } from '@/lib/types'
 import { api } from '@/lib/api'
+import { Button } from '@/app/components/ui/button'
 
 const STEPS: SpecType[] = ['functional', 'technical', 'user_stories', 'review']
 
@@ -27,8 +29,9 @@ export function GenerateSpecsButton({ projectId, onGenerating, onComplete }: Gen
           await api.specs.generate(projectId, step)
         }
       }
-    } catch {
-      // Surface error via onComplete so UI can refresh
+      toast.success('Specs generated', { description: 'Functional, technical, user stories & review are ready.' })
+    } catch (err) {
+      toast.error('Generation failed', { description: err instanceof Error ? err.message : 'Please try again.' })
     } finally {
       onGenerating(null)
       setRunning(false)
@@ -37,17 +40,9 @@ export function GenerateSpecsButton({ projectId, onGenerating, onComplete }: Gen
   }
 
   return (
-    <button
-      onClick={run}
-      disabled={running}
-      className={clsx(
-        'flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors',
-        'bg-[var(--accent-blue)] hover:bg-[var(--accent-blue-hover)] text-white',
-        'disabled:opacity-60 disabled:cursor-not-allowed'
-      )}
-    >
+    <Button onClick={run} disabled={running}>
       <Zap size={14} className={clsx(running && 'animate-pulse')} />
       {running ? 'Generating…' : 'Generate Specs'}
-    </button>
+    </Button>
   )
 }

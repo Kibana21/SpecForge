@@ -64,13 +64,16 @@ export default function AppDetailPage({ params }: { params: { id: string } }) {
               <button
                 key={key}
                 onClick={() => setActiveSection(key)}
-                className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs transition-colors ${
+                className={`relative w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs transition-colors ${
                   activeSection === key
-                    ? 'bg-[var(--accent-blue)] text-white font-semibold'
+                    ? 'bg-[var(--accent-subtle)] text-[var(--accent-deep)] font-semibold'
                     : 'text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]'
                 }`}
               >
-                <Icon size={13} />
+                {activeSection === key && (
+                  <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-[var(--accent)]" />
+                )}
+                <Icon size={13} className={activeSection === key ? 'text-[var(--accent)]' : ''} />
                 {label}
               </button>
             ))}
@@ -155,7 +158,7 @@ export default function AppDetailPage({ params }: { params: { id: string } }) {
                       <div className="min-w-0">
                         <p className="text-xs text-[var(--text-primary)] truncate">{doc.name}</p>
                         {doc.index_error && (
-                          <p className="text-[10px] text-rose-600 mt-0.5 truncate">{doc.index_error}</p>
+                          <p className="text-[10px] text-danger mt-0.5 truncate">{doc.index_error}</p>
                         )}
                       </div>
                       <IndexStatusBadge status={doc.index_status} />

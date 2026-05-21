@@ -1,11 +1,22 @@
 'use client'
 
-import { FormEvent, useState } from 'react'
+import { FormEvent, Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Layers, Eye, EyeOff, LogIn } from 'lucide-react'
 import { useAuth } from '@/lib/auth/AuthContext'
+import { Button } from '@/app/components/ui/button'
+import { Input } from '@/app/components/ui/input'
+import { Label } from '@/app/components/ui/label'
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  )
+}
+
+function LoginForm() {
   const { login } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -36,7 +47,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="flex items-center gap-2.5 mb-8 justify-center">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent-blue)] shadow-sm">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)] shadow-sm">
             <Layers size={18} className="text-white" />
           </div>
           <span className="text-xl font-bold text-[var(--text-primary)] tracking-tight">
@@ -55,14 +66,11 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Email */}
-            <div>
-              <label
-                htmlFor="email"
-                className="block text-xs font-semibold text-[var(--text-secondary)] mb-1.5 uppercase tracking-wide"
-              >
+            <div className="space-y-1.5">
+              <Label htmlFor="email" className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
                 Email
-              </label>
-              <input
+              </Label>
+              <Input
                 id="email"
                 type="text"
                 autoComplete="email"
@@ -70,20 +78,16 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-base)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-tertiary)] outline-none transition focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[var(--accent-blue)]/20"
               />
             </div>
 
             {/* Password */}
-            <div>
-              <label
-                htmlFor="password"
-                className="block text-xs font-semibold text-[var(--text-secondary)] mb-1.5 uppercase tracking-wide"
-              >
+            <div className="space-y-1.5">
+              <Label htmlFor="password" className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
                 Password
-              </label>
+              </Label>
               <div className="relative">
-                <input
+                <Input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
                   autoComplete="current-password"
@@ -91,7 +95,7 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-base)] px-3.5 py-2.5 pr-10 text-sm text-[var(--text-primary)] placeholder-[var(--text-tertiary)] outline-none transition focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[var(--accent-blue)]/20"
+                  className="pr-10"
                 />
                 <button
                   type="button"
@@ -107,24 +111,20 @@ export default function LoginPage() {
 
             {/* Error */}
             {error && (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              <div className="rounded-lg border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger">
                 {error}
               </div>
             )}
 
             {/* Submit */}
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--accent-blue)] hover:bg-[var(--accent-blue-hover)] disabled:opacity-60 px-4 py-2.5 text-sm font-semibold text-white transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent-blue)] focus:ring-offset-2"
-            >
+            <Button type="submit" disabled={isLoading} className="w-full">
               {isLoading ? (
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
               ) : (
                 <LogIn size={15} />
               )}
               {isLoading ? 'Signing in…' : 'Sign in'}
-            </button>
+            </Button>
           </form>
         </div>
 

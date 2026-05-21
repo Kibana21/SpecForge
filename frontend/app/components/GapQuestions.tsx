@@ -4,20 +4,9 @@ import { CheckCircle, Circle, ChevronDown, ChevronRight } from 'lucide-react'
 import clsx from 'clsx'
 import type { GapQuestion, GapSeverity } from '@/lib/types'
 import { api } from '@/lib/api'
+import { gapSeverity } from '@/lib/ui/status'
 
 const SEVERITY_ORDER: GapSeverity[] = ['blocker', 'major', 'minor']
-
-const severityStyle: Record<GapSeverity, string> = {
-  blocker: 'text-rose-700   border-rose-400',
-  major:   'text-amber-700  border-amber-400',
-  minor:   'text-slate-500  border-[var(--border-default)]',
-}
-
-const severityLabel: Record<GapSeverity, string> = {
-  blocker: 'Blocker',
-  major:   'Major',
-  minor:   'Minor',
-}
 
 function groupBy<T>(items: T[], key: (item: T) => string): Record<string, T[]> {
   return items.reduce<Record<string, T[]>>((acc, item) => {
@@ -68,7 +57,7 @@ function GapRow({ gap, projectId, onUpdate }: GapRowProps) {
           aria-label={gap.resolved ? 'Mark unresolved' : 'Mark resolved'}
         >
           {gap.resolved
-            ? <CheckCircle size={15} className="text-emerald-600" />
+            ? <CheckCircle size={15} className="text-success" />
             : <Circle      size={15} className="text-[var(--text-tertiary)]" />}
         </button>
         <div className="flex-1 min-w-0">
@@ -82,7 +71,7 @@ function GapRow({ gap, projectId, onUpdate }: GapRowProps) {
               onBlur={saveText}
               rows={2}
               placeholder="Add resolution answer…"
-              className="w-full resize-none rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] px-2.5 py-1.5 text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent-blue)] transition-colors"
+              className="w-full resize-none rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] px-2.5 py-1.5 text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] transition-colors"
             />
           </div>
         </div>
@@ -114,8 +103,8 @@ export function GapQuestions({ projectId, gaps, onGapUpdate }: GapQuestionsProps
               className="flex w-full items-center justify-between px-4 py-2.5 hover:bg-[var(--bg-elevated)] transition-colors"
             >
               <div className="flex items-center gap-2">
-                <span className={clsx('text-[11px] font-bold uppercase tracking-wider border-l-2 pl-2', severityStyle[severity])}>
-                  {severityLabel[severity]}
+                <span className={clsx('text-[11px] font-bold uppercase tracking-wider border-l-2 pl-2', gapSeverity[severity].cls)}>
+                  {gapSeverity[severity].label}
                 </span>
                 <span className="text-[10px] text-[var(--text-tertiary)]">{resolved}/{items.length}</span>
               </div>

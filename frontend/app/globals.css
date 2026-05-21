@@ -5,17 +5,49 @@
 :root {
   --font-inter: "Inter", system-ui, sans-serif;
 
-  /* Brilliant light palette */
-  --bg-base:        #f0f2f7;
-  --bg-surface:     #ffffff;
-  --bg-elevated:    #e8ecf5;
-  --border-default: #d0d5e2;
-  --border-subtle:  #e4e8f0;
-  --text-primary:   #0d1117;
-  --text-secondary: #3d4966;
-  --text-tertiary:  #8893b0;
-  --accent-blue:       #4f46e5;
-  --accent-blue-hover: #4338ca;
+  /* Neutrals — cool near-white */
+  --bg-base:        #F7F9FB;   /* page canvas */
+  --bg-surface:     #FFFFFF;   /* cards / panels */
+  --bg-elevated:    #F1F4F8;   /* hover fills / elevated insets */
+  --bg-sunken:      #EDF1F6;   /* track / inset backgrounds */
+
+  --border-subtle:  #EDF1F6;
+  --border-default: #E3E8EF;
+  --border-strong:  #D5DBE5;
+
+  --text-primary:   #0D1117;
+  --text-secondary: #5A6577;
+  --text-tertiary:  #97A1B2;
+
+  /* Accent — emerald (theme color) */
+  --accent:         #10B981;
+  --accent-hover:   #059669;
+  --accent-deep:    #047857;
+  --accent-subtle:  #ECFDF5;
+  --accent-ring:    rgba(16, 185, 129, 0.30);
+
+  /* Semantic status (compliance-bearing — do NOT change on re-theme) */
+  --status-success: #059669; --status-success-bg: #ECFDF5; --status-success-border: #A7F3D0;
+  --status-warning: #B45309; --status-warning-bg: #FFFBEB; --status-warning-border: #FDE68A;
+  --status-danger:  #BE123C; --status-danger-bg:  #FFF1F2; --status-danger-border:  #FECDD3;
+  --status-info:    #0369A1; --status-info-bg:    #F0F9FF; --status-info-border:    #BAE6FD;
+
+  /* Provenance / lifecycle (PRD BR-M0-005 — visually distinct) */
+  --ai-generated:   #7C3AED; --ai-generated-bg:  #F5F3FF;   /* violet  = AI output */
+  --human-edited:   #0F766E; --human-edited-bg:  #F0FDFA;   /* teal    = human edit */
+  --app-brain:      #0369A1; --app-brain-bg:     #F0F9FF;   /* blue    = app-brain grounding */
+  --approved:       #059669; --approved-bg:      #ECFDF5;
+  --stale:          #B45309; --stale-bg:         #FFFBEB;
+
+  /* Elevation */
+  --shadow-sm:   0 1px 2px rgba(13, 17, 23, 0.04);
+  --shadow-card: 0 1px 3px rgba(13, 17, 23, 0.06), 0 1px 2px rgba(13, 17, 23, 0.04);
+  --shadow-md:   0 6px 16px rgba(13, 17, 23, 0.08);
+  --shadow-lg:   0 16px 40px rgba(13, 17, 23, 0.12);
+
+  /* Radius */
+  --radius-sm: 6px; --radius-md: 8px; --radius-lg: 12px; --radius-xl: 16px;
+  --radius: 0.625rem; /* shadcn/ui base radius (≈10px) */
 }
 
 * {
@@ -27,19 +59,29 @@ body {
   background-color: var(--bg-base);
   color: var(--text-primary);
   font-family: var(--font-inter);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+@layer components {
+  .card {
+    @apply rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] shadow-[var(--shadow-card)];
+  }
+  .card-hover {
+    @apply transition-all hover:shadow-[var(--shadow-md)] hover:border-[var(--border-strong)];
+  }
+}
+
 /* Thin scrollbar for panels */
 ::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border-default);
-  border-radius: 2px;
+  background: var(--border-strong);
+  border-radius: 3px;
 }

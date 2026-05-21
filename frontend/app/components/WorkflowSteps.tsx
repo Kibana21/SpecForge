@@ -29,8 +29,8 @@ export function WorkflowSteps({ current }: { current: Step }) {
               <div
                 className={clsx(
                   'flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[11px] transition-colors',
-                  done   && 'border-emerald-300 bg-emerald-100 text-emerald-700',
-                  active && 'border-indigo-400  bg-indigo-100  text-indigo-700',
+                  done   && 'border-success-border bg-success-bg text-success',
+                  active && 'border-accent bg-accent-subtle text-accent-deep',
                   !done && !active && 'border-[var(--border-default)] bg-[var(--bg-elevated)] text-[var(--text-tertiary)]'
                 )}
               >
@@ -39,8 +39,8 @@ export function WorkflowSteps({ current }: { current: Step }) {
               <span
                 className={clsx(
                   'text-xs',
-                  done   && 'text-emerald-700',
-                  active && 'text-indigo-700 font-semibold',
+                  done   && 'text-success',
+                  active && 'text-accent-deep font-semibold',
                   !done && !active && 'text-[var(--text-tertiary)]'
                 )}
               >

@@ -3,6 +3,8 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus } from 'lucide-react'
 import { useProjects } from '@/lib/hooks/useProjects'
+import { Button } from '@/app/components/ui/button'
+import { Stagger, StaggerItem } from '@/app/components/motion/motion'
 import { ProjectCard } from '@/app/components/ProjectCard'
 import { NewProjectModal } from '@/app/components/NewProjectModal'
 import { EmptyState } from '@/app/components/EmptyState'
@@ -24,23 +26,22 @@ export default function DashboardPage() {
 
   return (
     <AppShell>
-      {/* Topbar */}
-      <div className="shrink-0 border-b border-[var(--border-default)] bg-[var(--bg-surface)] px-6 py-4">
-        <div className="flex items-center justify-between">
+      {/* Hero topbar */}
+      <div className="shrink-0 relative overflow-hidden border-b border-[var(--border-default)] px-6 py-6">
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-[var(--accent-subtle)] to-transparent opacity-70" />
+        <div className="relative flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-base font-bold text-[var(--text-primary)] tracking-tight">Projects</h2>
-            <p className="text-xs text-[var(--text-secondary)]">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--accent-deep)]">Workspace</p>
+            <h2 className="mt-1 text-2xl font-bold text-[var(--text-primary)] tracking-tight">Projects</h2>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">
               Transform messy requirements into structured, versioned specs.
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowModal(true)}
-              className="flex items-center gap-2 rounded-lg bg-[var(--accent-blue)] hover:bg-[var(--accent-blue-hover)] px-4 py-2 text-sm font-semibold text-white transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent-blue)] focus:ring-offset-2"
-            >
+            <Button onClick={() => setShowModal(true)}>
               <Plus size={15} strokeWidth={2.5} />
               New Project
-            </button>
+            </Button>
             <UserMenu />
           </div>
         </div>
@@ -57,17 +58,14 @@ export default function DashboardPage() {
         ) : projects.length === 0 ? (
           <div className="rounded-2xl border-2 border-dashed border-[var(--border-default)] bg-[var(--bg-surface)]">
             <EmptyState
-              icon={<Layers size={40} strokeWidth={1.2} className="text-[var(--accent-blue)]" />}
+              icon={<Layers size={40} strokeWidth={1.2} className="text-[var(--accent)]" />}
               title="No projects yet"
               description="Create your first project to start transforming requirements into structured specs."
               action={
-                <button
-                  onClick={() => setShowModal(true)}
-                  className="flex items-center gap-2 rounded-lg bg-[var(--accent-blue)] hover:bg-[var(--accent-blue-hover)] px-4 py-2 text-sm font-semibold text-white transition-colors"
-                >
+                <Button onClick={() => setShowModal(true)}>
                   <Plus size={14} />
                   New Project
-                </button>
+                </Button>
               }
             />
           </div>
@@ -76,11 +74,13 @@ export default function DashboardPage() {
             <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-4">
               {projects.length} {projects.length === 1 ? 'Project' : 'Projects'}
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <Stagger className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {projects.map((p) => (
-                <ProjectCard key={p.id} project={p} />
+                <StaggerItem key={p.id}>
+                  <ProjectCard project={p} />
+                </StaggerItem>
               ))}
-            </div>
+            </Stagger>
           </>
         )}
       </div>

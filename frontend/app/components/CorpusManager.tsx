@@ -1,6 +1,7 @@
 'use client'
 import { useRef, useState } from 'react'
 import { Upload, RefreshCw } from 'lucide-react'
+import { toast } from 'sonner'
 import { IndexStatusBadge } from './IndexStatusBadge'
 import { api } from '@/lib/api'
 import type { AppCorpusDoc } from '@/lib/types'
@@ -25,9 +26,12 @@ export function CorpusManager({ appId, docs, canWrite, rebuildStatus, onRefresh 
     setError(null)
     try {
       await api.apps.uploadCorpusDoc(appId, files[0])
+      toast.success('Document uploaded', { description: 'Indexing has started.' })
       onRefresh()
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Upload failed')
+      const msg = err instanceof Error ? err.message : 'Upload failed'
+      setError(msg)
+      toast.error('Upload failed', { description: msg })
     } finally {
       setUploading(false)
     }
@@ -38,9 +42,12 @@ export function CorpusManager({ appId, docs, canWrite, rebuildStatus, onRefresh 
     setError(null)
     try {
       await api.apps.reindex(appId)
+      toast.success('Re-index started', { description: 'The app brain is rebuilding.' })
       onRefresh()
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Reindex failed')
+      const msg = err instanceof Error ? err.message : 'Reindex failed'
+      setError(msg)
+      toast.error('Re-index failed', { description: msg })
     } finally {
       setTimeout(() => setReindexing(false), 2000)
     }
@@ -49,7 +56,7 @@ export function CorpusManager({ appId, docs, canWrite, rebuildStatus, onRefresh 
   return (
     <div className="space-y-4">
       {error && (
-        <p className="text-xs text-rose-600 bg-rose-50 rounded px-3 py-2">{error}</p>
+        <p className="text-xs text-danger bg-danger-bg rounded px-3 py-2">{error}</p>
       )}
 
       {/* Doc list */}
@@ -64,7 +71,7 @@ export function CorpusManager({ appId, docs, canWrite, rebuildStatus, onRefresh 
                     <span className="text-[10px] text-[var(--text-tertiary)]">{doc.page_count}p</span>
                   )}
                   {doc.is_primary && (
-                    <span className="text-[10px] font-medium text-[var(--accent-blue)]">Primary</span>
+                    <span className="text-[10px] font-medium text-[var(--accent)]">Primary</span>
                   )}
                 </div>
               </div>

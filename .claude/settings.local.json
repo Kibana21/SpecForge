@@ -38,7 +38,8 @@
       "Bash(rm /Users/kartik/.claude/skills/langchain-gemini/references/api_reference.md)",
       "Bash(rm /Users/kartik/.claude/skills/langchain-gemini/assets/example_asset.txt)",
       "Bash(rmdir /Users/kartik/.claude/skills/langchain-gemini/scripts)",
-      "Bash(rmdir /Users/kartik/.claude/skills/langchain-gemini/assets)"
+      "Bash(rmdir /Users/kartik/.claude/skills/langchain-gemini/assets)",
+      "Bash(grep -oE \"\\(text-|bg-|border-\\)[a-z\\\\-0-9\\\\[\\\\]\\(\\\\$\\)#f0-9a-z,.:]*\")"
     ]
   }
 }

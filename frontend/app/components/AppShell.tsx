@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { motion } from 'framer-motion'
 import {
   Layers,
   LayoutDashboard,
@@ -52,7 +53,7 @@ export function AppShell({ children }: Props) {
       <aside className="w-56 shrink-0 flex flex-col border-r border-[var(--border-default)] bg-[var(--bg-surface)] overflow-y-auto">
         {/* Brand */}
         <div className="flex items-center gap-2.5 px-4 py-4 border-b border-[var(--border-subtle)]">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--accent-blue)] shrink-0">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--accent)] shrink-0">
             <Layers size={14} className="text-white" />
           </div>
           <span className="text-sm font-bold text-[var(--text-primary)] tracking-tight">
@@ -68,13 +69,20 @@ export function AppShell({ children }: Props) {
               <Link
                 key={href}
                 href={href}
-                className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${
+                className={`relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${
                   active
-                    ? 'bg-[var(--accent-blue)] text-white font-semibold'
+                    ? 'bg-[var(--accent-subtle)] text-[var(--accent-deep)] font-semibold'
                     : 'text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]'
                 }`}
               >
-                <Icon size={14} strokeWidth={active ? 2.5 : 2} />
+                {active && (
+                  <motion.span
+                    layoutId="sidebar-active"
+                    transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                    className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-[var(--accent)]"
+                  />
+                )}
+                <Icon size={14} strokeWidth={active ? 2.5 : 2} className={active ? 'text-[var(--accent)]' : ''} />
                 {label}
               </Link>
             )
@@ -93,7 +101,7 @@ export function AppShell({ children }: Props) {
                 className="flex items-center gap-2 px-2 py-1.5 rounded-md"
               >
                 {stage.done ? (
-                  <CheckCircle2 size={11} className="shrink-0 text-emerald-500" />
+                  <CheckCircle2 size={11} className="shrink-0 text-success" />
                 ) : (
                   <Circle size={11} className="shrink-0 text-[var(--border-default)]" />
                 )}
@@ -123,7 +131,7 @@ export function AppShell({ children }: Props) {
         {user && (
           <div className="mt-auto px-3 py-3 border-t border-[var(--border-subtle)]">
             <div className="flex items-center gap-2.5">
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--accent-blue)] shrink-0">
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--accent)] shrink-0">
                 <span className="text-[10px] font-bold text-white">
                   {user.display_name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)}
                 </span>

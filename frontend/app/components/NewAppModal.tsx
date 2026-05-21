@@ -1,8 +1,26 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { X } from 'lucide-react'
+import { toast } from 'sonner'
 import { api } from '@/lib/api'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/app/components/ui/dialog'
+import { Button } from '@/app/components/ui/button'
+import { Input } from '@/app/components/ui/input'
+import { Textarea } from '@/app/components/ui/textarea'
+import { Label } from '@/app/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/app/components/ui/select'
 
 interface Props {
   onClose: () => void
@@ -42,117 +60,98 @@ export function NewAppModal({ onClose, onCreated }: Props) {
         domain_area: domainArea || undefined,
         version: version || undefined,
       })
+      toast.success('Application created', { description: name })
       onCreated()
       router.push(`/apps/${app.id}`)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to create app')
+      const msg = err instanceof Error ? err.message : 'Failed to create app'
+      setError(msg)
+      toast.error('Could not create app', { description: msg })
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-full max-w-md rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] shadow-xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border-subtle)]">
-          <h2 className="text-sm font-semibold text-[var(--text-primary)]">New Application</h2>
-          <button onClick={onClose} className="p-1 rounded hover:bg-[var(--bg-elevated)]">
-            <X size={16} className="text-[var(--text-tertiary)]" />
-          </button>
-        </div>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>New Application</DialogTitle>
+        </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <p className="text-xs text-rose-600 bg-rose-50 rounded px-3 py-2">{error}</p>
+            <p className="text-xs text-danger bg-danger-bg rounded px-3 py-2">{error}</p>
           )}
 
-          <div>
-            <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Name</label>
-            <input
+          <div className="space-y-1.5">
+            <Label htmlFor="app-name">Name</Label>
+            <Input
+              id="app-name"
               required
               value={name}
               onChange={(e) => {
                 setName(e.target.value)
                 if (!shortName) setShortName(toSlug(e.target.value))
               }}
-              className="w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-base)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-blue)]"
               placeholder="PayHub"
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Short name</label>
-            <input
+          <div className="space-y-1.5">
+            <Label htmlFor="app-short">Short name</Label>
+            <Input
+              id="app-short"
               required
               value={shortName}
               onChange={(e) => setShortName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
               onBlur={(e) => setShortName(toSlug(e.target.value))}
-              className="w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-base)] px-3 py-2 text-sm font-mono text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-blue)]"
+              className="font-mono"
               placeholder="payhub"
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Description</label>
-            <textarea
+          <div className="space-y-1.5">
+            <Label htmlFor="app-desc">Description</Label>
+            <Textarea
+              id="app-desc"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
-              className="w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-base)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-blue)] resize-none"
+              className="resize-none"
             />
           </div>
 
           <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Tier</label>
-              <select
-                value={tier}
-                onChange={(e) => setTier(Number(e.target.value) as 1 | 2 | 3)}
-                className="w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-base)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none"
-              >
-                <option value={1}>Tier 1</option>
-                <option value={2}>Tier 2</option>
-                <option value={3}>Tier 3</option>
-              </select>
+            <div className="space-y-1.5">
+              <Label>Tier</Label>
+              <Select value={String(tier)} onValueChange={(v) => setTier(Number(v) as 1 | 2 | 3)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">Tier 1</SelectItem>
+                  <SelectItem value="2">Tier 2</SelectItem>
+                  <SelectItem value="3">Tier 3</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Domain</label>
-              <input
-                value={domainArea}
-                onChange={(e) => setDomainArea(e.target.value)}
-                className="w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-base)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none"
-                placeholder="payments"
-              />
+            <div className="space-y-1.5">
+              <Label htmlFor="app-domain">Domain</Label>
+              <Input id="app-domain" value={domainArea} onChange={(e) => setDomainArea(e.target.value)} placeholder="payments" />
             </div>
-            <div>
-              <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Version</label>
-              <input
-                value={version}
-                onChange={(e) => setVersion(e.target.value)}
-                className="w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-base)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none"
-                placeholder="1.0.0"
-              />
+            <div className="space-y-1.5">
+              <Label htmlFor="app-version">Version</Label>
+              <Input id="app-version" value={version} onChange={(e) => setVersion(e.target.value)} placeholder="1.0.0" />
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg border border-[var(--border-default)] px-4 py-2 text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="rounded-lg bg-[var(--accent-blue)] px-4 py-2 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
-            >
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" disabled={loading}>
               {loading ? 'Creating…' : 'Create App'}
-            </button>
-          </div>
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

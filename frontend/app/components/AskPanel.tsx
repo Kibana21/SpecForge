@@ -1,6 +1,7 @@
 'use client'
 import { useState, useRef } from 'react'
 import { Send } from 'lucide-react'
+import { motion } from 'framer-motion'
 import { CitationChip } from './CitationChip'
 import { tokenStore } from '@/lib/auth/tokenStore'
 import type { CitationItem } from '@/lib/types'
@@ -90,12 +91,12 @@ export function AskPanel({ appId }: Props) {
           disabled={isStreaming}
           placeholder="Ask a question about this application…"
           rows={3}
-          className="flex-1 rounded-lg border border-[var(--border-default)] bg-[var(--bg-base)] px-3 py-2 text-sm text-[var(--text-primary)] resize-none focus:outline-none focus:ring-2 focus:ring-[var(--accent-blue)] disabled:opacity-50"
+          className="flex-1 rounded-lg border border-[var(--border-default)] bg-[var(--bg-base)] px-3 py-2 text-sm text-[var(--text-primary)] resize-none focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:opacity-50"
         />
         <button
           onClick={handleAsk}
           disabled={!question.trim() || isStreaming}
-          className="rounded-lg bg-[var(--accent-blue)] px-3 py-2 text-white hover:opacity-90 disabled:opacity-50 self-end"
+          className="rounded-lg bg-[var(--accent)] px-3 py-2 text-white hover:opacity-90 disabled:opacity-50 self-end"
         >
           <Send size={14} className={isStreaming ? 'animate-pulse' : ''} />
         </button>
@@ -103,7 +104,7 @@ export function AskPanel({ appId }: Props) {
 
       {/* Error */}
       {error && (
-        <p className="text-xs text-rose-600 bg-rose-50 rounded px-3 py-2">{error}</p>
+        <p className="text-xs text-danger bg-danger-bg rounded px-3 py-2">{error}</p>
       )}
 
       {/* Streaming answer */}
@@ -111,14 +112,21 @@ export function AskPanel({ appId }: Props) {
         <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
           <p className="text-sm text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap">
             {streamedText}
-            {isStreaming && <span className="ml-0.5 inline-block w-1.5 h-4 bg-[var(--accent-blue)] animate-pulse" />}
+            {isStreaming && <span className="ml-0.5 inline-block w-1.5 h-4 bg-[var(--accent)] animate-pulse" />}
           </p>
 
           {/* Citation chips */}
           {citations.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-[var(--border-subtle)]">
               {citations.map((c, i) => (
-                <CitationChip key={c.id} citation={c} index={i} />
+                <motion.div
+                  key={c.id}
+                  initial={{ opacity: 0, scale: 0.85 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: i * 0.05, type: 'spring', stiffness: 500, damping: 30 }}
+                >
+                  <CitationChip citation={c} index={i} />
+                </motion.div>
               ))}
             </div>
           )}

@@ -3,6 +3,8 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth/AuthContext";
 import { ProjectContextProvider } from "@/lib/context/ProjectContext";
+import { TooltipProvider } from "@/app/components/ui/tooltip";
+import { Toaster } from "@/app/components/ui/sonner";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -25,7 +27,10 @@ export default function RootLayout({
       <body className="min-h-screen bg-[var(--bg-base)] text-[var(--text-primary)]">
         <AuthProvider>
           <ProjectContextProvider>
-            {children}
+            <TooltipProvider delayDuration={200}>
+              {children}
+            </TooltipProvider>
+            <Toaster richColors closeButton position="bottom-right" />
           </ProjectContextProvider>
         </AuthProvider>
       </body>

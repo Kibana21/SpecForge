@@ -4,14 +4,9 @@ import { X, ChevronDown, ChevronRight } from 'lucide-react'
 import clsx from 'clsx'
 import type { ReviewComment, ReviewSeverity } from '@/lib/types'
 import { api } from '@/lib/api'
+import { reviewSeverity as severityStyle } from '@/lib/ui/status'
 
 const SEVERITY_ORDER: ReviewSeverity[] = ['critical', 'warning', 'suggestion']
-
-const severityStyle: Record<ReviewSeverity, { label: string; cls: string }> = {
-  critical:   { label: 'Critical',   cls: 'text-rose-700   border-rose-400'   },
-  warning:    { label: 'Warning',    cls: 'text-amber-700  border-amber-400'  },
-  suggestion: { label: 'Suggestion', cls: 'text-indigo-700 border-indigo-400' },
-}
 
 function groupBy<T>(items: T[], key: (item: T) => string): Record<string, T[]> {
   return items.reduce<Record<string, T[]>>((acc, item) => {
@@ -82,7 +77,7 @@ export function ReviewComments({ projectId, comments, onCommentUpdate }: ReviewC
                     </div>
                     <button
                       onClick={() => dismiss(comment)}
-                      className="shrink-0 mt-0.5 p-1 rounded text-[var(--text-tertiary)] hover:text-rose-600 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100"
+                      className="shrink-0 mt-0.5 p-1 rounded text-[var(--text-tertiary)] hover:text-danger hover:bg-danger-bg transition-colors opacity-0 group-hover:opacity-100"
                       aria-label="Dismiss comment"
                     >
                       <X size={12} />

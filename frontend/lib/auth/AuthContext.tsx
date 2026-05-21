@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react'
 import { tokenStore } from './tokenStore'
+import { refreshAccessToken } from '../api'
 
 export type User = {
   id: string
@@ -41,22 +42,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  // On mount: attempt to restore session via refresh cookie
+  // On mount: attempt to restore session via the shared, deduplicated refresh
+  // (sharing api.ts's in-flight promise prevents a concurrent second refresh
+  // from presenting a now-rotated cookie, which the backend treats as token
+  // reuse and invalidates the whole session — causing a redirect/loading loop).
   useEffect(() => {
     ;(async () => {
       try {
-        const res = await fetch('/api/auth/refresh', {
-          method: 'POST',
-          credentials: 'include',
-        })
-        if (res.ok) {
-          const json = await res.json()
-          const token: string = json.data?.access_token
-          if (token) {
-            tokenStore.set(token)
-            const me = await fetchMe(token)
-            setUser(me)
-          }
+        const token = await refreshAccessToken()
+        if (token) {
+          const me = await fetchMe(token)
+          setUser(me)
         }
       } catch {
         // no valid session

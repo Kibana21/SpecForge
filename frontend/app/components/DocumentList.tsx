@@ -11,9 +11,9 @@ function formatBytes(bytes: number) {
 }
 
 const statusIcon: Record<ParseStatus, React.ReactNode> = {
-  pending: <Clock size={12} className="text-amber-400" />,
+  pending: <Clock size={12} className="text-warning" />,
   done: null,
-  error: <AlertCircle size={12} className="text-rose-400" />,
+  error: <AlertCircle size={12} className="text-danger" />,
 }
 
 interface DocumentListProps {
@@ -49,7 +49,7 @@ export function DocumentList({ projectId, documents, onDeleted }: DocumentListPr
             <button
               onClick={() => handleDelete(doc.id)}
               className={clsx(
-                'rounded p-1 text-[var(--text-tertiary)] hover:text-rose-400 hover:bg-rose-900/20 transition-colors',
+                'rounded p-1 text-[var(--text-tertiary)] hover:text-danger hover:bg-danger-bg transition-colors',
                 'opacity-0 group-hover:opacity-100'
               )}
               aria-label={`Delete ${doc.filename}`}

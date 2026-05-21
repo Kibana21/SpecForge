@@ -3,6 +3,8 @@ import { useState } from 'react'
 import { Zap, Lock, AlertTriangle, Plug, AlertCircle } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { AppFact, FactKind } from '@/lib/types'
+import { factKindColor as KIND_COLORS, factConfidenceVariant } from '@/lib/ui/status'
+import { Badge } from '@/app/components/ui/badge'
 
 const KIND_ICONS: Record<FactKind, LucideIcon> = {
   capability: Zap,
@@ -10,20 +12,6 @@ const KIND_ICONS: Record<FactKind, LucideIcon> = {
   limitation: AlertTriangle,
   integration: Plug,
   gotcha: AlertCircle,
-}
-
-const KIND_COLORS: Record<FactKind, string> = {
-  capability: 'text-emerald-600',
-  constraint: 'text-amber-600',
-  limitation: 'text-rose-600',
-  integration: 'text-[var(--accent-blue)]',
-  gotcha: 'text-purple-600',
-}
-
-const CONFIDENCE_STYLES: Record<string, string> = {
-  high: 'bg-emerald-50 text-emerald-700',
-  medium: 'bg-amber-50 text-amber-700',
-  low: 'bg-[var(--bg-elevated)] text-[var(--text-tertiary)]',
 }
 
 const KIND_OPTIONS: Array<FactKind | 'all'> = ['all', 'capability', 'constraint', 'limitation', 'integration', 'gotcha']
@@ -48,7 +36,7 @@ export function FactList({ facts }: Props) {
             onClick={() => setKindFilter(k)}
             className={`px-2.5 py-1 rounded-full text-[10px] font-medium capitalize transition-colors ${
               kindFilter === k
-                ? 'bg-[var(--accent-blue)] text-white'
+                ? 'bg-[var(--accent)] text-white'
                 : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:bg-[var(--border-default)]'
             }`}
           >
@@ -75,9 +63,9 @@ export function FactList({ facts }: Props) {
                     <p className="text-[10px] text-[var(--text-tertiary)] mt-1">{fact.source_ref}</p>
                   )}
                 </div>
-                <span className={`shrink-0 self-start rounded px-1.5 py-0.5 text-[10px] font-medium ${CONFIDENCE_STYLES[fact.confidence]}`}>
+                <Badge variant={factConfidenceVariant[fact.confidence]} className="shrink-0 self-start capitalize">
                   {fact.confidence}
-                </span>
+                </Badge>
               </div>
             )
           })}
