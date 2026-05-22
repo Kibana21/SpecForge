@@ -306,10 +306,14 @@ export interface AppListItem {
   is_onboarded: boolean
   version: string | null
   owner_id: string | null
+  owner_team: string | null
+  environments: string[]
   rebuild_status: string | null
   corpus_doc_count: number
   indexed_doc_count: number
   fact_count: number
+  live_project_count: number
+  open_qs: number
   created_at: string
   updated_at: string
 }
@@ -327,6 +331,8 @@ export interface AppCreate {
   tier: 1 | 2 | 3
   domain_area?: string
   version?: string
+  owner_team?: string
+  environments?: string[]
 }
 
 export interface AppsFilter {

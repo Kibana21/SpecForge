@@ -44,8 +44,14 @@ export function NewAppModal({ onClose, onCreated }: Props) {
   const [tier, setTier] = useState<1 | 2 | 3>(2)
   const [domainArea, setDomainArea] = useState('')
   const [version, setVersion] = useState('')
+  const [ownerTeam, setOwnerTeam] = useState('')
+  const [environments, setEnvironments] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  function toggleEnv(env: string) {
+    setEnvironments((prev) => (prev.includes(env) ? prev.filter((e) => e !== env) : [...prev, env]))
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -59,6 +65,8 @@ export function NewAppModal({ onClose, onCreated }: Props) {
         tier,
         domain_area: domainArea || undefined,
         version: version || undefined,
+        owner_team: ownerTeam || undefined,
+        environments,
       })
       toast.success('Application created', { description: name })
       onCreated()
@@ -141,6 +149,31 @@ export function NewAppModal({ onClose, onCreated }: Props) {
             <div className="space-y-1.5">
               <Label htmlFor="app-version">Version</Label>
               <Input id="app-version" value={version} onChange={(e) => setVersion(e.target.value)} placeholder="1.0.0" />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="app-owner-team">Owner team</Label>
+            <Input id="app-owner-team" value={ownerTeam} onChange={(e) => setOwnerTeam(e.target.value)} placeholder="Payments Eng" />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Environments</Label>
+            <div className="flex flex-wrap gap-2">
+              {['Prod', 'UAT', 'DR', 'Staging', 'Dev'].map((env) => (
+                <button
+                  key={env}
+                  type="button"
+                  onClick={() => toggleEnv(env)}
+                  className={`rounded-lg border px-2.5 py-1 text-xs transition-colors ${
+                    environments.includes(env)
+                      ? 'border-[var(--accent)] bg-[var(--accent-subtle)] text-[var(--accent-deep)] font-medium'
+                      : 'border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]'
+                  }`}
+                >
+                  {env}
+                </button>
+              ))}
             </div>
           </div>
 

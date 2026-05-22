@@ -5,32 +5,37 @@
 :root {
   --font-inter: "Inter", system-ui, sans-serif;
 
-  /* Neutrals — cool near-white */
-  --bg-base:        #F7F9FB;   /* page canvas */
+  /* Neutrals — crisp & bright (cool grey sidebar, near-white canvas, white cards) */
+  --bg-sidebar:     #EEF0F2;   /* left nav — cool light grey */
+  --bg-base:        #FBFBFC;   /* page canvas (middle container) */
   --bg-surface:     #FFFFFF;   /* cards / panels */
-  --bg-elevated:    #F1F4F8;   /* hover fills / elevated insets */
-  --bg-sunken:      #EDF1F6;   /* track / inset backgrounds */
+  --bg-elevated:    #F1F3F5;   /* hover fills / elevated insets */
+  --bg-sunken:      #E9ECEF;   /* track / inset backgrounds */
 
-  --border-subtle:  #EDF1F6;
-  --border-default: #E3E8EF;
-  --border-strong:  #D5DBE5;
+  --border-subtle:  #EEF0F2;
+  --border-default: #E2E6EA;
+  --border-strong:  #D2D8DE;
 
-  --text-primary:   #0D1117;
-  --text-secondary: #5A6577;
-  --text-tertiary:  #97A1B2;
+  --text-primary:   #14171A;   /* crisp near-black */
+  --text-secondary: #5A636D;
+  --text-tertiary:  #98A1AB;
 
-  /* Accent — emerald (theme color) */
-  --accent:         #10B981;
-  --accent-hover:   #059669;
-  --accent-deep:    #047857;
-  --accent-subtle:  #ECFDF5;
-  --accent-ring:    rgba(16, 185, 129, 0.30);
+  /* Accent — rich forest / pine green (theme color) */
+  --accent:         #2F6B4C;
+  --accent-hover:   #255842;
+  --accent-deep:    #1C4733;
+  --accent-subtle:  #E3EFE7;
+  --accent-ring:    rgba(47, 107, 76, 0.30);
 
-  /* Semantic status (compliance-bearing — do NOT change on re-theme) */
-  --status-success: #059669; --status-success-bg: #ECFDF5; --status-success-border: #A7F3D0;
-  --status-warning: #B45309; --status-warning-bg: #FFFBEB; --status-warning-border: #FDE68A;
-  --status-danger:  #BE123C; --status-danger-bg:  #FFF1F2; --status-danger-border:  #FECDD3;
-  --status-info:    #0369A1; --status-info-bg:    #F0F9FF; --status-info-border:    #BAE6FD;
+  /* Primary CTA — charcoal (dark buttons, like the reference) */
+  --primary:        #211F1B;
+  --primary-hover:  #000000;
+
+  /* Semantic status — richer, theme-aligned */
+  --status-success: #2F6B4C; --status-success-bg: #E3EFE7; --status-success-border: #BCD8C6;
+  --status-warning: #9A6B12; --status-warning-bg: #FBF3E2; --status-warning-border: #EAD7A8;
+  --status-danger:  #B23A3A; --status-danger-bg:  #FBECEA; --status-danger-border:  #F1D2CD;
+  --status-info:    #2C5A7A; --status-info-bg:    #EAF1F6; --status-info-border:    #C5D8E6;
 
   /* Provenance / lifecycle (PRD BR-M0-005 — visually distinct) */
   --ai-generated:   #7C3AED; --ai-generated-bg:  #F5F3FF;   /* violet  = AI output */
@@ -39,11 +44,11 @@
   --approved:       #059669; --approved-bg:      #ECFDF5;
   --stale:          #B45309; --stale-bg:         #FFFBEB;
 
-  /* Elevation */
-  --shadow-sm:   0 1px 2px rgba(13, 17, 23, 0.04);
-  --shadow-card: 0 1px 3px rgba(13, 17, 23, 0.06), 0 1px 2px rgba(13, 17, 23, 0.04);
-  --shadow-md:   0 6px 16px rgba(13, 17, 23, 0.08);
-  --shadow-lg:   0 16px 40px rgba(13, 17, 23, 0.12);
+  /* Elevation (cool slate-toned for crisp card pop on white) */
+  --shadow-sm:   0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.09), 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-md:   0 8px 20px rgba(15, 23, 42, 0.12);
+  --shadow-lg:   0 18px 44px rgba(15, 23, 42, 0.16);
 
   /* Radius */
   --radius-sm: 6px; --radius-md: 8px; --radius-lg: 12px; --radius-xl: 16px;

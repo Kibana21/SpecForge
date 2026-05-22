@@ -14,8 +14,10 @@ import type {
   ProjectCreateWizard,
   ProjectDetail,
   ProjectListItem,
+  ProjectPriority,
   ProjectRead,
   ProjectsFilter,
+  ProjectStatus,
   RequirementUnderstanding,
   ReviewComment,
   SavedViewCount,
@@ -137,6 +139,10 @@ export const api = {
     create: (data: ProjectCreateWizard) =>
       apiFetch<ProjectRead>('/api/projects', { method: 'POST', body: JSON.stringify(data) }),
     get: (id: string) => apiFetch<ProjectDetail>(`/api/projects/${id}`),
+    update: (id: string, data: Partial<{
+      name: string; description: string; business_unit: string; app_scope: string;
+      priority: ProjectPriority; status: ProjectStatus; go_live_date: string | null
+    }>) => apiFetch<ProjectRead>(`/api/projects/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
     delete: (id: string) =>
       apiFetch<{ id: string }>(`/api/projects/${id}`, { method: 'DELETE' }),
     similar: (id: string) => apiFetch<SimilarProject[]>(`/api/projects/${id}/similar`),
@@ -258,6 +264,9 @@ export const api = {
     create: (data: AppCreate) =>
       apiFetch<AppDetail>('/api/apps', { method: 'POST', body: JSON.stringify(data) }),
     get: (id: string) => apiFetch<AppDetail>(`/api/apps/${id}`),
+    update: (id: string, data: Partial<AppCreate>) =>
+      apiFetch<AppDetail>(`/api/apps/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    delete: (id: string) => apiFetch<{ id: string }>(`/api/apps/${id}`, { method: 'DELETE' }),
     uploadCorpusDoc: async (appId: string, file: File, isPrimary = false): Promise<AppCorpusDoc> => {
       const form = new FormData()
       form.append('file', file)

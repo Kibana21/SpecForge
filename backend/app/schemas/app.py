@@ -20,6 +20,19 @@ class AppCreate(BaseModel):
     tier: Annotated[int, Field(ge=1, le=3)]
     domain_area: str | None = None
     version: str | None = None
+    owner_team: str | None = None
+    environments: list[str] = []
+
+
+class AppUpdate(BaseModel):
+    """Partial metadata update — only provided fields change. short_name is immutable."""
+    name: str | None = None
+    description: str | None = None
+    tier: int | None = Field(default=None, ge=1, le=3)
+    domain_area: str | None = None
+    version: str | None = None
+    owner_team: str | None = None
+    environments: list[str] | None = None
 
 
 class AppCorpusDocRead(BaseModel):
@@ -71,9 +84,13 @@ class AppListItem(BaseModel):
     is_onboarded: bool
     version: str | None
     owner_id: uuid.UUID | None
+    owner_team: str | None = None
+    environments: list[str] = []
     corpus_doc_count: int = 0
     indexed_doc_count: int = 0
     fact_count: int = 0
+    live_project_count: int = 0
+    open_qs: int = 0
     created_at: datetime
     updated_at: datetime
 
@@ -90,6 +107,8 @@ class AppDetail(BaseModel):
     is_onboarded: bool
     version: str | None
     owner_id: uuid.UUID | None
+    owner_team: str | None = None
+    environments: list[str] = []
     corpus_docs: list[AppCorpusDocRead]
     facts: list[AppFactRead]
     pipeline_summary: PipelineSummary

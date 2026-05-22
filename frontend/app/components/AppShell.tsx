@@ -91,7 +91,7 @@ export function AppShell({ children }: Props) {
       {/* Sidebar — static on md+, slide-in drawer on mobile */}
       <aside
         className={cn(
-          'z-50 flex w-56 shrink-0 flex-col overflow-y-auto border-r border-[var(--border-default)] bg-[var(--bg-surface)]',
+          'z-50 flex w-56 shrink-0 flex-col overflow-y-auto border-r border-[var(--border-default)] bg-[var(--bg-sidebar)]',
           'transition-transform duration-200 ease-out',
           'max-md:fixed max-md:inset-y-0 max-md:left-0',
           'md:static md:translate-x-0',

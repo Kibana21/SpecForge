@@ -1,9 +1,10 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, BookOpen, Brain, Database, List, Plug } from 'lucide-react'
+import { ArrowLeft, BookOpen, Brain, Database, List, Pencil, Plug } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { AppShell } from '@/app/components/AppShell'
+import { EditAppModal } from '@/app/components/EditAppModal'
 import { CorpusManager } from '@/app/components/CorpusManager'
 import { FactList } from '@/app/components/FactList'
 import { AskPanel } from '@/app/components/AskPanel'
@@ -29,6 +30,7 @@ export default function AppDetailPage({ params }: { params: { id: string } }) {
   const { user } = useAuth()
   const { app, isLoading, mutate } = useApp(params.id)
   const [activeSection, setActiveSection] = useState<SectionKey>('overview')
+  const [editing, setEditing] = useState(false)
 
   const isAdmin = user?.role === 'platform_admin'
 
@@ -56,7 +58,18 @@ export default function AppDetailPage({ params }: { params: { id: string } }) {
               <ArrowLeft size={12} />
               App Registry
             </button>
-            <h2 className="text-xs font-semibold text-[var(--text-primary)] truncate">{app.name}</h2>
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-xs font-semibold text-[var(--text-primary)] truncate">{app.name}</h2>
+              {isAdmin && (
+                <button
+                  onClick={() => setEditing(true)}
+                  title="Edit application"
+                  className="shrink-0 rounded-md p-1 text-[var(--text-tertiary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                >
+                  <Pencil size={13} />
+                </button>
+              )}
+            </div>
             <p className="text-[10px] font-mono text-[var(--text-tertiary)]">{app.short_name}</p>
           </div>
           <nav className="flex md:flex-col md:flex-1 gap-1 md:gap-0.5 px-2 pb-2 md:py-2 overflow-x-auto md:overflow-visible">
@@ -200,6 +213,16 @@ export default function AppDetailPage({ params }: { params: { id: string } }) {
           )}
         </div>
       </div>
+
+      {editing && (
+        <EditAppModal
+          app={app}
+          canDelete={isAdmin}
+          onClose={() => setEditing(false)}
+          onUpdated={() => mutate()}
+          onDeleted={() => router.push('/apps')}
+        />
+      )}
     </AppShell>
   )
 }

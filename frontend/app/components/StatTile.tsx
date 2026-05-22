@@ -38,18 +38,19 @@ interface Props {
 
 export function StatTile({ label, value, sublabel, tone = 'default' }: Props) {
   const isPlaceholder = value === null || value === undefined
+  const danger = tone === 'danger'
   return (
     <Card
-      className={`p-4 shadow-card ${tone === 'danger' && !isPlaceholder ? 'border-danger-border bg-danger-bg/40' : ''}`}
+      className={`p-4 shadow-card ${danger ? 'border-danger-border bg-danger-bg/60' : ''}`}
     >
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">
+      <p className={`text-[11px] font-semibold uppercase tracking-wider ${danger ? 'text-danger/80' : 'text-[var(--text-tertiary)]'}`}>
         {label}
       </p>
-      <p className={`mt-1.5 text-2xl font-bold leading-none ${isPlaceholder ? 'text-[var(--text-tertiary)]' : VALUE_TONE[tone]}`}>
+      <p className={`mt-1.5 text-2xl font-bold leading-none ${danger ? 'text-danger' : isPlaceholder ? 'text-[var(--text-tertiary)]' : VALUE_TONE[tone]}`}>
         {isPlaceholder ? '—' : typeof value === 'number' ? <CountUp value={value} /> : value}
       </p>
       {sublabel && (
-        <p className="mt-1.5 text-[11px] text-[var(--text-tertiary)] truncate">{sublabel}</p>
+        <p className={`mt-1.5 text-[11px] truncate ${danger ? 'text-danger/70' : 'text-[var(--text-tertiary)]'}`}>{sublabel}</p>
       )}
     </Card>
   )

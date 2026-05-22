@@ -18,9 +18,10 @@ from app.models.app import App, AppMember
 from app.models.corpus import AppChunk, AppCorpusDoc
 from app.models.fact import AppFact
 from app.models.project import Project
+from app.models.project_intake import ProjectApp
 from app.models.storage import StorageFile, StorageFileBlob
 from app.models.user import User
-from app.schemas.app import AppCreate, AppDetail, AppFactRead, AppListItem, AskRequest, PipelineSummary, AppCorpusDocRead
+from app.schemas.app import AppCreate, AppDetail, AppFactRead, AppListItem, AppUpdate, AskRequest, PipelineSummary, AppCorpusDocRead
 from app.schemas.envelope import err, ok
 from app.services.documents.storage import detect_mime, sanitize_filename
 
@@ -140,19 +141,28 @@ async def list_apps(
         )
         indexed_doc_count = indexed_result.scalar_one()
 
-        fact_result = await db.execute(
-            select(func.count()).where(
-                AppFact.app_id == app.id,
-                AppFact.status == "active",
-            )
-        )
-        fact_count = fact_result.scalar_one()
+        fact_count = (await db.execute(
+            select(func.count()).where(AppFact.app_id == app.id, AppFact.status == "active")
+        )).scalar_one()
+
+        # LIVE PROJECTS — distinct projects with this app in scope
+        live_project_count = (await db.execute(
+            select(func.count(func.distinct(ProjectApp.project_id)))
+            .where(ProjectApp.app_id == app.id, ProjectApp.included.is_(True))
+        )).scalar_one()
+
+        # OPEN QS — proposed facts awaiting owner review
+        open_qs = (await db.execute(
+            select(func.count()).where(AppFact.app_id == app.id, AppFact.status == "proposed")
+        )).scalar_one()
 
         items.append(AppListItem.model_validate({
             **{c.name: getattr(app, c.name) for c in app.__table__.columns},
             "corpus_doc_count": corpus_doc_count,
             "indexed_doc_count": indexed_doc_count,
             "fact_count": fact_count,
+            "live_project_count": live_project_count,
+            "open_qs": open_qs,
         }))
 
     return ok([item.model_dump() for item in items], meta={"total": total, "limit": limit, "offset": offset})
@@ -180,6 +190,8 @@ async def create_app(
         tier=body.tier,
         domain_area=body.domain_area,
         version=body.version,
+        owner_team=body.owner_team,
+        environments=body.environments,
         owner_id=user.id,
         is_onboarded=False,
     )
@@ -246,6 +258,46 @@ async def get_app(
     return ok(_app_detail(app, corpus_docs, facts, _pipeline_summary(corpus_docs, chunks)))
 
 
+@router.patch("/{app_id}")
+async def update_app(
+    body: AppUpdate,
+    app: App = Depends(require_app_write_access),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Edit app metadata (name, tier, owner team, environments, version, …)."""
+    changes = body.model_dump(exclude_unset=True)
+    for field, value in changes.items():
+        setattr(app, field, value)
+    await audit.emit(db, event="app.updated", actor_id=str(user.id),
+                     metadata={"app_id": str(app.id), "fields": list(changes.keys())})
+    await db.commit()
+    await db.refresh(app)
+
+    corpus_docs = (await db.execute(select(AppCorpusDoc).where(AppCorpusDoc.app_id == app.id))).scalars().all()
+    facts = (await db.execute(select(AppFact).where(AppFact.app_id == app.id))).scalars().all()
+    chunks = (await db.execute(
+        select(AppChunk).join(AppCorpusDoc, AppChunk.doc_id == AppCorpusDoc.id).where(AppCorpusDoc.app_id == app.id)
+    )).scalars().all()
+    return ok(_app_detail(app, corpus_docs, facts, _pipeline_summary(corpus_docs, chunks)))
+
+
+@router.delete("/{app_id}")
+async def delete_app(
+    app: App = Depends(require_app_write_access),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Delete an app and its App Brain (corpus, chunks, trees, facts, members).
+    Owner or platform_admin only; cascades remove project_apps references too."""
+    app_id, name = app.id, app.name
+    await db.delete(app)  # FK ON DELETE CASCADE removes corpus/chunks/trees/facts/members/project_apps
+    await audit.emit(db, event="app.deleted", actor_id=str(user.id),
+                     metadata={"app_id": str(app_id), "name": name})
+    await db.commit()
+    return ok({"id": str(app_id)})
+
+
 def _pipeline_summary(corpus_docs: list, chunks: list) -> PipelineSummary:
     total_docs = len(corpus_docs)
     indexed_docs = sum(1 for d in corpus_docs if d.index_status == "done")
@@ -272,6 +324,8 @@ def _app_detail(app: App, corpus_docs: list, facts: list, pipeline: PipelineSumm
         "is_onboarded": app.is_onboarded,
         "version": app.version,
         "owner_id": str(app.owner_id) if app.owner_id else None,
+        "owner_team": app.owner_team,
+        "environments": app.environments or [],
         "corpus_docs": [
             {
                 "id": str(d.id), "app_id": str(d.app_id), "name": d.name,

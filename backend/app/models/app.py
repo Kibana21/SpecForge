@@ -1,7 +1,7 @@
 import uuid
 
 from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, String, text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -27,6 +27,8 @@ class App(TimestampMixin, Base):
     version: Mapped[str | None] = mapped_column(String(50), nullable=True)
     domain_area: Mapped[str | None] = mapped_column(String(100), nullable=True)
     rebuild_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    environments: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")  # e.g. ["Prod","UAT","DR"]
+    owner_team: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     members: Mapped[list["AppMember"]] = relationship(
         "AppMember", back_populates="app", cascade="all, delete-orphan"

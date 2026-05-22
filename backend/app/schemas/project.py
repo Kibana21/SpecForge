@@ -27,6 +27,17 @@ class ProjectCreate(BaseModel):
         return v.strip()
 
 
+class ProjectUpdate(BaseModel):
+    """Partial project-metadata update — only provided fields change."""
+    name: str | None = None
+    description: str | None = None
+    business_unit: str | None = None
+    app_scope: str | None = None
+    priority: str | None = None
+    status: str | None = None
+    go_live_date: date | None = None
+
+
 class ProjectRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -76,7 +76,7 @@ const config: Config = {
   				foreground: 'var(--text-primary)'
   			},
   			primary: {
-  				DEFAULT: 'var(--accent)',
+  				DEFAULT: 'var(--primary)',
   				foreground: '#ffffff'
   			},
   			secondary: {

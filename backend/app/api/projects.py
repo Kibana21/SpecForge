@@ -15,7 +15,7 @@ from app.models.user import User
 from app.schemas.assumption import AssumptionPatch
 from app.schemas.document import DocumentRead
 from app.schemas.envelope import err, ok
-from app.schemas.project import ProjectCreate, ProjectDetail, ProjectListItem, ProjectRead
+from app.schemas.project import ProjectCreate, ProjectDetail, ProjectListItem, ProjectRead, ProjectUpdate
 
 router = APIRouter(tags=["projects"])
 
@@ -243,6 +243,36 @@ async def get_project(
     detail.ru_status = ru_status
     detail.stage_progress = stage_progress
     return ok(detail.model_dump(mode="json"))
+
+
+@router.patch("/projects/{project_id}")
+async def update_project(
+    project_id: UUID,
+    body: ProjectUpdate,
+    project: Project = Depends(get_project_or_404),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Edit project metadata (name, business unit, priority, status, go-live, …)."""
+    from app.core import audit
+
+    changes = body.model_dump(exclude_unset=True)
+    for field, value in changes.items():
+        setattr(project, field, value)
+    await audit.emit(db, event="project.updated", actor_id=str(current_user.id),
+                     metadata={"project_id": str(project_id), "fields": list(changes.keys())})
+    await db.commit()
+    await db.refresh(project)
+
+    # Name/description feed the similarity embedding — refresh it (best-effort).
+    if changes.keys() & {"name", "description"}:
+        from app.services.projects.embedding_service import upsert_project_embedding
+        try:
+            await upsert_project_embedding(project_id, db)
+        except Exception:  # noqa: BLE001
+            pass
+
+    return ok(ProjectRead.model_validate(project).model_dump(mode="json"))
 
 
 @router.get("/projects/{project_id}/assumptions")

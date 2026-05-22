@@ -90,9 +90,9 @@ export default function AppRegistryPage() {
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-[var(--accent-subtle)] to-transparent opacity-70" />
           <div className="relative flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--accent-deep)]">App Brain Library</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--accent-deep)]">Org Library</p>
               <h1 className="mt-1 text-xl sm:text-2xl font-bold tracking-tight text-[var(--text-primary)]">Application Registry</h1>
-              <p className="mt-1 text-sm text-[var(--text-secondary)]">Browse onboarded applications and their AI knowledge brains.</p>
+              <p className="mt-1 text-sm text-[var(--text-secondary)]">The organisation&apos;s grounded memory of its systems. Every app here feeds project documents with vetted facts, constraints, and skills.</p>
             </div>
             <Button onClick={() => setShowModal(true)} className="shrink-0 self-start">
               <Plus size={15} strokeWidth={2.5} />
@@ -157,13 +157,13 @@ export default function AppRegistryPage() {
         {/* App grid */}
         <div className="flex-1 p-4 sm:p-6">
           {isLoading ? (
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(400px,1fr))] gap-4">
               {Array.from({ length: 6 }).map((_, i) => (
                 <Skeleton key={i} className="h-36 rounded-xl" />
               ))}
             </div>
           ) : filtered.length > 0 ? (
-            <Stagger className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
+            <Stagger className="grid grid-cols-[repeat(auto-fill,minmax(400px,1fr))] gap-4">
               {filtered.map((app) => (
                 <StaggerItem key={app.id}>
                   <AppCard app={app} onClick={() => router.push(`/apps/${app.id}`)} />

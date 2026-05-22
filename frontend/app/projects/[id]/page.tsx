@@ -2,7 +2,7 @@
 import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import useSWR from 'swr'
-import { ArrowLeft, Cpu, History } from 'lucide-react'
+import { ArrowLeft, Cpu, History, Pencil } from 'lucide-react'
 import { useProjectContext } from '@/lib/context/ProjectContext'
 import type { ExtractedRequirement, GapQuestion, ReviewComment, SpecType, SpecVersion } from '@/lib/types'
 import { api } from '@/lib/api'
@@ -21,6 +21,7 @@ import { GenerateSpecsButton } from '@/app/components/GenerateSpecsButton'
 import { ExportMenu } from '@/app/components/ExportMenu'
 import { EmptyState } from '@/app/components/EmptyState'
 import { Skeleton } from '@/app/components/Skeleton'
+import { EditProjectModal } from '@/app/components/EditProjectModal'
 
 export default function WorkspacePage({ params }: { params: { id: string } }) {
   const projectId = params.id
@@ -29,6 +30,7 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
   const [activeTab, setActiveTab] = useState<OutputTab>('functional')
   const [generatingTab, setGeneratingTab] = useState<SpecType | null>(null)
   const [extracting, setExtracting] = useState(false)
+  const [editing, setEditing] = useState(false)
 
   const { project, isLoading: projectLoading, mutate: mutateProject } = useProject(projectId)
   const { openVersionPanel } = useProjectContext()
@@ -329,9 +331,18 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
             <ArrowLeft size={16} />
           </button>
           <div className="min-w-0">
-            <h1 className="text-sm font-semibold text-[var(--text-primary)] truncate leading-none">
-              {project.name}
-            </h1>
+            <div className="flex items-center gap-1.5">
+              <h1 className="text-sm font-semibold text-[var(--text-primary)] truncate leading-none">
+                {project.name}
+              </h1>
+              <button
+                onClick={() => setEditing(true)}
+                title="Edit project"
+                className="shrink-0 rounded-md p-1 text-[var(--text-tertiary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              >
+                <Pencil size={12} />
+              </button>
+            </div>
             {project.description && (
               <p className="text-[11px] text-[var(--text-tertiary)] mt-0.5 truncate">
                 {project.description}
@@ -348,6 +359,16 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
           History
         </button>
       </header>
+
+      {editing && (
+        <EditProjectModal
+          project={project}
+          canDelete
+          onClose={() => setEditing(false)}
+          onUpdated={() => mutateProject()}
+          onDeleted={() => router.push('/')}
+        />
+      )}
 
       <ThreePanel left={leftPanel} center={centerPanel} right={rightPanel} />
     </div>

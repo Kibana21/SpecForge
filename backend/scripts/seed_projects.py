@@ -39,7 +39,8 @@ async def _ensure_app(db: AsyncSession) -> App:
     if app:
         return app
     app = App(name="PayHub", short_name=_APP_SHORT, tier=1, is_onboarded=True,
-              description="Payments settlement platform", domain_area="Payments")
+              description="Payments settlement platform", domain_area="Payments",
+              owner_team="Payments Eng", environments=["Prod", "UAT", "DR"])
     db.add(app)
     await db.flush()
     db.add_all([
