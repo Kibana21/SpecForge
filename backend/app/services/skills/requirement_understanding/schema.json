@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["objective", "field_confidence"],
+  "additionalProperties": false,
+  "properties": {
+    "objective": { "type": "string" },
+    "stakeholders": { "type": "array", "items": { "type": "string" } },
+    "pain_points": { "type": "array", "items": { "type": "string" } },
+    "target_process": { "type": "string" },
+    "functional_areas": { "type": "array", "items": { "type": "string" } },
+    "systems": { "type": "array", "items": { "type": "string" } },
+    "integrations": { "type": "array", "items": { "type": "string" } },
+    "roles": { "type": "array", "items": { "type": "string" } },
+    "risks": { "type": "array", "items": { "type": "string" } },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["text"],
+        "additionalProperties": false,
+        "properties": {
+          "text": { "type": "string" },
+          "confidence": { "type": "string", "enum": ["high", "medium", "low"] },
+          "source_ref": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["question"],
+        "additionalProperties": false,
+        "properties": {
+          "question": { "type": "string" },
+          "field": { "type": "string" },
+          "why": { "type": "string" }
+        }
+      }
+    },
+    "field_confidence": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "confidence": { "type": "string", "enum": ["high", "medium", "low"] },
+          "completeness": { "type": "integer", "minimum": 0, "maximum": 100 }
+        }
+      }
+    },
+    "citations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["marker", "kind", "ref"],
+        "additionalProperties": false,
+        "properties": {
+          "marker": { "type": "string" },
+          "kind": { "type": "string", "enum": ["source", "fact"] },
+          "ref": { "type": "string" },
+          "excerpt": { "type": "string" }
+        }
+      }
+    }
+  }
+}

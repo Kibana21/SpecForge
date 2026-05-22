@@ -4,10 +4,23 @@ export type GapSeverity = 'blocker' | 'major' | 'minor'
 export type ReviewSeverity = 'critical' | 'warning' | 'suggestion'
 export type ParseStatus = 'pending' | 'done' | 'error'
 
+export type ProjectStatus = 'draft' | 'active' | 'in_review' | 'finalized' | 'archived'
+export type ProjectPriority = 'low' | 'medium' | 'high' | 'critical'
+
 export interface ProjectRead {
   id: string
   name: string
   description: string | null
+  owner_id: string | null
+  human_id: string | null
+  business_unit: string | null
+  app_scope: string | null
+  status: ProjectStatus
+  priority: ProjectPriority
+  completion_pct: number
+  go_live_date: string | null
+  stage_progress: Record<string, StageProgress>
+  ru_validated: boolean
   created_at: string
   updated_at: string
 }
@@ -15,6 +28,8 @@ export interface ProjectRead {
 export interface ProjectListItem extends ProjectRead {
   doc_count: number
   latest_spec_type: SpecType | null
+  open_review_count: number
+  is_stale: boolean
 }
 
 export interface LatestSpecInfo {
@@ -25,11 +40,159 @@ export interface LatestSpecInfo {
   updated_at: string
 }
 
+export interface StageProgress {
+  label: string
+  progress: number
+  status: 'not_started' | 'in_progress' | 'done' | 'stale'
+}
+
+export interface QualityScore {
+  completeness: number
+  clarity: number
+  traceability: number
+  nfr_coverage: number
+  risk_coverage: number
+  consistency: number
+  overall: number
+  heuristic: boolean
+}
+
+export interface AppInScope {
+  app_id: string
+  name: string
+  short_name: string
+  tier: number
+  included: boolean
+  suggested: boolean
+}
+
+export interface AssumptionItem {
+  id: string
+  ext_id: string
+  text: string
+  confidence: Confidence
+  source_ref: string | null
+  status: 'open' | 'confirmed' | 'rejected'
+}
+
+export interface OpenQuestionItem {
+  id: string
+  ext_id: string
+  question: string
+  section: string | null
+}
+
+export interface ActivityItem {
+  event: string
+  actor_id: string | null
+  ts: string
+  kind: 'ai' | 'human'
+}
+
 export interface ProjectDetail extends ProjectRead {
   documents: DocumentRead[]
+  apps_in_scope: AppInScope[]
   gap_count: number
   unresolved_gap_count: number
   latest_specs: Partial<Record<SpecType, LatestSpecInfo>>
+  quality: QualityScore | Record<string, never>
+  open_questions: OpenQuestionItem[]
+  assumptions: AssumptionItem[]
+  recent_activity: ActivityItem[]
+  ru_status: string | null
+}
+
+export interface ProjectsFilter {
+  q?: string
+  view?: string
+  group_by?: string
+}
+
+export interface SavedViewCount {
+  view: string
+  label: string
+  count: number
+}
+
+export interface PortfolioGroup {
+  key: string
+  count: number
+  stale: number
+  review: number
+  finalized: number
+}
+
+export interface TriageItem {
+  id: string
+  project_id: string | null
+  kind: string
+  priority: number
+  title: string
+  link: string
+  computed_at: string
+  next_at: string | null
+}
+
+export interface SimilarProject {
+  source_project_id: string
+  name: string
+  business_unit: string | null
+  match_pct: number
+  finalized_at: string | null
+  asset_tags: string[]
+}
+
+export interface AppSuggestion {
+  id: string
+  name: string
+  short_name: string
+  description: string | null
+  tier: number
+  domain_area: string | null
+  version: string | null
+  owner_id: string | null
+  fact_count: number
+  corpus_doc_count: number
+  suggested: boolean
+  match_pct: number
+}
+
+export interface RequirementUnderstanding {
+  id: string
+  project_id: string
+  objective: string | null
+  content_json: Record<string, unknown>
+  field_confidence: Record<string, { confidence: Confidence; completeness: number }>
+  status: string
+  version_number: number
+  validated_at: string | null
+  validated_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface InterviewMessage {
+  id: string
+  role: 'ai' | 'user' | 'question' | 'understanding'
+  content: string
+  citations: { doc_name?: string; section_title?: string; ref?: string; excerpt?: string }[]
+  seq: number
+  created_at: string
+}
+
+export interface UnderstandingDetail {
+  understanding: RequirementUnderstanding | null
+  messages: InterviewMessage[]
+}
+
+export interface ProjectCreateWizard {
+  name: string
+  description?: string
+  business_unit?: string
+  app_scope?: string
+  app_ids?: string[]
+  reuse?: { source_project_id: string; asset_category: string }[]
+  document_ids?: string[]
 }
 
 export interface DocumentRead {

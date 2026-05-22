@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 from uuid import UUID
@@ -8,17 +9,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_project_or_404, get_provider_dep
 from app.config import get_settings
+from app.core import audit
 from app.db import get_db
 from app.limiter import limiter
 from app.models.document import Document
 from app.models.gap import GapQuestion
 from app.models.project import Project
 from app.models.requirement import ExtractedRequirement
+from app.models.user import User
 from app.schemas.document import DocumentRead
 from app.schemas.envelope import err, ok
 from app.schemas.gap import GapQuestionRead
 from app.schemas.requirement import ExtractedRequirementRead
 from app.services.documents import parser, storage
+from app.services.documents.malware_scanner import get_malware_scanner
 from app.services.llm.base import LLMProvider
 from app.services.skills.skill_engine import SkillEngine
 
@@ -36,22 +40,43 @@ _REQUIREMENT_CATEGORY_MAP = {
 
 
 @router.post("/projects/{project_id}/documents", status_code=201)
+@limiter.limit("10/minute")
 async def upload_document(
     request: Request,
     project_id: UUID,
     file: UploadFile = File(...),
     project: Project = Depends(get_project_or_404),
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     settings = get_settings()
     content = await file.read()
 
-    if len(content) > settings.max_upload_bytes:
-        err("file_too_large", f"File exceeds {settings.max_upload_mb} MB limit", 413)
+    max_bytes = settings.corpus_max_upload_mb * 1024 * 1024
+    if len(content) > max_bytes:
+        err("file_too_large", f"File exceeds {settings.corpus_max_upload_mb} MB limit", 413)
+
+    # Malware scan before persisting (no-op stub today; blocks on a non-clean result).
+    scan = await get_malware_scanner().scan(content, file.filename or "upload")
+    if not scan.clean:
+        await audit.emit(db, event="malware_detected", actor_id=str(user.id),
+                         metadata={"project_id": str(project_id), "detail": scan.detail})
+        await db.commit()
+        err("malware_detected", "File failed the malware scan.", 422)
 
     mime = storage.detect_mime(content)
     if mime not in storage.ALLOWED_MIME_TYPES:
-        err("unsupported_file_type", "Unsupported file type. Allowed: PDF, DOCX, TXT", 422)
+        err("unsupported_file_type", "Unsupported file type. Allowed: PDF, DOCX, XLSX, PPTX, MD, TXT", 422)
+
+    # SHA-256 dedup within the project.
+    sha = hashlib.sha256(content).hexdigest()
+    dup = (
+        await db.execute(
+            select(Document.id).where(Document.project_id == project_id, Document.sha256 == sha)
+        )
+    ).first()
+    if dup is not None:
+        err("duplicate_document", "This file is already in the project.", 409)
 
     safe_name = storage.sanitize_filename(file.filename or "upload")
     storage_path = await storage.save(str(project_id), safe_name, mime, content, settings.upload_dir)
@@ -62,11 +87,15 @@ async def upload_document(
         mime_type=mime,
         size_bytes=len(content),
         storage_path=storage_path,
+        sha256=sha,
         parse_status="pending",
+        indexing_status="pending",
     )
     db.add(doc)
     await db.flush()
 
+    # Synchronous text extraction (used by requirement_extractor); PageIndex tree
+    # build is dispatched async below.
     try:
         text = parser.parse(content, mime)
         doc.extracted_text = text
@@ -76,8 +105,17 @@ async def upload_document(
         doc.parse_error = str(exc)[:500]
         doc.parse_status = "error"
 
+    await audit.emit(db, event="source.uploaded", actor_id=str(user.id),
+                     metadata={"project_id": str(project_id), "doc_id": str(doc.id), "name": safe_name})
     await db.commit()
     await db.refresh(doc)
+
+    # Dispatch PageIndex ingestion (builds the reasoning tree → document_trees).
+    # Best-effort: a broker outage must not fail the (already durable) upload.
+    from workers.dispatch import dispatch
+    from workers.tasks import ingest_project_source
+    dispatch(ingest_project_source, str(doc.id))
+
     return ok(DocumentRead.model_validate(doc).model_dump(mode="json"))
 
 

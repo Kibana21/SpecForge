@@ -8,7 +8,7 @@ from fastapi.responses import Response
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_project_or_404, get_provider_dep
+from app.api.deps import get_current_user, get_project_or_404, get_provider_dep, require_ru_validated
 from app.db import get_db
 from app.limiter import limiter
 from app.models.gap import GapQuestion
@@ -106,7 +106,7 @@ async def _allocate_and_create_spec(
 async def generate_functional(
     request: Request,
     project_id: UUID,
-    project: Project = Depends(get_project_or_404),
+    project: Project = Depends(require_ru_validated),
     db: AsyncSession = Depends(get_db),
     provider: LLMProvider = Depends(get_provider_dep),
 ):
@@ -151,7 +151,7 @@ async def generate_functional(
 async def generate_technical(
     request: Request,
     project_id: UUID,
-    project: Project = Depends(get_project_or_404),
+    project: Project = Depends(require_ru_validated),
     db: AsyncSession = Depends(get_db),
     provider: LLMProvider = Depends(get_provider_dep),
 ):
@@ -181,7 +181,7 @@ async def generate_technical(
 async def generate_user_stories(
     request: Request,
     project_id: UUID,
-    project: Project = Depends(get_project_or_404),
+    project: Project = Depends(require_ru_validated),
     db: AsyncSession = Depends(get_db),
     provider: LLMProvider = Depends(get_provider_dep),
 ):

@@ -2,8 +2,8 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, DateTime, Enum, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -58,6 +58,28 @@ class AppChunk(Base):
     )
 
     doc: Mapped["AppCorpusDoc"] = relationship("AppCorpusDoc", back_populates="chunks")
+
+
+class AppDocTree(Base):
+    """PageIndex reasoning tree for an app corpus doc (hybrid App Brain retrieval)."""
+    __tablename__ = "app_doc_trees"
+    __table_args__ = (Index("idx_app_doc_trees_app", "app_id"),)
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    corpus_doc_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("app_corpus_docs.id", ondelete="CASCADE"),
+        nullable=False, unique=True,
+    )
+    app_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("apps.id", ondelete="CASCADE"), nullable=False
+    )
+    tree_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    page_texts: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    node_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default="now()"
+    )
 
 
 from app.models.app import App  # noqa: E402

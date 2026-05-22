@@ -12,7 +12,10 @@ log = logging.getLogger(__name__)
 _MIME_TO_EXT = {
     "application/pdf": ".pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
     "text/plain": ".txt",
+    "text/markdown": ".md",
 }
 
 # Allowed MIME types (magic-byte validated)
@@ -62,6 +65,12 @@ async def save(project_id: str, original_filename: str, mime_type: str, content:
 
     log.debug("stored file original=%s stored=%s", original_filename, dest)
     return str(dest)
+
+
+async def load(storage_path: str) -> bytes:
+    """Read stored file bytes back from disk."""
+    async with aiofiles.open(storage_path, "rb") as f:
+        return await f.read()
 
 
 async def delete(storage_path: str) -> None:

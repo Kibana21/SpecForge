@@ -1,0 +1,33 @@
+{
+  "objective": "Modernize the PayHub payments settlement flow to support real-time settlement and reduce manual reconciliation.",
+  "stakeholders": ["Payments Engineering", "Finance Operations", "Merchant Support"],
+  "pain_points": ["Manual reconciliation is slow and error-prone", "Settlement delays frustrate merchants"],
+  "target_process": "Card and bank transfers are captured, validated, and settled in near real-time with automated reconciliation.",
+  "functional_areas": ["Payment capture", "Settlement", "Reconciliation", "Merchant notifications"],
+  "systems": ["PayHub", "SWIFT MT103 gateway"],
+  "integrations": ["SWIFT MT103 for cross-border transfers", "Merchant webhooks for settlement events"],
+  "roles": ["Payments engineer", "Finance operator", "Merchant"],
+  "risks": ["Idempotency key reuse after 24h expiry can create duplicate transactions"],
+  "assumptions": [
+    { "text": "Transactions are capped at 10 million USD per instruction.", "confidence": "high", "source_ref": "[F1]" }
+  ],
+  "open_questions": [
+    { "question": "What is the target settlement latency (e.g. seconds vs minutes)?", "field": "target_process", "why": "Latency target is not stated in the sources." },
+    { "question": "Which merchant segments are in scope for the first release?", "field": "stakeholders", "why": "Scope of merchants is unspecified." }
+  ],
+  "field_confidence": {
+    "objective": { "confidence": "high", "completeness": 90 },
+    "stakeholders": { "confidence": "medium", "completeness": 60 },
+    "pain_points": { "confidence": "medium", "completeness": 70 },
+    "target_process": { "confidence": "low", "completeness": 50 },
+    "functional_areas": { "confidence": "high", "completeness": 80 },
+    "systems": { "confidence": "high", "completeness": 85 },
+    "integrations": { "confidence": "high", "completeness": 80 },
+    "roles": { "confidence": "medium", "completeness": 65 },
+    "risks": { "confidence": "medium", "completeness": 60 }
+  },
+  "citations": [
+    { "marker": "[F1]", "kind": "fact", "ref": "PayHub constraint", "excerpt": "Transactions are capped at 10 million USD per instruction." },
+    { "marker": "[S1]", "kind": "source", "ref": "Overview", "excerpt": "PayHub processes card and bank transfers with real-time settlement." }
+  ]
+}

@@ -185,9 +185,22 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
             projectId={projectId}
             onGenerating={handleGenerating}
             onComplete={handleGenerateComplete}
+            disabled={!project?.ru_validated}
+            disabledReason="Validate the Requirement Understanding first"
           />
         </div>
       </div>
+
+      {project && !project.ru_validated && (
+        <button
+          onClick={() => router.push(`/projects/${projectId}/interview`)}
+          className="flex w-full items-center gap-2 border-b border-warning-border bg-warning-bg/40 px-4 py-2 text-left text-xs text-[var(--text-secondary)] hover:bg-warning-bg/60 transition-colors"
+        >
+          <Cpu size={13} className="text-warning shrink-0" />
+          <span>Requirement Understanding not validated — spec generation is locked.</span>
+          <span className="ml-auto font-semibold text-[var(--accent-deep)]">Open interview →</span>
+        </button>
+      )}
 
       <div className="flex-1 overflow-y-auto">
         {activeTab === 'gaps' ? (

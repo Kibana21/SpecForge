@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import BigInteger, CheckConstraint, Enum, ForeignKey, Index, String, Text
+from sqlalchemy import BigInteger, CheckConstraint, Enum, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -28,6 +28,12 @@ class Document(TimestampMixin, Base):
         ParseStatus, nullable=False, server_default="pending"
     )
     parse_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # ── E2 source-intake state (chunk/embed → PageIndex tree build) ─────────────
+    indexing_status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="pending")
+    index_error: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     project: Mapped["Project"] = relationship("Project", back_populates="documents")  # noqa: F821
 

@@ -8,6 +8,24 @@ from workers.celery_app import celery_app
 log = logging.getLogger(__name__)
 
 
+def _run_async(coro):
+    """Run an async task body, disposing the DB engine afterward.
+
+    Celery prefork executes each task in a NEW asyncio loop. The async engine's
+    pooled asyncpg connections are bound to the loop that created them, so reusing
+    the pool across tasks raises 'got Future attached to a different loop'.
+    Disposing after each task forces fresh connections on the next task's loop.
+    """
+    async def _wrapped():
+        try:
+            return await coro
+        finally:
+            from app.db import engine
+            await engine.dispose()
+
+    return asyncio.run(_wrapped())
+
+
 # ── Utility tasks ─────────────────────────────────────────────────────────────
 
 @celery_app.task(name="workers.tasks.ping", bind=True)
@@ -18,7 +36,7 @@ def ping(self) -> dict:
 
 @celery_app.task(name="workers.tasks.purge_expired_refresh_tokens")
 def purge_expired_refresh_tokens() -> dict:
-    return asyncio.run(_purge_expired_tokens())
+    return _run_async(_purge_expired_tokens())
 
 
 async def _purge_expired_tokens() -> dict:
@@ -47,22 +65,49 @@ async def _purge_expired_tokens() -> dict:
     default_retry_delay=30,
 )
 def ingest_corpus_doc(doc_id: str) -> dict:
-    return asyncio.run(_ingest_corpus_doc(doc_id))
+    return _run_async(_ingest_corpus_doc(doc_id))
 
 
 @celery_app.task(name="workers.tasks.extract_app_facts")
 def extract_app_facts(app_id: str) -> dict:
-    return asyncio.run(_extract_app_facts(app_id))
+    return _run_async(_extract_app_facts(app_id))
 
 
 @celery_app.task(name="workers.tasks.rebuild_app_brain")
 def rebuild_app_brain(app_id: str) -> dict:
-    return asyncio.run(_rebuild_app_brain(app_id))
+    return _run_async(_rebuild_app_brain(app_id))
 
 
 @celery_app.task(name="workers.tasks.reset_stale_rebuild_status")
 def reset_stale_rebuild_status() -> dict:
-    return asyncio.run(_reset_stale_rebuild_status())
+    return _run_async(_reset_stale_rebuild_status())
+
+
+# ── E2 project-source ingestion (PageIndex reasoning tree) ──────────────────────
+
+@celery_app.task(
+    name="workers.tasks.ingest_project_source",
+    max_retries=3,
+    default_retry_delay=30,
+    time_limit=1800,  # PageIndex builds are LLM-heavy
+)
+def ingest_project_source(document_id: str) -> dict:
+    return _run_async(_ingest_project_source(document_id))
+
+
+@celery_app.task(name="workers.tasks.recompute_triage")
+def recompute_triage() -> dict:
+    return _run_async(_recompute_triage())
+
+
+@celery_app.task(
+    name="workers.tasks.generate_requirement_understanding",
+    bind=True,
+    max_retries=6,
+    default_retry_delay=10,
+)
+def generate_requirement_understanding(self, project_id: str) -> dict:
+    return _run_async(_generate_ru(self, project_id))
 
 
 # ── Async implementations ─────────────────────────────────────────────────────
@@ -149,7 +194,29 @@ async def _ingest_corpus_doc(doc_id: str) -> dict:
             # Run ANALYZE on app_chunks for IVFFlat recall
             await db.execute(text("ANALYZE app_chunks"))
 
+            # Hybrid: also build a PageIndex reasoning tree (best-effort — vector
+            # chunks remain the baseline if tree building fails or is disabled).
+            from app.config import get_settings
+            if get_settings().app_brain_use_pageindex:
+                try:
+                    from app.models.corpus import AppDocTree
+                    from app.services.corpus_index import get_corpus_index_provider
+
+                    tree = await get_corpus_index_provider().build_index(
+                        data=content, content_type=file_row.content_type, filename=doc.name
+                    )
+                    await db.execute(delete(AppDocTree).where(AppDocTree.corpus_doc_id == doc.id))
+                    db.add(AppDocTree(
+                        corpus_doc_id=doc.id, app_id=doc.app_id,
+                        tree_json=tree.tree, page_texts=tree.page_texts,
+                        node_count=tree.node_count, model=tree.model,
+                    ))
+                    log.info("ingest_corpus_doc doc_id=%s tree_nodes=%d", doc_id, tree.node_count)
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("ingest_corpus_doc tree build failed doc_id=%s error=%s", doc_id, exc)
+
             doc.index_status = "done"
+            doc.index_error = None  # clear any stale error from a prior failed run
             doc.indexed_at = datetime.now(timezone.utc)
             await db.commit()
 
@@ -331,3 +398,128 @@ async def _reset_stale_rebuild_status() -> dict:
         log.warning("reset_stale_rebuild_status reset app_ids=%s", reset_ids)
 
     return {"ok": True, "reset_count": len(reset_ids)}
+
+
+async def _ingest_project_source(document_id: str) -> dict:
+    """Build a PageIndex reasoning tree for a project source document and store it."""
+    try:
+        UUID(document_id)
+    except (ValueError, AttributeError):
+        log.error("ingest_project_source invalid document_id=%s — skipping", document_id)
+        return {"ok": False, "error": "invalid_document_id"}
+
+    from sqlalchemy import delete
+
+    from app.db import AsyncSessionLocal
+    from app.models.document import Document
+    from app.models.project_source import DocumentTree
+    from app.services.corpus_index import get_corpus_index_provider
+    from app.services.documents import storage
+
+    async with AsyncSessionLocal() as db:
+        doc = await db.get(Document, UUID(document_id))
+        if doc is None:
+            log.error("ingest_project_source document_id=%s not found", document_id)
+            return {"ok": False, "error": "doc_not_found"}
+
+        doc.indexing_status = "running"
+        await db.commit()
+
+        try:
+            data = await storage.load(doc.storage_path)
+
+            # PDF page count via fitz; non-PDF treated as a single logical page span.
+            if doc.mime_type == "application/pdf":
+                try:
+                    import fitz
+                    pdf = fitz.open(stream=data, filetype="pdf")
+                    doc.page_count = len(pdf)
+                    pdf.close()
+                except Exception:
+                    doc.page_count = 1
+
+            provider = get_corpus_index_provider()
+            result = await provider.build_index(
+                data=data, content_type=doc.mime_type, filename=doc.filename
+            )
+            if doc.page_count is None:
+                doc.page_count = len(result.page_texts) or 1
+
+            await db.execute(delete(DocumentTree).where(DocumentTree.document_id == doc.id))
+            db.add(DocumentTree(
+                document_id=doc.id,
+                project_id=doc.project_id,
+                tree_json=result.tree,
+                page_texts=result.page_texts,
+                node_count=result.node_count,
+                model=result.model,
+            ))
+            doc.indexing_status = "done"
+            doc.index_error = None  # clear any stale error from a prior failed run
+            await db.commit()
+            log.info("ingest_project_source document_id=%s nodes=%d", document_id, result.node_count)
+            return {"ok": True, "document_id": document_id, "nodes": result.node_count}
+
+        except Exception as exc:
+            # The session may be poisoned (e.g. the doc row was deleted mid-flight by
+            # a concurrent cleanup → "0 rows matched"). Roll back, then best-effort
+            # mark the doc errored in a fresh transaction; skip if it's gone.
+            await db.rollback()
+            log.error("ingest_project_source document_id=%s error=%s", document_id, exc)
+            d2 = await db.get(Document, UUID(document_id))
+            if d2 is None:
+                return {"ok": False, "error": "doc_deleted_during_ingest"}
+            d2.indexing_status = "error"
+            d2.index_error = str(exc)[:1000]
+            await db.commit()
+            return {"ok": False, "error": str(exc)[:200]}
+
+
+async def _recompute_triage() -> dict:
+    from sqlalchemy import select
+
+    from app.db import AsyncSessionLocal
+    from app.models.user import User
+    from app.services.portfolio.triage_service import compute_for_user
+
+    async with AsyncSessionLocal() as db:
+        user_ids = (
+            await db.execute(select(User.id).where(User.status == "active"))
+        ).scalars().all()
+        for uid in user_ids:
+            await compute_for_user(uid, db)
+
+    log.info("recompute_triage users=%d", len(user_ids))
+    return {"ok": True, "users": len(user_ids)}
+
+
+async def _generate_ru(task, project_id: str) -> dict:
+    try:
+        UUID(project_id)
+    except (ValueError, AttributeError):
+        log.error("generate_requirement_understanding invalid project_id=%s", project_id)
+        return {"ok": False, "error": "invalid_project_id"}
+
+    from sqlalchemy import func, select
+
+    from app.db import AsyncSessionLocal
+    from app.models.document import Document
+    from app.services.llm import get_provider
+    from app.services.understanding.orchestrator import generate
+
+    async with AsyncSessionLocal() as db:
+        # Wait-free: if any source is still indexing, retry shortly so the RU sees
+        # finished trees — but never block the wizard route.
+        pending = await db.scalar(
+            select(func.count(Document.id)).where(
+                Document.project_id == UUID(project_id),
+                Document.indexing_status.in_(("pending", "running")),
+            )
+        )
+        if pending and task.request.retries < task.max_retries:
+            raise task.retry(countdown=10)
+
+        result = await generate(UUID(project_id), db, get_provider())
+
+    log.info("generate_requirement_understanding project_id=%s ok=%s", project_id, result is not None)
+    return {"ok": result is not None, "project_id": project_id}

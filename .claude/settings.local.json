@@ -39,7 +39,10 @@
       "Bash(rm /Users/kartik/.claude/skills/langchain-gemini/assets/example_asset.txt)",
       "Bash(rmdir /Users/kartik/.claude/skills/langchain-gemini/scripts)",
       "Bash(rmdir /Users/kartik/.claude/skills/langchain-gemini/assets)",
-      "Bash(grep -oE \"\\(text-|bg-|border-\\)[a-z\\\\-0-9\\\\[\\\\]\\(\\\\$\\)#f0-9a-z,.:]*\")"
+      "Bash(grep -oE \"\\(text-|bg-|border-\\)[a-z\\\\-0-9\\\\[\\\\]\\(\\\\$\\)#f0-9a-z,.:]*\")",
+      "WebFetch(domain:docs.pageindex.ai)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }

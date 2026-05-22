@@ -34,11 +34,23 @@ class Settings(BaseSettings):
     gemini_project_id: str = ""
     gemini_location: str = "us-central1"
 
-    # Embedding
+    # Embedding (kept for project/app similarity only)
     embedding_model: str = "text-embedding-004"
     embedding_dimensions: int = 768
     corpus_max_upload_mb: int = 50
     fact_extract_max_chunks: int = 100
+
+    # Corpus index engine (PageIndex — reasoning tree). "auto" = mock when llm_provider==mock,
+    # else pageindex. Override with "mock" or "pageindex".
+    corpus_index_provider: str = "auto"
+    pageindex_model: str = "vertex_ai/gemini-2.5-flash"  # LiteLLM Vertex model id for PageIndex
+    tree_search_top_k: int = 8
+    # Hybrid App Brain: also build + retrieve a PageIndex reasoning tree alongside
+    # the pgvector chunks for /ask. Set false to fall back to pure vector RAG.
+    app_brain_use_pageindex: bool = True
+
+    # Malware scanning (no-op stub today; real engine slots in later)
+    malware_scanner: str = "noop"
 
     # CORS
     cors_origins: str = "http://localhost:3000"

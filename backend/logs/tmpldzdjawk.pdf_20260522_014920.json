@@ -1,0 +1,54 @@
+[
+  {
+    "total_page_number": 3
+  },
+  {
+    "total_token": 1842
+  },
+  {
+    "toc_content": null,
+    "toc_page_list": [],
+    "page_index_given_in_toc": "no"
+  },
+  {
+    "message": "len(group_texts): 1"
+  },
+  {
+    "message": "generate_toc: [{'structure': '1', 'title': 'AIA Singapore Revolutionises Insurance Purchasing Process with Digital Underwriter', 'physical_index': '<physical_index_1>'}, {'structure': '2', 'title': 'Key features and advantages of Digital Underwriter, within the enhanced iPoS system :', 'physical_index': '<physical_index_2>'}, {'structure': '2.1', 'title': 'Fully secured tailored /personalised questions', 'physical_index': '<physical_index_2>'}, {'structure': '2.2', 'title': 'Instant underwriting decisions at the point-of-sale for standard insurance applications', 'physical_index': '<physical_index_2>'}, {'structure': '2.3', 'title': 'Easier access to getting protected', 'physical_index': '<physical_index_2>'}, {'structure': '2.4', 'title': 'Mobility and Convenience', 'physical_index': '<physical_index_2>'}, {'structure': '2.5', 'title': 'Attuned to the preferences of potential recruits and customers', 'physical_index': '<physical_index_2>'}, {'structure': '3', 'title': 'About the AIA Group', 'physical_index': '<physical_index_2>'}]"
+  },
+  {
+    "message": "convert_physical_index_to_int: [{'structure': '1', 'title': 'AIA Singapore Revolutionises Insurance Purchasing Process with Digital Underwriter', 'physical_index': 1}, {'structure': '2', 'title': 'Key features and advantages of Digital Underwriter, within the enhanced iPoS system :', 'physical_index': 2}, {'structure': '2.1', 'title': 'Fully secured tailored /personalised questions', 'physical_index': 2}, {'structure': '2.2', 'title': 'Instant underwriting decisions at the point-of-sale for standard insurance applications', 'physical_index': 2}, {'structure': '2.3', 'title': 'Easier access to getting protected', 'physical_index': 2}, {'structure': '2.4', 'title': 'Mobility and Convenience', 'physical_index': 2}, {'structure': '2.5', 'title': 'Attuned to the preferences of potential recruits and customers', 'physical_index': 2}, {'structure': '3', 'title': 'About the AIA Group', 'physical_index': 2}]"
+  },
+  {
+    "mode": "process_toc_with_page_numbers",
+    "accuracy": 1.0,
+    "incorrect_results": []
+  },
+  {
+    "message": "Checking title appearance in start concurrently"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text starts with 'Page 2' followed by several paragraphs and headings such as 'Fully secured tailored /personalised question s', 'Instant underwriting decisions at the point -of- sale for standard insurance applications', and 'Easier access to getting protected'. The section title 'Mobility and Convenience' appears much later in the page_text, after other content. Therefore, it does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The `page_text` begins with 'Page 2' and then contains several paragraphs and section titles like 'Key features and advantages of Digital Underwriter...', 'Instant underwriting decisions...', 'Easier access to getting protected', and 'Mobility and Convenience' before the specified section title 'Attuned to the preferences of potential recruits and customers' appears. Therefore, the current section does not start at the beginning of the `page_text`.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text starts with 'Page 2' followed by 'AIA Singapore Private Limited (Reg. No. 201106386R) Key features and advantages of Digital Underwriter, within the enhanced iPoS system :'. The given section title 'Fully secured tailored /personalised questions' appears after these initial contents. Therefore, the section does not start at the very beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with 'Page 2' and 'AIA Singapore Private Limited (Reg. No. 201106386R)' before the section title 'Key features and advantages of Digital Underwriter, within the enhanced iPoS system :'. Therefore, the section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with company information, address, website, and 'Media Release' and 'FOR IMMEDIATE RELEASE' before the section title 'AIA Singapore Revolutionis es Insurance Purchasing Process with Digital Underwriter' appears. Therefore, the section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The `page_text` starts with 'Page 2', followed by company information and two other distinct sections/paragraphs ('Fully secured tailored /personalised question s...' and 'Instant underwriting decisions at the point -of- sale...'). The target section title 'Easier access to getting protected' appears much later in the text, after these initial contents. Therefore, it does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The section title 'Instant underwriting decisions at the point-of-sale for standard insurance applications' appears in the page_text. However, before this section title, there is other content such as 'Page 2', 'AIA Singapore Private Limited (Reg. No. 201106386R) Key features and advantages of Digital Underwriter, within the enhanced iPoS system :', and a paragraph starting with 'Fully secured tailored /personalised question s...'. Since there is content preceding the section title, it does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text starts with 'Page 2' and then contains several paragraphs of content related to 'AIA Singapore Private Limited' and 'Digital Underwriter' before the section title 'About the AIA Group' appears. Therefore, the section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  }
+]

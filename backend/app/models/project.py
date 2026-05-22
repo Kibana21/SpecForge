@@ -1,8 +1,8 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -21,6 +21,17 @@ class Project(TimestampMixin, Base):
         nullable=True,
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # ── E2 portfolio + intake fields ────────────────────────────────────────────
+    human_id: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    business_unit: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    app_scope: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="draft")
+    priority: Mapped[str] = mapped_column(String(20), nullable=False, server_default="medium")
+    completion_pct: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    go_live_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    stage_progress: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    ru_validated: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
 
     # Relationships
     documents: Mapped[list["Document"]] = relationship(  # noqa: F821

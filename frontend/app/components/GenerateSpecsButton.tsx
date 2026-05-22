@@ -13,9 +13,11 @@ interface GenerateSpecsButtonProps {
   projectId: string
   onGenerating: (tab: SpecType | null) => void
   onComplete: () => void
+  disabled?: boolean
+  disabledReason?: string
 }
 
-export function GenerateSpecsButton({ projectId, onGenerating, onComplete }: GenerateSpecsButtonProps) {
+export function GenerateSpecsButton({ projectId, onGenerating, onComplete, disabled, disabledReason }: GenerateSpecsButtonProps) {
   const [running, setRunning] = useState(false)
 
   async function run() {
@@ -40,7 +42,7 @@ export function GenerateSpecsButton({ projectId, onGenerating, onComplete }: Gen
   }
 
   return (
-    <Button onClick={run} disabled={running}>
+    <Button onClick={run} disabled={running || disabled} title={disabled ? disabledReason : undefined}>
       <Zap size={14} className={clsx(running && 'animate-pulse')} />
       {running ? 'Generating…' : 'Generate Specs'}
     </Button>

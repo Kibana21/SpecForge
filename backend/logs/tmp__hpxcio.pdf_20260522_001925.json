@@ -1,0 +1,39 @@
+[
+  {
+    "total_page_number": 3
+  },
+  {
+    "total_token": 91
+  },
+  {
+    "toc_content": null,
+    "toc_page_list": [],
+    "page_index_given_in_toc": "no"
+  },
+  {
+    "message": "len(group_texts): 1"
+  },
+  {
+    "message": "generate_toc: [{'structure': '1', 'title': 'Overview', 'physical_index': '<physical_index_1>'}, {'structure': '2', 'title': 'Integrations', 'physical_index': '<physical_index_2>'}, {'structure': '3', 'title': 'Constraints', 'physical_index': '<physical_index_3>'}]"
+  },
+  {
+    "message": "convert_physical_index_to_int: [{'structure': '1', 'title': 'Overview', 'physical_index': 1}, {'structure': '2', 'title': 'Integrations', 'physical_index': 2}, {'structure': '3', 'title': 'Constraints', 'physical_index': 3}]"
+  },
+  {
+    "mode": "process_toc_with_page_numbers",
+    "accuracy": 1.0,
+    "incorrect_results": []
+  },
+  {
+    "message": "Checking title appearance in start concurrently"
+  },
+  {
+    "message": "Response: {'thinking': \"The current section title is 'Integrations'. The page text starts with '2. Integrations'. The '2. ' part comes before the actual section title 'Integrations'. Therefore, there is content before the section title, meaning it does not start at the very beginning of the page text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The `page_text` starts with '3. Constraints'. The `current_section_title` is 'Constraints'. After ignoring the numbering '3. ' and any leading/trailing whitespace, the section title 'Constraints' is the very first content in the `page_text`. Therefore, the section starts at the beginning of the page_text.\", 'start_begin': 'yes'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The `page_text` starts with '1. Overview'. The given `section_title` is 'Overview'. After ignoring the numbering '1.' and any potential space inconsistencies, 'Overview' is the very first content in the `page_text`. Therefore, the section starts at the beginning of the page_text.\", 'start_begin': 'yes'}"
+  }
+]

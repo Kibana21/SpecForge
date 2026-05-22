@@ -12,7 +12,9 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 async def _setup_project_with_docs(client) -> str:
-    """Create a project, upload sample.txt, return project_id."""
+    """Create a project, upload sample.txt, mark RU validated (gate), return project_id."""
+    import uuid as _uuid
+
     r = await client.post("/api/projects", json={"name": "SpecPipeline"})
     project_id = r.json()["data"]["id"]
     content = (FIXTURES / "sample.txt").read_bytes()
@@ -20,6 +22,14 @@ async def _setup_project_with_docs(client) -> str:
         f"/api/projects/{project_id}/documents",
         files={"file": ("sample.txt", content, "text/plain")},
     )
+    # Spec generation is gated behind RU validation (E2). Mark it validated for these
+    # pre-E2 pipeline tests.
+    from app.db import AsyncSessionLocal
+    from app.models.project import Project
+    async with AsyncSessionLocal() as db:
+        p = await db.get(Project, _uuid.UUID(project_id))
+        p.ru_validated = True
+        await db.commit()
     return project_id
 
 
@@ -133,9 +143,20 @@ async def test_full_spec_pipeline(client):
     assert "---" in r.text  # combined sections are separated by ---
 
 
+async def _mark_validated(project_id: str) -> None:
+    import uuid as _uuid
+    from app.db import AsyncSessionLocal
+    from app.models.project import Project
+    async with AsyncSessionLocal() as db:
+        p = await db.get(Project, _uuid.UUID(project_id))
+        p.ru_validated = True
+        await db.commit()
+
+
 async def test_generate_technical_without_functional_returns_422(client):
     r = await client.post("/api/projects", json={"name": "NoFuncSpec"})
     project_id = r.json()["data"]["id"]
+    await _mark_validated(project_id)
     r = await client.post(f"/api/projects/{project_id}/specs/technical")
     assert r.status_code == 422
     assert "functional" in r.json()["error"]["message"].lower()
@@ -144,6 +165,7 @@ async def test_generate_technical_without_functional_returns_422(client):
 async def test_version_number_increments_per_project(client):
     r = await client.post("/api/projects", json={"name": "VersionTest"})
     project_id = r.json()["data"]["id"]
+    await _mark_validated(project_id)
     content = (FIXTURES / "sample.txt").read_bytes()
     await client.post(
         f"/api/projects/{project_id}/documents",

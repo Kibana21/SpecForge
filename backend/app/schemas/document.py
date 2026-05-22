@@ -14,5 +14,8 @@ class DocumentRead(BaseModel):
     size_bytes: int
     parse_status: str
     parse_error: str | None
+    indexing_status: str = "pending"
+    index_error: str | None = None
+    page_count: int | None = None
     created_at: datetime
     updated_at: datetime

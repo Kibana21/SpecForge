@@ -1,0 +1,6 @@
+{
+  "selections": [
+    { "doc": "D0", "node_id": "0001", "reason": "Section most directly addresses the query." },
+    { "doc": "D0", "node_id": "0002", "reason": "Provides supporting detail relevant to the query." }
+  ]
+}

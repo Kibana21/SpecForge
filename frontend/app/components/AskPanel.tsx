@@ -3,7 +3,7 @@ import { useState, useRef } from 'react'
 import { Send } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { CitationChip } from './CitationChip'
-import { tokenStore } from '@/lib/auth/tokenStore'
+import { authedFetch } from '@/lib/api'
 import type { CitationItem } from '@/lib/types'
 
 interface Props {
@@ -26,13 +26,9 @@ export function AskPanel({ appId }: Props) {
     setError(null)
 
     try {
-      const res = await fetch(`/api/apps/${appId}/ask`, {
+      const res = await authedFetch(`/api/apps/${appId}/ask`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(tokenStore.get() ? { Authorization: `Bearer ${tokenStore.get()}` } : {}),
-        },
-        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: question.trim(), top_k: 8 }),
       })
 

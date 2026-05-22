@@ -95,7 +95,9 @@ async def healthz():
 
 
 # ── Routers ───────────────────────────────────────────────────────────────────
-from app.api import apps, auth, context, documents, gaps, projects, reviews, specs, versions  # noqa: E402
+from app.api import (  # noqa: E402
+    apps, auth, context, documents, gaps, projects, reviews, specs, triage, understanding, versions,
+)
 
 app.include_router(auth.router)
 app.include_router(context.router)
@@ -104,5 +106,7 @@ app.include_router(documents.router, prefix="/api")
 app.include_router(specs.router, prefix="/api")
 app.include_router(gaps.router, prefix="/api")
 app.include_router(reviews.router, prefix="/api")
+app.include_router(triage.router, prefix="/api")
+app.include_router(understanding.router, prefix="/api")
 app.include_router(versions.router)
 app.include_router(apps.router)

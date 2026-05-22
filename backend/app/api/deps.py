@@ -26,6 +26,20 @@ async def get_project_or_404(
     return project  # type: ignore[return-value]
 
 
+async def require_ru_validated(
+    project: Project = Depends(get_project_or_404),
+) -> Project:
+    """Generation gate (BR-M1-012-3): downstream spec generation is blocked until a
+    human validates the Requirement Understanding."""
+    if not project.ru_validated:
+        err(
+            "understanding_not_validated",
+            "Requirement Understanding must be validated before generating specs.",
+            409,
+        )
+    return project  # type: ignore[return-value]
+
+
 async def require_project_access(
     project_id: UUID,
     user: User = Depends(get_current_user),

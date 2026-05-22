@@ -17,6 +17,7 @@ from app.limiter import limiter
 from app.models.app import App, AppMember
 from app.models.corpus import AppChunk, AppCorpusDoc
 from app.models.fact import AppFact
+from app.models.project import Project
 from app.models.storage import StorageFile, StorageFileBlob
 from app.models.user import User
 from app.schemas.app import AppCreate, AppDetail, AppFactRead, AppListItem, AskRequest, PipelineSummary, AppCorpusDocRead
@@ -192,6 +193,34 @@ async def create_app(
     return ok(_app_detail(app, [], [], _pipeline_summary([], [])))
 
 
+# ── App suggestion (apps-in-scope, BR-M1-008) ──────────────────────────────────
+# NOTE: must be declared before the "/{app_id}" routes so "suggest" isn't captured.
+
+@router.get("/suggest")
+async def suggest_apps_for_project(
+    project_id: uuid.UUID | None = None,
+    q: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Onboarded apps ranked by relevance to a project (or free-text) for the
+    wizard's apps-in-scope step. Pass `project_id` (uses its stored text) or `q`."""
+    from app.services.projects.discovery_service import suggest_apps
+
+    query_text = (q or "").strip()
+    if project_id is not None and not query_text:
+        proj = await db.get(Project, project_id)
+        if proj is None:
+            err("not_found", f"Project {project_id} not found", 404)
+        parts = [proj.name, proj.description or "", proj.business_unit or "", proj.app_scope or ""]
+        query_text = "\n".join(p for p in parts if p).strip()
+    if not query_text:
+        err("missing_query", "Provide project_id or q to suggest apps.", 422)
+
+    suggestions = await suggest_apps(query_text, db)
+    return ok([s.model_dump(mode="json") for s in suggestions])
+
+
 # ── Get app detail ────────────────────────────────────────────────────────────
 
 @router.get("/{app_id}")
@@ -352,9 +381,10 @@ async def upload_corpus_doc(
     )
     await db.commit()
 
-    # Dispatch ingestion task
+    # Dispatch ingestion task (best-effort; never hangs if broker is down)
+    from workers.dispatch import dispatch
     from workers.tasks import ingest_corpus_doc
-    ingest_corpus_doc.delay(str(corpus_doc.id))
+    dispatch(ingest_corpus_doc, str(corpus_doc.id))
 
     return ok({
         "id": str(corpus_doc.id),
@@ -396,10 +426,11 @@ async def reindex_app(
     )
     await db.commit()
 
+    from workers.dispatch import dispatch
     from workers.tasks import rebuild_app_brain
-    task = rebuild_app_brain.delay(str(app.id))
+    task = dispatch(rebuild_app_brain, str(app.id))
 
-    return ok({"task_id": task.id})
+    return ok({"task_id": task.id if task else None})
 
 
 # ── List facts ────────────────────────────────────────────────────────────────

@@ -46,6 +46,25 @@ def _extract_json(raw: str) -> dict | list:
     raise ValueError(f"No valid JSON found in LLM response. Raw (first 500 chars): {raw[:500]!r}")
 
 
+def _coerce_to_schema(parsed: dict | list, schema: dict) -> dict | list:
+    """LLMs sometimes return a bare array when the schema wants an object with a
+    single array property (e.g. `[{...}]` instead of `{"facts": [{...}]}`). Wrap it
+    so validation passes. Only triggers when there's exactly one array property
+    (or one *required* array property), so multi-array schemas are untouched."""
+    if not (isinstance(parsed, list) and isinstance(schema, dict) and schema.get("type") == "object"):
+        return parsed
+    props = schema.get("properties", {})
+    array_props = [k for k, v in props.items() if isinstance(v, dict) and v.get("type") == "array"]
+    target = None
+    if len(array_props) == 1:
+        target = array_props[0]
+    elif len(array_props) > 1:
+        required_arrays = [k for k in array_props if k in schema.get("required", [])]
+        if len(required_arrays) == 1:
+            target = required_arrays[0]
+    return {target: parsed} if target is not None else parsed
+
+
 class SkillEngine:
     def __init__(self, skills_root: Path | None = None) -> None:
         self._root = skills_root or SKILLS_ROOT
@@ -79,7 +98,7 @@ class SkillEngine:
         raw = await self._call(provider, prompt, instruction, skill_name, attempt=1)
         first_error: Exception | None = None
         try:
-            parsed = _extract_json(raw)
+            parsed = _coerce_to_schema(_extract_json(raw), schema)
             jsonschema.validate(parsed, schema)
             return parsed
         except (ValueError, jsonschema.ValidationError) as exc:
@@ -94,7 +113,7 @@ class SkillEngine:
         )
         raw2 = await self._call(provider, retry_prompt, instruction, skill_name, attempt=2)
         try:
-            parsed2 = _extract_json(raw2)
+            parsed2 = _coerce_to_schema(_extract_json(raw2), schema)
             jsonschema.validate(parsed2, schema)
             return parsed2
         except (ValueError, jsonschema.ValidationError) as exc2:
