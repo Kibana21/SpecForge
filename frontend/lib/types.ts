@@ -359,3 +359,52 @@ export type SSEEvent =
   | { type: 'citations'; citations: CitationItem[] }
   | { type: 'error'; message: string }
   | { type: 'done' }
+
+// ── Audit Log types ───────────────────────────────────────────────────────────
+
+export type AuditCategory = 'auth' | 'security' | 'data' | 'destructive' | 'ai' | 'compliance' | 'other'
+export type AuditSeverity = 'info' | 'warning' | 'danger' | 'success' | 'ai' | 'neutral'
+
+export interface AuditEventRead {
+  id: number
+  ts: string
+  event: string
+  label: string
+  category: AuditCategory
+  severity: AuditSeverity
+  actor_id: string | null
+  actor_name: string | null
+  actor_email: string | null
+  actor_role: string | null
+  action: string | null
+  project_id: string | null
+  document_key: string | null
+  app_key: string | null
+  ip: string | null
+  user_agent: string | null
+  correlation_id: string | null
+  metadata: Record<string, unknown> | null
+  affected_sections: Record<string, unknown> | null
+}
+
+export interface AuditFilters {
+  q?: string
+  event?: string
+  category?: string
+  actor_id?: string
+  project_id?: string
+  correlation_id?: string
+  start?: string
+  end?: string
+  limit?: number
+  offset?: number
+}
+
+export interface AuditSummary {
+  events_today: number
+  failed_logins_24h: number
+  lockouts_24h: number
+  token_reuse_7d: number
+  deletions_7d: number
+  ai_actions_today: number
+}

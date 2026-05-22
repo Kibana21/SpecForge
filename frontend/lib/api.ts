@@ -7,6 +7,9 @@ import type {
   AppsFilter,
   AppSuggestion,
   AssumptionItem,
+  AuditEventRead,
+  AuditFilters,
+  AuditSummary,
   DocumentRead,
   ExtractedRequirement,
   FactsFilter,
@@ -122,6 +125,22 @@ export async function apiFetchEnvelope<T>(
   return { data: json.data as T, meta: json.meta ?? {} }
 }
 
+function _auditQuery(f?: AuditFilters): string {
+  const p = new URLSearchParams()
+  if (f?.q) p.set('q', f.q)
+  if (f?.event) p.set('event', f.event)
+  if (f?.category && f.category !== 'all') p.set('category', f.category)
+  if (f?.actor_id) p.set('actor_id', f.actor_id)
+  if (f?.project_id) p.set('project_id', f.project_id)
+  if (f?.correlation_id) p.set('correlation_id', f.correlation_id)
+  if (f?.start) p.set('start', f.start)
+  if (f?.end) p.set('end', f.end)
+  if (f?.limit !== undefined) p.set('limit', String(f.limit))
+  if (f?.offset !== undefined) p.set('offset', String(f.offset))
+  const qs = p.toString()
+  return qs ? `?${qs}` : ''
+}
+
 function _projectsQuery(f?: ProjectsFilter): string {
   const p = new URLSearchParams()
   if (f?.q) p.set('q', f.q)
@@ -166,6 +185,25 @@ export const api = {
 
   triage: {
     list: () => apiFetchEnvelope<TriageItem[]>('/api/triage'),
+  },
+
+  audit: {
+    list: (filters?: AuditFilters) =>
+      apiFetchEnvelope<AuditEventRead[]>(`/api/audit${_auditQuery(filters)}`),
+    summary: () => apiFetch<AuditSummary>('/api/audit/summary'),
+    exportCsv: async (filters?: AuditFilters): Promise<void> => {
+      const res = await authedFetch(`/api/audit/export.csv${_auditQuery(filters)}`)
+      if (!res.ok) throw new Error(`Export failed: ${res.status}`)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'audit-log.csv'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    },
   },
 
   documents: {
