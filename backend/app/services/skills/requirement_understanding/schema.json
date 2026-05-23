@@ -4,10 +4,10 @@
   "required": ["objective", "field_confidence"],
   "additionalProperties": false,
   "properties": {
-    "objective": { "type": "string" },
+    "objective": { "type": ["string", "null"] },
     "stakeholders": { "type": "array", "items": { "type": "string" } },
     "pain_points": { "type": "array", "items": { "type": "string" } },
-    "target_process": { "type": "string" },
+    "target_process": { "type": ["string", "null"] },
     "functional_areas": { "type": "array", "items": { "type": "string" } },
     "systems": { "type": "array", "items": { "type": "string" } },
     "integrations": { "type": "array", "items": { "type": "string" } },

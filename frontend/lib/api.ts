@@ -6,6 +6,7 @@ import type {
   AppListItem,
   AppsFilter,
   AppSuggestion,
+  BrainContextResponse,
   AssumptionItem,
   AuditEventRead,
   AuditFilters,
@@ -96,6 +97,9 @@ export async function apiFetch<T>(url: string, options?: RequestInit): Promise<T
   }
 
   const res = await authedFetch(url, { ...options, headers })
+
+  // 204 No Content — body is empty regardless of what content-type header says
+  if (res.status === 204) return undefined as unknown as T
 
   // some endpoints (e.g. file upload) may return a non-JSON response
   const contentType = res.headers.get('content-type') ?? ''
@@ -319,6 +323,24 @@ export const api = {
     },
     reindex: (appId: string) =>
       apiFetch<{ task_id: string }>(`/api/apps/${appId}/reindex`, { method: 'POST' }),
+    deleteCorpusDoc: (appId: string, docId: string) =>
+      apiFetch<void>(`/api/apps/${appId}/corpus/${docId}`, { method: 'DELETE' }),
+    getCorpusDocMarkdown: (appId: string, docId: string) =>
+      apiFetch<{ markdown_text: string; provider: string; filename: string; created_at: string }>(
+        `/api/apps/${appId}/corpus/${docId}/markdown`
+      ),
+    reindexDoc: (appId: string, docId: string) =>
+      apiFetch<{ task_id: string }>(`/api/apps/${appId}/corpus/${docId}/reindex`, { method: 'POST' }),
+    getDocFacts: (appId: string, docId: string) =>
+      apiFetch<AppFact[]>(`/api/apps/${appId}/corpus/${docId}/facts`),
+    createDocFact: (appId: string, docId: string, body: { kind: string; text: string; confidence: string; source_ref?: string | null }) =>
+      apiFetch<AppFact>(`/api/apps/${appId}/corpus/${docId}/facts`, { method: 'POST', body: JSON.stringify(body) }),
+    getBrainContext: (appId: string) =>
+      apiFetch<BrainContextResponse>(`/api/apps/${appId}/brain-context`),
+    synthesizeBrainContext: (appId: string) =>
+      apiFetch<{ task_id: string | null; status: string }>(`/api/apps/${appId}/brain-context/synthesize`, { method: 'POST' }),
+    extractFacts: (appId: string) =>
+      apiFetch<{ task_id: string }>(`/api/apps/${appId}/facts/extract`, { method: 'POST' }),
     listFacts: (appId: string, filters?: FactsFilter) => {
       const params = new URLSearchParams()
       if (filters?.kind) params.set('kind', filters.kind)
@@ -327,5 +349,11 @@ export const api = {
       const qs = params.toString()
       return apiFetch<AppFact[]>(`/api/apps/${appId}/facts${qs ? `?${qs}` : ''}`)
     },
+    createFact: (appId: string, body: { kind: string; text: string; confidence: string; source_ref?: string | null }) =>
+      apiFetch<AppFact>(`/api/apps/${appId}/facts`, { method: 'POST', body: JSON.stringify(body) }),
+    updateFact: (appId: string, factId: string, body: Partial<{ kind: string; text: string; confidence: string; source_ref: string | null; status: string }>) =>
+      apiFetch<AppFact>(`/api/apps/${appId}/facts/${factId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    deleteFact: (appId: string, factId: string) =>
+      apiFetch<void>(`/api/apps/${appId}/facts/${factId}`, { method: 'DELETE' }),
   },
 }

@@ -1,4 +1,5 @@
 from app.models.app import App, AppMember
+from app.models.document_markdown import DocumentMarkdown
 from app.models.audit import AuditEvent
 from app.models.auth import PasswordResetToken, RefreshToken
 from app.models.corpus import AppChunk, AppCorpusDoc, AppDocTree
@@ -23,6 +24,7 @@ from app.models.user import User
 from app.models.version_snapshot import VersionSnapshot
 
 __all__ = [
+    "DocumentMarkdown",
     "User",
     "RefreshToken",
     "PasswordResetToken",

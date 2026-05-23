@@ -37,3 +37,13 @@ Requires Redis on `localhost:6379` (a container is fine, but it MUST publish the
 ## Helper scripts (`backend/scripts/`)
 - `seed_projects.py` — idempotent demo project `PRJ-0001` (PayHub) with a generated RU, mock providers.
 - `purge_test_data.py` — remove test clutter (dry-run by default; `--apply` to delete; keeps clean-named apps + whitelisted projects).
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

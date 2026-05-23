@@ -25,6 +25,7 @@ langchain-google-genai
 langchain-core
 langgraph
 google-auth
+dspy
 
 # Templating & schema validation
 jinja2==3.1.5
@@ -52,6 +53,10 @@ tiktoken==0.9.0
 litellm==1.85.1
 PyPDF2==3.0.1
 pyyaml==6.0.3
+
+# Markdown conversion (Azure AI Content Understanding — provider-swappable)
+azure-ai-contentunderstanding
+azure-core
 
 # Testing
 pytest==8.3.4

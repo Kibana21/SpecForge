@@ -19,6 +19,7 @@ _SKILL_FIXTURE_MAP: dict[str, str] = {
     "user_stories": "user_stories.json",
     "reviewer": "reviewer.json",
     "fact_extractor": "fact_extractor.json",
+    "fact_synthesis": "fact_synthesis.json",
     "app_brain_qa": "app_brain_qa.json",
     "source_tree_search": "source_tree_search.json",
     "requirement_understanding": "requirement_understanding.json",

@@ -1,23 +1,23 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, BookOpen, Brain, Database, List, Pencil, Plug } from 'lucide-react'
+import { ArrowLeft, BookOpen, Brain, Database, Pencil, Plug } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { AppShell } from '@/app/components/AppShell'
 import { EditAppModal } from '@/app/components/EditAppModal'
 import { CorpusManager } from '@/app/components/CorpusManager'
-import { FactList } from '@/app/components/FactList'
+import { BrainContext } from '@/app/components/BrainContext'
 import { AskPanel } from '@/app/components/AskPanel'
 import { IndexStatusBadge } from '@/app/components/IndexStatusBadge'
 import { Skeleton } from '@/app/components/Skeleton'
 import { useApp } from '@/lib/hooks/useApp'
 import { useAuth } from '@/lib/auth/AuthContext'
 
-type SectionKey = 'overview' | 'facts' | 'corpus' | 'pipeline' | 'ask'
+type SectionKey = 'overview' | 'brain' | 'corpus' | 'pipeline' | 'ask'
 
 const SECTIONS: { key: SectionKey; label: string; icon: LucideIcon }[] = [
   { key: 'overview', label: 'Overview', icon: BookOpen },
-  { key: 'facts', label: 'Facts', icon: List },
+  { key: 'brain', label: 'Brain Context', icon: Brain },
   { key: 'corpus', label: 'Corpus', icon: Database },
   { key: 'pipeline', label: 'Pipeline', icon: Plug },
   { key: 'ask', label: 'Ask Brain', icon: Brain },
@@ -123,7 +123,7 @@ export default function AppDetailPage({ params }: { params: { id: string } }) {
                 {[
                   { label: 'Documents', value: `${app.pipeline_summary.total_docs} (${app.pipeline_summary.indexed_docs} indexed)` },
                   { label: 'Chunks', value: String(app.pipeline_summary.total_chunks) },
-                  { label: 'Active Facts', value: String(app.facts.filter(f => f.status === 'active').length) },
+                  { label: 'Brain Context', value: app.brain_context_synthesized_at ? new Date(app.brain_context_synthesized_at).toLocaleString() : 'Not synthesized' },
                   { label: 'Last Indexed', value: app.pipeline_summary.last_indexed_at ? new Date(app.pipeline_summary.last_indexed_at).toLocaleString() : 'Never' },
                 ].map(({ label, value }) => (
                   <div key={label} className="flex items-center justify-between px-4 py-2.5">
@@ -135,20 +135,18 @@ export default function AppDetailPage({ params }: { params: { id: string } }) {
             </div>
           )}
 
-          {activeSection === 'facts' && (
+          {activeSection === 'brain' && (
             <div className="max-w-2xl">
-              <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-4">
-                Facts ({app.facts.filter(f => f.status === 'active').length})
-              </h2>
-              <FactList facts={app.facts} />
+              <BrainContext
+                appId={app.id}
+                initialSynthesizedAt={app.brain_context_synthesized_at}
+                initialStatus={app.brain_context_status}
+              />
             </div>
           )}
 
           {activeSection === 'corpus' && (
-            <div className="max-w-2xl">
-              <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-4">
-                Corpus Documents ({app.corpus_docs.length})
-              </h2>
+            <div className="w-full max-w-4xl">
               <CorpusManager
                 appId={app.id}
                 docs={app.corpus_docs}

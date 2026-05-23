@@ -68,5 +68,12 @@ exports/
 # ── Secrets / credentials ─────────────────────────────────────────────────────
 video-key.json
 backend/.env
+backend/logs/
 
+
+graphify-out/manifest.json    
+graphify-out/cost.json       
+graphify-out/cache/         
+graphify-out/.*
+graphify-out/2026*
 

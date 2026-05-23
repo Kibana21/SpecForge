@@ -277,14 +277,24 @@ export interface AppCorpusDoc {
 export interface AppFact {
   id: string
   app_id: string
+  doc_id: string | null
   kind: FactKind
   text: string
   source_ref: string | null
   confidence: FactConfidence
   status: FactStatus
+  source: 'ai' | 'human' | 'brain'
   chunk_ids: string[]
+  source_fact_ids: string[]
   created_at: string
   updated_at: string
+}
+
+export interface BrainContextResponse {
+  facts: AppFact[]
+  synthesized_at: string | null
+  status: 'idle' | 'running'
+  source_doc_count: number
 }
 
 export interface PipelineSummary {
@@ -320,8 +330,9 @@ export interface AppListItem {
 
 export interface AppDetail extends AppListItem {
   corpus_docs: AppCorpusDoc[]
-  facts: AppFact[]
   pipeline_summary: PipelineSummary
+  brain_context_synthesized_at: string | null
+  brain_context_status: 'idle' | 'running'
 }
 
 export interface AppCreate {

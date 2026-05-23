@@ -53,14 +53,32 @@ class AppFactRead(BaseModel):
 
     id: uuid.UUID
     app_id: uuid.UUID
+    doc_id: uuid.UUID | None = None
     kind: str
     text: str
     source_ref: str | None
     confidence: str
     status: str
+    source: str
     chunk_ids: list
+    source_fact_ids: list = []
     created_at: datetime
     updated_at: datetime
+
+
+class FactCreate(BaseModel):
+    kind: str
+    text: str
+    confidence: str = "high"
+    source_ref: str | None = None
+
+
+class FactUpdate(BaseModel):
+    kind: str | None = None
+    text: str | None = None
+    confidence: str | None = None
+    source_ref: str | None = None
+    status: str | None = None
 
 
 class PipelineSummary(BaseModel):
@@ -110,10 +128,18 @@ class AppDetail(BaseModel):
     owner_team: str | None = None
     environments: list[str] = []
     corpus_docs: list[AppCorpusDocRead]
-    facts: list[AppFactRead]
     pipeline_summary: PipelineSummary
+    brain_context_synthesized_at: datetime | None = None
+    brain_context_status: str = "idle"
     created_at: datetime
     updated_at: datetime
+
+
+class BrainContextResponse(BaseModel):
+    facts: list[AppFactRead]
+    synthesized_at: datetime | None
+    status: str
+    source_doc_count: int
 
 
 class AskRequest(BaseModel):

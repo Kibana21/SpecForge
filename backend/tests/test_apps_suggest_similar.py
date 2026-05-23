@@ -25,23 +25,32 @@ async def test_suggest_lists_onboarded_apps(client):
     from app.models.app import App
 
     sn = f"pay{uuid.uuid4().hex[:8]}"
+    _app_pk = None
     async with AsyncSessionLocal() as db:
         app = App(name="PayHub", short_name=sn, tier=1, is_onboarded=True,
                   description="payments settlement platform")
         db.add(app)
         await db.commit()
         app_id = str(app.id)
+        _app_pk = app.id
 
-    r = await client.get("/api/apps/suggest", params={"q": "payments settlement"})
-    assert r.status_code == 200
-    data = r.json()["data"]
-    ids = [a["id"] for a in data]
-    assert app_id in ids
-    payhub = next(a for a in data if a["id"] == app_id)
-    # no chunks → not suggested, 0 match, but present with the projection fields
-    assert payhub["suggested"] is False
-    assert payhub["match_pct"] == 0
-    assert "fact_count" in payhub and "corpus_doc_count" in payhub
+    try:
+        r = await client.get("/api/apps/suggest", params={"q": "payments settlement"})
+        assert r.status_code == 200
+        data = r.json()["data"]
+        ids = [a["id"] for a in data]
+        assert app_id in ids
+        payhub = next(a for a in data if a["id"] == app_id)
+        # no chunks → not suggested, 0 match, but present with the projection fields
+        assert payhub["suggested"] is False
+        assert payhub["match_pct"] == 0
+        assert "fact_count" in payhub and "corpus_doc_count" in payhub
+    finally:
+        async with AsyncSessionLocal() as db:
+            a = await db.get(App, _app_pk)
+            if a:
+                await db.delete(a)
+                await db.commit()
 
 
 # ── Similar projects ─────────────────────────────────────────────────────────────
@@ -79,6 +88,8 @@ async def test_load_app_facts_for_project(client):
     from app.models.project_intake import ProjectApp
     from app.services.projects.app_context import load_app_facts_for_project
 
+    _app_pk = None
+    _proj_pk = None
     async with AsyncSessionLocal() as db:
         app = App(name="ClaimsEzy", short_name=f"clm{uuid.uuid4().hex[:8]}", tier=2, is_onboarded=True)
         db.add(app)
@@ -92,11 +103,25 @@ async def test_load_app_facts_for_project(client):
         await db.flush()
         db.add(ProjectApp(project_id=proj.id, app_id=app.id, included=True))
         await db.commit()
+        _app_pk = app.id
+        _proj_pk = proj.id
         pid = proj.id
 
-    async with AsyncSessionLocal() as db:
-        facts = await load_app_facts_for_project(pid, db)
-    texts = [f["text"] for f in facts]
-    assert "Max claim is 1M USD" in texts
-    assert "Supports bulk claim import" not in texts  # dismissed fact excluded
-    assert facts[0]["app"] == "ClaimsEzy"
+    try:
+        async with AsyncSessionLocal() as db:
+            facts = await load_app_facts_for_project(pid, db)
+        texts = [f["text"] for f in facts]
+        assert "Max claim is 1M USD" in texts
+        assert "Supports bulk claim import" not in texts  # dismissed fact excluded
+        assert facts[0]["app"] == "ClaimsEzy"
+    finally:
+        async with AsyncSessionLocal() as db:
+            # Delete app first (cascades facts + project_apps), then project
+            a = await db.get(App, _app_pk)
+            if a:
+                await db.delete(a)
+                await db.commit()
+            p = await db.get(Project, _proj_pk)
+            if p:
+                await db.delete(p)
+                await db.commit()

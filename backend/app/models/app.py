@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, String, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -29,6 +30,8 @@ class App(TimestampMixin, Base):
     rebuild_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     environments: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")  # e.g. ["Prod","UAT","DR"]
     owner_team: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    brain_context_synthesized_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    brain_context_status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="'idle'")
 
     members: Mapped[list["AppMember"]] = relationship(
         "AppMember", back_populates="app", cascade="all, delete-orphan"

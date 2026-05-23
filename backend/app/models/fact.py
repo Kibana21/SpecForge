@@ -7,6 +7,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db import Base
 from app.models.base import TimestampMixin, uuid_pk
 
+
+
 FactKindEnum = Enum(
     "capability", "constraint", "limitation", "integration", "gotcha",
     name="fact_kind_enum",
@@ -36,7 +38,12 @@ class AppFact(TimestampMixin, Base):
     source_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
     confidence: Mapped[str] = mapped_column(FactConfidenceEnum, nullable=False, default="medium")
     status: Mapped[str] = mapped_column(FactStatusEnum, nullable=False, default="active")
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="ai")
     chunk_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    doc_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("app_corpus_docs.id", ondelete="SET NULL"), nullable=True
+    )
+    source_fact_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
 
     app: Mapped["App"] = relationship("App", back_populates="facts")
 

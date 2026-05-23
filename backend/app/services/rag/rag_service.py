@@ -51,23 +51,25 @@ class AppBrainRAGService:
         app_name: str,
         provider: LLMProvider,
     ) -> AsyncGenerator[dict, None]:
-        chunks = await _retrieval_service.retrieve(
-            app_id=app_id,
-            question=question,
-            top_k=top_k,
-            db=db,
-        )
-
-        # Hybrid: reasoning tree-search alongside vector chunks (best-effort —
-        # a tree-search failure must not break /ask).
+        settings = get_settings()
         sections: list[RetrievedSection] = []
-        if get_settings().app_brain_use_pageindex:
+        if settings.app_brain_use_pageindex:
             try:
                 sections = await retrieve_app_sections(
                     app_id=app_id, question=question, top_k=top_k, db=db
                 )
             except Exception as exc:  # noqa: BLE001
                 log.warning("app_brain tree-search failed app_id=%s error=%s", app_id, exc)
+
+        # Fall back to vector chunks only when PageIndex is off or returned nothing.
+        chunks: list[RetrievedChunk] = []
+        if not settings.app_brain_use_pageindex or not sections:
+            chunks = await _retrieval_service.retrieve(
+                app_id=app_id,
+                question=question,
+                top_k=top_k,
+                db=db,
+            )
 
         if not chunks and not sections:
             yield {"type": "error", "message": "No indexed content found for this app."}

@@ -7,7 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request, UploadFile
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, delete as sa_delete, func, or_, select, text as sa_text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_role
@@ -21,7 +21,7 @@ from app.models.project import Project
 from app.models.project_intake import ProjectApp
 from app.models.storage import StorageFile, StorageFileBlob
 from app.models.user import User
-from app.schemas.app import AppCreate, AppDetail, AppFactRead, AppListItem, AppUpdate, AskRequest, PipelineSummary, AppCorpusDocRead
+from app.schemas.app import AppCreate, AppDetail, AppFactRead, AppListItem, AppUpdate, AskRequest, BrainContextResponse, PipelineSummary, AppCorpusDocRead, FactCreate, FactUpdate
 from app.schemas.envelope import err, ok
 from app.services.documents.storage import detect_mime, sanitize_filename
 
@@ -246,16 +246,13 @@ async def get_app(
     )
     corpus_docs = corpus_result.scalars().all()
 
-    facts_result = await db.execute(select(AppFact).where(AppFact.app_id == app.id))
-    facts = facts_result.scalars().all()
-
     chunks_result = await db.execute(
         select(AppChunk).join(AppCorpusDoc, AppChunk.doc_id == AppCorpusDoc.id)
         .where(AppCorpusDoc.app_id == app.id)
     )
     chunks = chunks_result.scalars().all()
 
-    return ok(_app_detail(app, corpus_docs, facts, _pipeline_summary(corpus_docs, chunks)))
+    return ok(_app_detail(app, corpus_docs, _pipeline_summary(corpus_docs, chunks)))
 
 
 @router.patch("/{app_id}")
@@ -275,11 +272,10 @@ async def update_app(
     await db.refresh(app)
 
     corpus_docs = (await db.execute(select(AppCorpusDoc).where(AppCorpusDoc.app_id == app.id))).scalars().all()
-    facts = (await db.execute(select(AppFact).where(AppFact.app_id == app.id))).scalars().all()
     chunks = (await db.execute(
         select(AppChunk).join(AppCorpusDoc, AppChunk.doc_id == AppCorpusDoc.id).where(AppCorpusDoc.app_id == app.id)
     )).scalars().all()
-    return ok(_app_detail(app, corpus_docs, facts, _pipeline_summary(corpus_docs, chunks)))
+    return ok(_app_detail(app, corpus_docs, _pipeline_summary(corpus_docs, chunks)))
 
 
 @router.delete("/{app_id}")
@@ -313,7 +309,7 @@ def _pipeline_summary(corpus_docs: list, chunks: list) -> PipelineSummary:
     )
 
 
-def _app_detail(app: App, corpus_docs: list, facts: list, pipeline: PipelineSummary) -> dict:
+def _app_detail(app: App, corpus_docs: list, pipeline: PipelineSummary) -> dict:
     return {
         "id": str(app.id),
         "name": app.name,
@@ -335,16 +331,9 @@ def _app_detail(app: App, corpus_docs: list, facts: list, pipeline: PipelineSumm
             }
             for d in corpus_docs
         ],
-        "facts": [
-            {
-                "id": str(f.id), "app_id": str(f.app_id), "kind": f.kind,
-                "text": f.text, "source_ref": f.source_ref, "confidence": f.confidence,
-                "status": f.status, "chunk_ids": f.chunk_ids,
-                "created_at": f.created_at.isoformat(), "updated_at": f.updated_at.isoformat(),
-            }
-            for f in facts
-        ],
         "pipeline_summary": pipeline.model_dump(),
+        "brain_context_synthesized_at": app.brain_context_synthesized_at.isoformat() if app.brain_context_synthesized_at else None,
+        "brain_context_status": app.brain_context_status or "idle",
         "created_at": app.created_at.isoformat(),
         "updated_at": app.updated_at.isoformat(),
     }
@@ -487,6 +476,271 @@ async def reindex_app(
     return ok({"task_id": task.id if task else None})
 
 
+# ── Per-document: delete / markdown / reindex ─────────────────────────────────
+
+@router.delete("/{app_id}/corpus/{doc_id}", status_code=204)
+async def delete_corpus_doc(
+    doc_id: uuid.UUID,
+    app: App = Depends(require_app_write_access),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    result = await db.execute(
+        select(AppCorpusDoc).where(AppCorpusDoc.id == doc_id, AppCorpusDoc.app_id == app.id)
+    )
+    doc = result.scalar_one_or_none()
+    if doc is None:
+        err("not_found", "Corpus document not found", 404)
+
+    # Delete AI-extracted facts that are traceable to this doc.
+    # Two linkage paths (both set by _extract_app_facts since the per-doc fix):
+    #   1. source_ref = doc.name  — explicit name attribution
+    #   2. chunk_ids JSONB array contains any UUID belonging to this doc's chunks
+    # We must do this BEFORE deleting the corpus doc so the app_chunks join still resolves.
+    await db.execute(
+        sa_text("""
+            DELETE FROM app_facts
+            WHERE app_id = :app_id
+              AND source = 'ai'
+              AND (
+                source_ref = :doc_name
+                OR EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements_text(COALESCE(chunk_ids, '[]'::jsonb)) AS t(cid)
+                    JOIN app_chunks c ON c.id::text = t.cid
+                    WHERE c.doc_id = :doc_id
+                )
+              )
+        """),
+        {"app_id": str(app.id), "doc_name": doc.name, "doc_id": str(doc.id)},
+    )
+
+    # Delete cached markdown conversion
+    from app.models.document_markdown import DocumentMarkdown
+    await db.execute(
+        sa_delete(DocumentMarkdown).where(DocumentMarkdown.correlation_id == str(doc.id))
+    )
+
+    # Delete corpus doc — FK CASCADE removes AppChunk rows and AppDocTree
+    await db.delete(doc)
+
+    await audit.emit(
+        db,
+        event="corpus.doc.deleted",
+        actor_id=str(user.id),
+        metadata={"app_id": str(app.id), "doc_id": str(doc.id), "name": doc.name},
+    )
+    await db.commit()
+
+
+@router.get("/{app_id}/corpus/{doc_id}/markdown")
+async def get_corpus_doc_markdown(
+    doc_id: uuid.UUID,
+    app: App = Depends(require_app_access),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    result = await db.execute(
+        select(AppCorpusDoc).where(AppCorpusDoc.id == doc_id, AppCorpusDoc.app_id == app.id)
+    )
+    if result.scalar_one_or_none() is None:
+        err("not_found", "Corpus document not found", 404)
+
+    from app.models.document_markdown import DocumentMarkdown
+    md_result = await db.execute(
+        select(DocumentMarkdown)
+        .where(DocumentMarkdown.correlation_id == str(doc_id))
+        .order_by(DocumentMarkdown.created_at.desc())
+        .limit(1)
+    )
+    md = md_result.scalar_one_or_none()
+    if md is None:
+        err("not_found", "Markdown not yet available for this document", 404)
+
+    return ok({
+        "markdown_text": md.markdown_text,
+        "provider": md.provider,
+        "filename": md.filename,
+        "created_at": md.created_at.isoformat(),
+    })
+
+
+@router.post("/{app_id}/corpus/{doc_id}/reindex", status_code=202)
+async def reindex_corpus_doc(
+    doc_id: uuid.UUID,
+    app: App = Depends(require_app_write_access),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    result = await db.execute(
+        select(AppCorpusDoc).where(AppCorpusDoc.id == doc_id, AppCorpusDoc.app_id == app.id)
+    )
+    doc = result.scalar_one_or_none()
+    if doc is None:
+        err("not_found", "Corpus document not found", 404)
+
+    await db.execute(
+        update(AppCorpusDoc).where(AppCorpusDoc.id == doc_id).values(
+            index_status="pending",
+            index_error=None,
+        )
+    )
+
+    await audit.emit(
+        db,
+        event="corpus.doc.reindex.triggered",
+        actor_id=str(user.id),
+        metadata={"app_id": str(app.id), "doc_id": str(doc.id), "name": doc.name},
+    )
+    await db.commit()
+
+    from workers.dispatch import dispatch
+    from workers.tasks import ingest_corpus_doc
+    task = dispatch(ingest_corpus_doc, str(doc_id))
+
+    return ok({"task_id": task.id if task else None})
+
+
+# ── Re-extract facts ──────────────────────────────────────────────────────────
+
+# ── Per-document facts ────────────────────────────────────────────────────────
+
+@router.get("/{app_id}/corpus/{doc_id}/facts")
+async def list_doc_facts(
+    doc_id: uuid.UUID,
+    app: App = Depends(require_app_access),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    doc_result = await db.execute(
+        select(AppCorpusDoc).where(AppCorpusDoc.id == doc_id, AppCorpusDoc.app_id == app.id)
+    )
+    doc = doc_result.scalar_one_or_none()
+    if doc is None:
+        err("not_found", "Corpus document not found", 404)
+
+    facts_result = await db.execute(
+        select(AppFact).where(
+            AppFact.app_id == app.id,
+            AppFact.status != "dismissed",
+            AppFact.source != "brain",
+            or_(
+                AppFact.doc_id == doc_id,
+                and_(AppFact.doc_id.is_(None), AppFact.source_ref == doc.name),
+            ),
+        ).order_by(AppFact.created_at.desc())
+    )
+    facts = facts_result.scalars().all()
+    return ok([AppFactRead.model_validate(f).model_dump() for f in facts])
+
+
+@router.post("/{app_id}/corpus/{doc_id}/facts", status_code=201)
+async def create_doc_fact(
+    doc_id: uuid.UUID,
+    body: FactCreate,
+    app: App = Depends(require_app_write_access),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    result = await db.execute(
+        select(AppCorpusDoc).where(AppCorpusDoc.id == doc_id, AppCorpusDoc.app_id == app.id)
+    )
+    doc = result.scalar_one_or_none()
+    if doc is None:
+        err("not_found", "Corpus document not found", 404)
+
+    fact = AppFact(
+        app_id=app.id,
+        doc_id=doc_id,
+        kind=body.kind,
+        text=body.text,
+        confidence=body.confidence,
+        source_ref=body.source_ref or doc.name,
+        status="active",
+        source="human",
+        chunk_ids=[],
+        source_fact_ids=[],
+    )
+    db.add(fact)
+    await audit.emit(db, event="app.fact.created", actor_id=str(user.id),
+                     metadata={"app_id": str(app.id), "doc_id": str(doc_id), "kind": body.kind})
+    await db.commit()
+    await db.refresh(fact)
+    return ok(AppFactRead.model_validate(fact).model_dump())
+
+
+# ── Brain Context ─────────────────────────────────────────────────────────────
+
+@router.get("/{app_id}/brain-context")
+async def get_brain_context(
+    app: App = Depends(require_app_access),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return synthesized brain facts + synthesis metadata."""
+    brain_facts_result = await db.execute(
+        select(AppFact).where(
+            AppFact.app_id == app.id,
+            AppFact.source == "brain",
+            AppFact.status == "active",
+        ).order_by(AppFact.kind, AppFact.created_at)
+    )
+    brain_facts = brain_facts_result.scalars().all()
+
+    source_count_result = await db.execute(
+        select(func.count(AppCorpusDoc.id)).where(AppCorpusDoc.app_id == app.id)
+    )
+    source_doc_count = source_count_result.scalar_one()
+
+    return ok({
+        "facts": [AppFactRead.model_validate(f).model_dump() for f in brain_facts],
+        "synthesized_at": app.brain_context_synthesized_at.isoformat() if app.brain_context_synthesized_at else None,
+        "status": app.brain_context_status or "idle",
+        "source_doc_count": source_doc_count,
+    })
+
+
+@router.post("/{app_id}/brain-context/synthesize", status_code=202)
+async def trigger_brain_synthesis(
+    app: App = Depends(require_app_write_access),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Dispatch brain context synthesis task."""
+    if app.brain_context_status == "running":
+        return ok({"status": "already_running"})
+
+    from workers.dispatch import dispatch
+    from workers.tasks import synthesize_brain_context
+
+    task = dispatch(synthesize_brain_context, str(app.id))
+
+    await audit.emit(db, event="app.brain_context.synthesize_triggered",
+                     actor_id=str(user.id), metadata={"app_id": str(app.id)})
+    await db.commit()
+    return ok({"task_id": task.id if task else None, "status": "running"})
+
+
+@router.post("/{app_id}/facts/extract", status_code=202)
+async def extract_facts(
+    app: App = Depends(require_app_write_access),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Dispatch a fact re-extraction on existing chunks (no corpus rebuild)."""
+    from workers.dispatch import dispatch
+    from workers.tasks import extract_app_facts
+
+    task = dispatch(extract_app_facts, str(app.id))
+
+    await audit.emit(
+        db,
+        event="app.facts.extract_triggered",
+        actor_id=str(user.id),
+        metadata={"app_id": str(app.id)},
+    )
+    await db.commit()
+
+    return ok({"task_id": task.id if task else None})
+
+
 # ── List facts ────────────────────────────────────────────────────────────────
 
 @router.get("/{app_id}/facts")
@@ -520,6 +774,81 @@ async def list_facts(
         [AppFactRead.model_validate(f).model_dump() for f in facts],
         meta={"total": total, "limit": limit, "offset": offset},
     )
+
+
+# ── Fact CRUD ────────────────────────────────────────────────────────────────
+
+@router.post("/{app_id}/facts", status_code=201)
+async def create_fact(
+    body: FactCreate,
+    app: App = Depends(require_app_write_access),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    fact = AppFact(
+        app_id=app.id,
+        kind=body.kind,
+        text=body.text,
+        confidence=body.confidence,
+        source_ref=body.source_ref,
+        status="active",
+        source="human",
+        chunk_ids=[],
+    )
+    db.add(fact)
+    await audit.emit(db, event="app.fact.created", actor_id=str(user.id),
+                     metadata={"app_id": str(app.id), "kind": body.kind, "text": body.text[:120]})
+    await db.commit()
+    await db.refresh(fact)
+    return ok(AppFactRead.model_validate(fact).model_dump())
+
+
+@router.patch("/{app_id}/facts/{fact_id}")
+async def update_fact(
+    fact_id: uuid.UUID,
+    body: FactUpdate,
+    app: App = Depends(require_app_write_access),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    fact = await db.get(AppFact, fact_id)
+    if not fact or fact.app_id != app.id:
+        err("fact_not_found", "Fact not found", 404)
+    if body.kind is not None:
+        fact.kind = body.kind
+    if body.text is not None:
+        fact.text = body.text
+    if body.confidence is not None:
+        fact.confidence = body.confidence
+    if body.source_ref is not None:
+        fact.source_ref = body.source_ref
+    if body.status is not None:
+        fact.status = body.status
+    fact.source = "human"
+    fact.updated_at = datetime.now(timezone.utc)
+    await audit.emit(db, event="app.fact.updated", actor_id=str(user.id),
+                     metadata={"app_id": str(app.id), "fact_id": str(fact_id),
+                                "changes": body.model_dump(exclude_none=True)})
+    await db.commit()
+    await db.refresh(fact)
+    return ok(AppFactRead.model_validate(fact).model_dump())
+
+
+@router.delete("/{app_id}/facts/{fact_id}", status_code=204)
+async def delete_fact(
+    fact_id: uuid.UUID,
+    app: App = Depends(require_app_write_access),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    fact = await db.get(AppFact, fact_id)
+    if not fact or fact.app_id != app.id:
+        err("fact_not_found", "Fact not found", 404)
+    await audit.emit(db, event="app.fact.deleted", actor_id=str(user.id),
+                     metadata={"app_id": str(app.id), "fact_id": str(fact_id),
+                                "source": fact.source, "kind": fact.kind})
+    await db.delete(fact)
+    await db.commit()
 
 
 # ── Ask the app brain (SSE) ───────────────────────────────────────────────────

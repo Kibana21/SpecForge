@@ -42,7 +42,8 @@
       "Bash(grep -oE \"\\(text-|bg-|border-\\)[a-z\\\\-0-9\\\\[\\\\]\\(\\\\$\\)#f0-9a-z,.:]*\")",
       "WebFetch(domain:docs.pageindex.ai)",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(make test-be *)"
     ]
   }
 }

@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     # the pgvector chunks for /ask. Set false to fall back to pure vector RAG.
     app_brain_use_pageindex: bool = True
 
+    # Markdown conversion ("auto" = mock when llm_provider==mock, else azure)
+    markdown_provider: str = "auto"
+    azure_content_understanding_endpoint: str = ""
+    azure_content_understanding_key: str = ""
+
     # Malware scanning (no-op stub today; real engine slots in later)
     malware_scanner: str = "noop"
 
