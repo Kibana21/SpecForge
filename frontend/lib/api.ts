@@ -12,6 +12,7 @@ import type {
   AskSessionMessage,
   AskSessionRead,
   BrainContextResponse,
+  DocTreeResponse,
   WikiIndexResponse,
   WikiSectionContent,
   AssumptionItem,
@@ -358,6 +359,8 @@ export const api = {
       apiFetch<{ task_id: string | null; status: string }>(`/api/apps/${appId}/wiki/health`, { method: 'POST' }),
     getCorpusSection: (appId: string, docId: string, nodeId: string) =>
       apiFetch<WikiSectionContent>(`/api/apps/${appId}/corpus/${docId}/section/${nodeId}`),
+    getDocTree: (appId: string, docId: string) =>
+      apiFetch<DocTreeResponse>(`/api/apps/${appId}/corpus/${docId}/tree`),
     listAskSessions: (appId: string) =>
       apiFetch<AskSessionListItem[]>(`/api/apps/${appId}/ask/sessions`),
     getAskSession: (appId: string, sessionId: string) =>

@@ -347,6 +347,24 @@ export interface WikiTreeNodeRef {
   pages: string
 }
 
+export interface DocTreeNode {
+  node_id: string
+  title: string
+  summary: string
+  pages: string
+  depth: number
+  children: DocTreeNode[]
+}
+
+export interface DocTreeResponse {
+  has_tree: boolean
+  node_count: number
+  model: string | null
+  doc_name: string
+  page_count: number | null
+  nodes: DocTreeNode[]
+}
+
 export interface WikiSectionContent {
   doc_id: string
   doc_name: string

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { IndexStatusBadge } from './IndexStatusBadge'
+import { DocStructurePanel } from './DocStructurePanel'
 import { api } from '@/lib/api'
 import type { AppCorpusDoc, AppFact, FactKind, FactConfidence } from '@/lib/types'
 
@@ -520,7 +521,7 @@ export function CorpusManager({ appId, docs, canWrite, rebuildStatus, onRefresh 
   const inputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [rightTab, setRightTab] = useState<'preview' | 'facts'>('preview')
+  const [rightTab, setRightTab] = useState<'preview' | 'facts' | 'structure'>('preview')
   const [markdown, setMarkdown] = useState<MarkdownData | null>(null)
   const [markdownLoading, setMarkdownLoading] = useState(false)
   const [markdownUnavailable, setMarkdownUnavailable] = useState(false)
@@ -771,7 +772,7 @@ export function CorpusManager({ appId, docs, canWrite, rebuildStatus, onRefresh 
 
               {/* Tab bar */}
               <div className="flex border-b border-[var(--border-default)] bg-[var(--bg-elevated)] flex-shrink-0">
-                {(['preview', 'facts'] as const).map(tab => (
+                {(['preview', 'facts', 'structure'] as const).map(tab => (
                   <button
                     key={tab}
                     onClick={() => setRightTab(tab)}
@@ -781,14 +782,14 @@ export function CorpusManager({ appId, docs, canWrite, rebuildStatus, onRefresh 
                         : 'border-transparent text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'
                     }`}
                   >
-                    {tab === 'preview' ? 'Preview' : 'Facts'}
+                    {tab === 'preview' ? 'Preview' : tab === 'facts' ? 'Facts' : 'Structure'}
                   </button>
                 ))}
               </div>
 
               {/* Tab content */}
               <div className="flex-1 overflow-hidden">
-                {rightTab === 'preview' ? (
+                {rightTab === 'preview' && (
                   <>
                     {markdownLoading && (
                       <div className="p-6 space-y-3 animate-pulse overflow-y-auto h-full">
@@ -854,13 +855,21 @@ export function CorpusManager({ appId, docs, canWrite, rebuildStatus, onRefresh 
                       </div>
                     )}
                   </>
-                ) : (
+                )}
+                {rightTab === 'facts' && (
                   <DocFactsPanel
                     key={selectedDoc.id}
                     appId={appId}
                     docId={selectedDoc.id}
                     docName={selectedDoc.name}
                     canWrite={canWrite}
+                  />
+                )}
+                {rightTab === 'structure' && (
+                  <DocStructurePanel
+                    key={selectedDoc.id}
+                    appId={appId}
+                    docId={selectedDoc.id}
                   />
                 )}
               </div>

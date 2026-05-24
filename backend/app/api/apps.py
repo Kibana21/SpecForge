@@ -863,6 +863,53 @@ async def get_corpus_section(
     })
 
 
+@router.get("/{app_id}/corpus/{doc_id}/tree")
+async def get_corpus_tree(
+    doc_id: uuid.UUID,
+    app: App = Depends(require_app_access),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return the document's PageIndex reasoning tree as a normalized nested
+    structure for the Structure tab visualization."""
+    from app.models.corpus import AppDocTree
+
+    doc = (await db.execute(
+        select(AppCorpusDoc).where(AppCorpusDoc.id == doc_id, AppCorpusDoc.app_id == app.id)
+    )).scalar_one_or_none()
+    if doc is None:
+        err("not_found", "Corpus document not found", 404)
+
+    tree_row = (await db.execute(
+        select(AppDocTree).where(AppDocTree.corpus_doc_id == doc_id, AppDocTree.app_id == app.id)
+    )).scalar_one_or_none()
+    if tree_row is None:
+        return ok({
+            "has_tree": False, "node_count": 0, "model": None,
+            "doc_name": doc.name, "page_count": doc.page_count, "nodes": [],
+        })
+
+    def _norm(node: dict, depth: int) -> dict:
+        s, e = node.get("start_index"), node.get("end_index")
+        return {
+            "node_id": str(node.get("node_id", "")),
+            "title": (node.get("title") or "").strip(),
+            "summary": (node.get("summary") or "").strip(),
+            "pages": f"{s}-{e}" if s is not None and e is not None else "",
+            "depth": depth,
+            "children": [_norm(c, depth + 1) for c in (node.get("nodes") or [])],
+        }
+
+    nodes = [_norm(n, 0) for n in (tree_row.tree_json.get("nodes") or [])]
+    return ok({
+        "has_tree": True,
+        "node_count": tree_row.node_count,
+        "model": tree_row.model,
+        "doc_name": doc.name,
+        "page_count": doc.page_count,
+        "nodes": nodes,
+    })
+
+
 @router.post("/{app_id}/facts/extract", status_code=202)
 async def extract_facts(
     app: App = Depends(require_app_write_access),
