@@ -54,7 +54,7 @@ function SourceFactsSection({ sourceFactIds, allSourceFacts }: {
         <div className="mt-2 space-y-1.5 pl-3 border-l-2 border-[var(--border-subtle)]">
           {sources.map(sf => (
             <div key={sf.id} className="flex flex-col gap-0.5">
-              <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">"{sf.text}"</p>
+              <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">&ldquo;{sf.text}&rdquo;</p>
               {sf.source_ref && (
                 <span className="text-[10px] text-[var(--text-tertiary)] font-medium">{sf.source_ref}</span>
               )}

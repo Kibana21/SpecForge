@@ -3,8 +3,8 @@
 - build_index: PageIndex OSS builds a reasoning tree (LiteLLM → Vertex Gemini).
   PDF uses the native page path; other formats are bridged through our parser
   to Markdown. Per-page text is extracted with PyMuPDF for node-text fetching.
-- tree_search: our Gemini (via SkillEngine `source_tree_search`) reasons over the
-  in-scope trees' outline to select relevant node_ids, then we fetch their text.
+- tree_search: our Gemini (via the DSPy `dspy_tree_search` module) reasons over
+  the in-scope trees' outline to select relevant node_ids, then we fetch their text.
 
 NOTE: PageIndex + Vertex has no official example — validate via the T6 live spike
 (`tests/test_pageindex_vertex.py`, opt-in). All heavy imports are lazy so this
@@ -192,17 +192,12 @@ class PageIndexProvider(CorpusIndexProvider):
         if not docs:
             return []
 
-        from app.services.llm import get_provider
-        from app.services.skills.skill_engine import SkillEngine
+        from app.services.corpus_index.dspy_tree_search import run_tree_search
 
         outline = flatten_outline(docs)
         doc_index = {f"D{i}": d for i, d in enumerate(docs)}
 
-        result = await SkillEngine().run(
-            "source_tree_search",
-            {"query": query, "outline": outline, "top_k": top_k},
-            get_provider(),
-        )
+        result = await run_tree_search(query, outline, top_k)
         selections = result.get("selections", []) if isinstance(result, dict) else []
 
         out: list[RetrievedSection] = []

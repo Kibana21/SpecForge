@@ -333,6 +333,90 @@ export interface AppDetail extends AppListItem {
   pipeline_summary: PipelineSummary
   brain_context_synthesized_at: string | null
   brain_context_status: 'idle' | 'running'
+  wiki_compiled_at: string | null
+  wiki_status: 'idle' | 'running'
+  wiki_health: WikiHealth | null
+}
+
+// ── Brain Wiki ──────────────────────────────────────────────────────────────────
+
+export interface WikiTreeNodeRef {
+  doc_id: string
+  node_id: string
+  title: string
+  pages: string
+}
+
+export interface WikiSectionContent {
+  doc_id: string
+  doc_name: string
+  node_id: string
+  title: string
+  pages: string
+  summary: string
+  text: string
+}
+
+export interface AppWikiConcept {
+  id: string
+  slug: string
+  title: string
+  brief: string
+  content_md: string
+  source_doc_ids: string[]
+  related_slugs: string[]
+  tree_node_refs: WikiTreeNodeRef[]
+  compiled_at: string
+}
+
+export interface AppWikiSummary {
+  id: string
+  doc_id: string
+  brief: string
+  content_md: string
+  related_slugs: string[]
+  doc_type: string
+  compiled_at: string
+}
+
+export interface WikiConceptBrief {
+  slug: string
+  title: string
+  brief: string
+}
+
+export interface WikiSummaryBrief {
+  doc_id: string
+  doc_name: string
+  brief: string
+  doc_type: string
+}
+
+export interface WikiContradiction {
+  concept_a: string
+  concept_b: string
+  issue: string
+  severity?: string
+}
+
+export interface WikiOrphan {
+  slug: string
+  title: string
+}
+
+export interface WikiHealth {
+  contradictions: WikiContradiction[]
+  orphans: WikiOrphan[]
+  concept_count: number
+  checked_at: string
+}
+
+export interface WikiIndexResponse {
+  concepts: WikiConceptBrief[]
+  summaries: WikiSummaryBrief[]
+  status: 'idle' | 'running'
+  compiled_at: string | null
+  health: WikiHealth | null
 }
 
 export interface AppCreate {
@@ -365,11 +449,60 @@ export interface CitationItem {
   text_excerpt: string
 }
 
+export interface TraceConcept { slug: string; title: string; brief: string }
+export interface TraceDocument { doc_id: string; name: string; brief: string }
+export interface TraceSection { doc_id: string; doc_name: string; node_id: string; title: string; pages: string; excerpt: string }
+export interface TraceChunk { doc_name: string; chunk_no: number; similarity: number; excerpt: string }
+
+export interface DeepTrace {
+  mode: AskMode
+  selected_concepts: TraceConcept[]
+  selected_documents: TraceDocument[]
+  sections: TraceSection[]
+  chunks: TraceChunk[]
+  fallback_used: boolean
+  context_chars: number
+}
+
 export type SSEEvent =
+  | { type: 'step'; text: string }
   | { type: 'chunk'; text: string }
   | { type: 'citations'; citations: CitationItem[] }
+  | { type: 'trace'; trace: DeepTrace }
   | { type: 'error'; message: string }
   | { type: 'done' }
+
+export type AskMode = 'quick' | 'deep'
+
+export interface AskSessionCitation {
+  id: string
+  doc_name: string
+  chunk_no: number
+}
+
+export interface AskSessionMessage {
+  role: 'user' | 'assistant'
+  content: string
+  mode?: AskMode
+  citations?: AskSessionCitation[]
+  trace?: DeepTrace
+}
+
+export interface AskSessionListItem {
+  id: string
+  title: string
+  message_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface AskSessionRead {
+  id: string
+  title: string
+  messages: AskSessionMessage[]
+  created_at: string
+  updated_at: string
+}
 
 // ── Audit Log types ───────────────────────────────────────────────────────────
 

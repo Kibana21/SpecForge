@@ -37,16 +37,11 @@ def test_mock_tree_search_returns_sections():
     assert s.document_id == doc.document_id
 
 
-def test_source_tree_search_skill_schema_valid():
-    from app.services.llm.mock_provider import MockProvider
-    from app.services.skills.skill_engine import SkillEngine
+def test_source_tree_search_returns_selections():
+    from app.services.corpus_index.dspy_tree_search import run_tree_search
 
     result = asyncio.run(
-        SkillEngine().run(
-            "source_tree_search",
-            {"query": "payments", "outline": "[D0] 0001 · Intro — about payments", "top_k": 3},
-            MockProvider(),
-        )
+        run_tree_search("payments", "[D0] 0001 · Intro — about payments", 3)
     )
     assert "selections" in result
     assert isinstance(result["selections"], list)

@@ -1,8 +1,6 @@
-import json
 import logging
 import uuid
 from collections.abc import AsyncGenerator
-from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,7 +12,6 @@ from app.services.rag.tree_retrieval import retrieve_app_sections
 
 log = logging.getLogger(__name__)
 
-_SKILLS_ROOT = Path(__file__).parent.parent / "skills"
 _retrieval_service = RAGRetrievalService()
 
 
@@ -29,16 +26,17 @@ def _build_retrieved_text(sections: list[RetrievedSection], chunks: list[Retriev
     return "\n\n".join(parts)
 
 
-def _render_prompt(skill_name: str, context: dict) -> tuple[str, str]:
-    """Return (prompt, system_instruction) for a skill."""
-    from jinja2 import Environment, StrictUndefined
-
-    skill_dir = _SKILLS_ROOT / skill_name
-    instruction = (skill_dir / "instruction.md").read_text(encoding="utf-8")
-    template_src = (skill_dir / "template.md").read_text(encoding="utf-8")
-    env = Environment(undefined=StrictUndefined, autoescape=False)
-    prompt = env.from_string(template_src).render(**context)
-    return prompt, instruction
+def format_conversation(history, max_turns: int = 6) -> str:
+    """Render recent chat turns into a compact transcript for the QA prompt."""
+    if not history:
+        return ""
+    lines: list[str] = []
+    for t in history[-max_turns:]:
+        role = getattr(t, "role", None) or (t.get("role") if isinstance(t, dict) else "")
+        content = getattr(t, "content", None) or (t.get("content") if isinstance(t, dict) else "")
+        label = "User" if role == "user" else "Assistant"
+        lines.append(f"{label}: {(content or '').strip()[:1500]}")
+    return "\n\n".join(lines)
 
 
 class AppBrainRAGService:
@@ -50,6 +48,7 @@ class AppBrainRAGService:
         db: AsyncSession,
         app_name: str,
         provider: LLMProvider,
+        history: list | None = None,
     ) -> AsyncGenerator[dict, None]:
         settings = get_settings()
         sections: list[RetrievedSection] = []
@@ -76,12 +75,39 @@ class AppBrainRAGService:
             return
 
         retrieved_text = _build_retrieved_text(sections, chunks)
-        prompt, instruction = _render_prompt(
-            "app_brain_qa",
-            {"app_name": app_name, "retrieved_text": retrieved_text, "question": question},
-        )
 
-        async for token in provider.astream(prompt=prompt, system=instruction, skill_name="app_brain_qa"):
+        # --- Explainability trace: what fed this single-pass answer ---
+        yield {
+            "type": "trace",
+            "trace": {
+                "mode": "quick",
+                "selected_concepts": [],
+                "selected_documents": [],
+                "sections": [
+                    {
+                        "doc_id": str(s.document_id), "doc_name": s.doc_name, "node_id": s.node_id,
+                        "title": s.title, "pages": f"{s.page_start}-{s.page_end}" if s.page_start else "",
+                        "excerpt": s.text[:300],
+                    }
+                    for s in sections
+                ],
+                "chunks": [
+                    {
+                        "doc_name": c.doc_name, "chunk_no": c.chunk_no,
+                        "similarity": round(c.similarity, 3), "excerpt": c.text[:300],
+                    }
+                    for c in chunks
+                ],
+                "fallback_used": bool(chunks) and not sections,
+                "context_chars": len(retrieved_text),
+            },
+        }
+
+        from app.services.skills.app_brain_qa.dspy_qa import run_qa_stream
+        async for token in run_qa_stream(
+            app_name=app_name, retrieved_text=retrieved_text,
+            conversation=format_conversation(history), question=question,
+        ):
             yield {"type": "chunk", "text": token}
 
         # Citations: reasoning sections first (doc › section, page), then vector chunks.

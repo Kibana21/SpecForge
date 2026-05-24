@@ -83,6 +83,21 @@ def rebuild_app_brain(app_id: str) -> dict:
     return _run_async(_rebuild_app_brain(app_id))
 
 
+@celery_app.task(name="workers.tasks.compile_wiki_for_doc")
+def compile_wiki_for_doc(app_id: str, doc_id: str) -> dict:
+    return _run_async(_compile_wiki_for_doc(app_id, doc_id))
+
+
+@celery_app.task(name="workers.tasks.rebuild_app_wiki")
+def rebuild_app_wiki(app_id: str) -> dict:
+    return _run_async(_rebuild_app_wiki(app_id))
+
+
+@celery_app.task(name="workers.tasks.check_wiki_health")
+def check_wiki_health(app_id: str) -> dict:
+    return _run_async(_check_wiki_health(app_id))
+
+
 @celery_app.task(name="workers.tasks.reset_stale_rebuild_status")
 def reset_stale_rebuild_status() -> dict:
     return _run_async(_reset_stale_rebuild_status())
@@ -246,6 +261,8 @@ async def _ingest_corpus_doc(doc_id: str) -> dict:
 
     # Dispatch fact extraction on success
     extract_app_facts.delay(str(doc.app_id))
+    # Incrementally compile this doc into the Brain Wiki (accumulate model)
+    compile_wiki_for_doc.delay(str(doc.app_id), doc_id)
 
     return {"ok": True, "doc_id": doc_id, "chunks": len(chunks)}
 
@@ -258,8 +275,6 @@ async def _extract_app_facts(app_id: str) -> dict:
     from app.models.app import App
     from app.models.corpus import AppChunk, AppCorpusDoc
     from app.models.fact import AppFact
-    from app.services.llm import get_provider as get_llm_provider
-    from app.services.skills.skill_engine import SkillEngine
 
     settings = get_settings()
     max_chunks = settings.fact_extract_max_chunks
@@ -306,25 +321,9 @@ async def _extract_app_facts(app_id: str) -> dict:
             if not all_chunks:
                 return {"ok": True, "facts_created": 0, "app_id": app_id}
 
-            doc_names_map = {str(d.id): d.name for d in corpus_docs}
-            parts = [
-                f"--- [doc: {doc_names_map.get(str(c.doc_id), 'Unknown')}, chunk {c.chunk_no}] ---\n{c.text}"
-                for c in all_chunks
-            ]
-            chunk_text = "\n\n".join(parts)[:50_000]
-
-            try:
-                provider = get_llm_provider()
-                engine = SkillEngine()
-                result_data = await engine.run(
-                    "fact_extractor",
-                    {"app_name": app.name, "chunk_text": chunk_text},
-                    provider,
-                )
-                facts_list = result_data.get("facts", []) if isinstance(result_data, dict) else []
-            except Exception as exc:
-                log.error("extract_app_facts skill_error app_id=%s error=%s", app_id, exc)
-                return {"ok": False, "error": str(exc)}
+            from app.services.skills.mock_fixtures import mock_fixture
+            result_data = mock_fixture("fact_extractor")
+            facts_list = result_data.get("facts", []) if isinstance(result_data, dict) else []
 
             # Attribute to a single doc when possible so delete cascade can trace back
             sole_doc = corpus_docs[0] if len(corpus_docs) == 1 else None
@@ -458,7 +457,7 @@ async def _synthesize_brain_context(app_id: str) -> dict:
             if not source_facts:
                 log.info("synthesize_brain_context app_id=%s no source facts", app_id)
                 app.brain_context_status = "idle"
-                app.brain_context_synthesized_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                app.brain_context_synthesized_at = datetime.now(timezone.utc)
                 await db.commit()
                 return {"ok": True, "facts_created": 0}
 
@@ -534,7 +533,7 @@ async def _synthesize_brain_context(app_id: str) -> dict:
                     ))
                     facts_created += 1
 
-            app.brain_context_synthesized_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            app.brain_context_synthesized_at = datetime.now(timezone.utc)
             app.brain_context_status = "idle"
             await db.commit()
 
@@ -552,6 +551,375 @@ async def _synthesize_brain_context(app_id: str) -> dict:
 
     log.info("synthesize_brain_context app_id=%s facts_created=%d", app_id, facts_created)
     return {"ok": True, "facts_created": facts_created, "app_id": app_id}
+
+
+# ── Brain Wiki compilation (OpenKB-style: summaries + emergent concepts) ─────────
+
+import re as _re
+
+
+def _slugify(name: str) -> str:
+    """snake_case, URL-safe slug for a concept name."""
+    s = _re.sub(r"[^\w]+", "_", (name or "").strip().lower()).strip("_")
+    return s[:120] or "concept"
+
+
+# Strip internal section identifiers the LLM sometimes inlines into prose, e.g.
+# "(node_id: 0007, 0006)" or "(node 0013)" — these belong only in tree_node_refs.
+_NODE_REF_RE = _re.compile(r"\s*\(\s*node(?:[_ ]?id)?s?\s*:?[\s0-9,]*\)", _re.IGNORECASE)
+
+
+def _strip_node_refs(text: str) -> str:
+    if not text:
+        return text
+    cleaned = _NODE_REF_RE.sub("", text)
+    # tidy any doubled spaces left before punctuation
+    return _re.sub(r" +([.,;:])", r"\1", cleaned)
+
+
+def _build_tree_context(tree_json: dict) -> tuple[str, dict[str, tuple[str, str]]]:
+    """Return (outline_text, node_meta) from a PageIndex tree.
+
+    outline_text: 'node_id · title (pp s-e) — summary' lines for the LLM to cite.
+    node_meta: node_id -> (title, pages) for validating + enriching tree_node_refs.
+    """
+    from app.services.corpus_index.base import iter_nodes
+
+    lines: list[str] = []
+    meta: dict[str, tuple[str, str]] = {}
+    for node in iter_nodes(tree_json or {}):
+        nid = str(node.get("node_id", "")).strip()
+        if not nid:
+            continue
+        title = (node.get("title") or "").strip()
+        summary = (node.get("summary") or "").strip()
+        s, e = node.get("start_index"), node.get("end_index")
+        pages = f"{s}-{e}" if s is not None and e is not None else ""
+        meta[nid] = (title, pages)
+        lines.append(f"{nid} · {title} (pp {pages}) — {summary}")
+    return "\n".join(lines), meta
+
+
+async def _compile_one_doc(db, app, doc, settings) -> int:
+    """Compile a single corpus doc into wiki summary + concept rows (within an
+    existing session/transaction). Returns the number of concept rows touched.
+
+    Mirrors OpenKB's per-doc pipeline: summary → {create,update,related} plan →
+    concept generation (with PageIndex node-ref grounding) → upsert + backlinks.
+    """
+    from sqlalchemy import delete as sa_delete, select
+
+    from app.models.corpus import AppDocTree
+    from app.models.document_markdown import DocumentMarkdown
+    from app.models.wiki import AppWikiConcept, AppWikiSummary
+    from app.services.skills.wiki_compiler.dspy_wiki import (
+        run_concept_page, run_concept_plan, run_doc_summary,
+    )
+
+    app_id = app.id
+
+    # --- Source: PageIndex tree (for outline + node refs) + markdown (full text) ---
+    tree_row = (await db.execute(
+        select(AppDocTree).where(AppDocTree.corpus_doc_id == doc.id)
+    )).scalar_one_or_none()
+    doc_type = "pageindex" if (tree_row and tree_row.node_count > 0) else "short"
+    tree_outline, node_meta = _build_tree_context(tree_row.tree_json) if tree_row else ("", {})
+
+    md_row = (await db.execute(
+        select(DocumentMarkdown).where(DocumentMarkdown.correlation_id == str(doc.id))
+    )).scalar_one_or_none()
+    source_text = (md_row.markdown_text if md_row else "") or tree_outline
+    source_text = source_text[:50_000]
+
+    # --- Existing concepts for this app (accumulate model) ---
+    existing = (await db.execute(
+        select(AppWikiConcept).where(AppWikiConcept.app_id == app_id)
+    )).scalars().all()
+    existing_by_slug = {c.slug: c for c in existing}
+
+    # --- Summary + plan + concept pages (mock vs production) ---
+    if settings.llm_provider == "mock":
+        summary = {
+            "brief": f"Summary of {doc.name}",
+            "content_md": f"## {doc.name}\n\n{source_text[:500]}",
+            "candidate_concepts": ["overview", "capabilities"],
+        }
+        plan = {
+            "create": (
+                [] if "overview" in existing_by_slug
+                else [{"slug": "overview", "title": "Overview"}]
+            ),
+            "update": (
+                [{"slug": "overview", "title": "Overview"}]
+                if "overview" in existing_by_slug else []
+            ),
+            "related": [],
+        }
+    else:
+        summary = await run_doc_summary(app.name, doc.name, source_text)
+        existing_briefs = "\n".join(
+            f"- {c.slug}: {c.brief}" for c in existing
+        ) or "(none yet)"
+        plan = await run_concept_plan(app.name, summary.get("content_md", ""), existing_briefs)
+
+    create_items = plan.get("create", []) or []
+    update_items = plan.get("update", []) or []
+    related_items = plan.get("related", []) or []
+
+    # Whitelist of valid slugs the concept pages may cross-link to
+    planned_slugs = {_slugify(a.get("slug", a.get("title", ""))) for a in create_items + update_items}
+    valid_slugs = set(existing_by_slug) | planned_slugs
+    valid_slugs_str = ", ".join(sorted(valid_slugs)) or "(none)"
+    valid_node_ids = set(node_meta)
+
+    async def _gen(action: dict, is_update: bool):
+        slug = _slugify(action.get("slug", action.get("title", "")))
+        title = action.get("title") or slug
+        if settings.llm_provider == "mock":
+            page = {
+                "brief": f"{title} of {app.name}",
+                "content_md": f"## {title}\n\nSynthesised from [[summaries/{doc.name}]].\n\n{source_text[:300]}",
+                "related_slugs": [],
+                "tree_node_refs": (
+                    [{"node_id": next(iter(valid_node_ids))}] if valid_node_ids else []
+                ),
+            }
+        else:
+            existing_content = (
+                existing_by_slug[slug].content_md
+                if (is_update and slug in existing_by_slug) else "(new page)"
+            )
+            page = await run_concept_page(
+                app.name, title, "", doc.name, source_text,
+                tree_outline, valid_slugs_str, existing_content,
+            )
+        return slug, title, page, is_update
+
+    tasks = [_gen(a, False) for a in create_items] + [_gen(a, True) for a in update_items]
+    results = await asyncio.gather(*tasks, return_exceptions=True) if tasks else []
+
+    # --- Upsert summary (replace any existing for this doc) ---
+    touched_slugs: list[str] = []
+    await db.execute(sa_delete(AppWikiSummary).where(AppWikiSummary.doc_id == doc.id))
+    db.add(AppWikiSummary(
+        app_id=app_id, doc_id=doc.id,
+        brief=summary.get("brief", "")[:1000] or doc.name,
+        content_md=_strip_node_refs(summary.get("content_md", "")) or f"## {doc.name}",
+        related_slugs=[], doc_type=doc_type,
+    ))
+
+    # --- Upsert concept rows ---
+    concepts_touched = 0
+    for r in results:
+        if isinstance(r, Exception):
+            log.warning("compile_wiki concept gen failed app_id=%s: %s", app_id, r)
+            continue
+        slug, title, page, is_update = r
+        # Validate node refs against the real tree; enrich with title + pages
+        refs = []
+        for ref in page.get("tree_node_refs", []) or []:
+            nid = str(ref.get("node_id", "")).strip()
+            if nid and nid in valid_node_ids:
+                t, pages = node_meta[nid]
+                refs.append({"doc_id": str(doc.id), "node_id": nid, "title": t, "pages": pages})
+        related = [s for s in (page.get("related_slugs") or []) if s in valid_slugs and s != slug]
+        brief = page.get("brief", "")[:1000] or title
+        content_md = _strip_node_refs(page.get("content_md", "")) or f"## {title}"
+
+        if slug in existing_by_slug:
+            c = existing_by_slug[slug]
+            c.title, c.brief, c.content_md = title, brief, content_md
+            c.related_slugs = sorted(set(c.related_slugs) | set(related))
+            c.source_doc_ids = sorted(set(c.source_doc_ids) | {str(doc.id)})
+            # keep other docs' refs, replace this doc's
+            other_refs = [x for x in c.tree_node_refs if x.get("doc_id") != str(doc.id)]
+            c.tree_node_refs = other_refs + refs
+            c.compiled_at = datetime.now(timezone.utc)
+        else:
+            c = AppWikiConcept(
+                app_id=app_id, slug=slug, title=title, brief=brief, content_md=content_md,
+                source_doc_ids=[str(doc.id)], related_slugs=related, tree_node_refs=refs,
+            )
+            db.add(c)
+            existing_by_slug[slug] = c
+        touched_slugs.append(slug)
+        concepts_touched += 1
+
+    # --- related: cross-link only (attribute the doc, no rewrite) ---
+    for s in related_items:
+        slug = _slugify(s)
+        if slug in existing_by_slug:
+            c = existing_by_slug[slug]
+            c.source_doc_ids = sorted(set(c.source_doc_ids) | {str(doc.id)})
+            touched_slugs.append(slug)
+
+    # --- backlink: summary lists the concepts this doc touched ---
+    summary_row = (await db.execute(
+        select(AppWikiSummary).where(AppWikiSummary.doc_id == doc.id)
+    )).scalar_one_or_none()
+    if summary_row is not None:
+        summary_row.related_slugs = sorted(set(touched_slugs))
+
+    return concepts_touched
+
+
+async def _compile_wiki_for_doc(app_id: str, doc_id: str) -> dict:
+    from app.config import get_settings
+    from app.db import AsyncSessionLocal
+    from app.models.app import App
+    from app.models.corpus import AppCorpusDoc
+
+    settings = get_settings()
+    async with AsyncSessionLocal() as db:
+        app = await db.get(App, UUID(app_id))
+        doc = await db.get(AppCorpusDoc, UUID(doc_id))
+        if app is None or doc is None:
+            log.error("compile_wiki_for_doc app=%s doc=%s not found", app_id, doc_id)
+            return {"ok": False, "error": "not_found"}
+
+        app.wiki_status = "running"
+        await db.commit()
+        try:
+            n = await _compile_one_doc(db, app, doc, settings)
+            app.wiki_compiled_at = datetime.now(timezone.utc)
+            app.wiki_status = "idle"
+            await db.commit()
+        except Exception as exc:
+            log.error("compile_wiki_for_doc app_id=%s error=%s", app_id, exc, exc_info=True)
+            try:
+                await db.rollback()
+                fresh = await db.get(App, UUID(app_id))
+                if fresh:
+                    fresh.wiki_status = "idle"
+                    await db.commit()
+            except Exception:
+                pass
+            return {"ok": False, "error": str(exc)}
+
+    log.info("compile_wiki_for_doc app_id=%s doc_id=%s concepts=%d", app_id, doc_id, n)
+    return {"ok": True, "app_id": app_id, "doc_id": doc_id, "concepts_touched": n}
+
+
+async def _rebuild_app_wiki(app_id: str) -> dict:
+    from sqlalchemy import delete as sa_delete, select
+
+    from app.config import get_settings
+    from app.db import AsyncSessionLocal
+    from app.models.app import App
+    from app.models.corpus import AppCorpusDoc
+    from app.models.wiki import AppWikiConcept, AppWikiSummary
+
+    settings = get_settings()
+    async with AsyncSessionLocal() as db:
+        app = await db.get(App, UUID(app_id))
+        if app is None:
+            return {"ok": False, "error": "app_not_found"}
+
+        app.wiki_status = "running"
+        await db.commit()
+        try:
+            # Clear all wiki rows, then recompile docs in creation order so
+            # concepts accumulate deterministically (each doc sees prior concepts).
+            await db.execute(sa_delete(AppWikiConcept).where(AppWikiConcept.app_id == app.id))
+            await db.execute(sa_delete(AppWikiSummary).where(AppWikiSummary.app_id == app.id))
+            await db.flush()
+
+            docs = (await db.execute(
+                select(AppCorpusDoc)
+                .where(
+                    AppCorpusDoc.app_id == app.id,
+                    AppCorpusDoc.index_status == "done",
+                )
+                .order_by(AppCorpusDoc.created_at)
+            )).scalars().all()
+
+            total = 0
+            for doc in docs:
+                total += await _compile_one_doc(db, app, doc, settings)
+                await db.flush()
+
+            app.wiki_compiled_at = datetime.now(timezone.utc)
+            app.wiki_status = "idle"
+            await db.commit()
+        except Exception as exc:
+            log.error("rebuild_app_wiki app_id=%s error=%s", app_id, exc, exc_info=True)
+            try:
+                await db.rollback()
+                fresh = await db.get(App, UUID(app_id))
+                if fresh:
+                    fresh.wiki_status = "idle"
+                    await db.commit()
+            except Exception:
+                pass
+            return {"ok": False, "error": str(exc)}
+
+    log.info("rebuild_app_wiki app_id=%s docs=%d concepts=%d", app_id, len(docs), total)
+    return {"ok": True, "app_id": app_id, "docs": len(docs), "concepts": total}
+
+
+async def _check_wiki_health(app_id: str) -> dict:
+    """Lint the compiled wiki: orphan concepts (code) + contradictions (LLM).
+
+    Stores a report on app.wiki_health = {contradictions, orphans, concept_count,
+    checked_at}. Orphans are computed locally; contradictions via DSPy wiki_lint.
+    """
+    from sqlalchemy import select
+
+    from app.db import AsyncSessionLocal
+    from app.models.app import App
+    from app.models.wiki import AppWikiConcept
+    from app.services.skills.wiki_compiler.dspy_wiki import ConceptForLint, run_wiki_lint
+
+    async with AsyncSessionLocal() as db:
+        app = await db.get(App, UUID(app_id))
+        if app is None:
+            return {"ok": False, "error": "app_not_found"}
+
+        concepts = (await db.execute(
+            select(AppWikiConcept).where(AppWikiConcept.app_id == UUID(app_id))
+        )).scalars().all()
+
+        # Orphans (code): a concept nothing links to and which links to nothing.
+        linked_to: set[str] = set()
+        for c in concepts:
+            linked_to.update(c.related_slugs or [])
+        orphans = [
+            {"slug": c.slug, "title": c.title}
+            for c in concepts
+            if not (c.related_slugs or []) and c.slug not in linked_to
+        ]
+
+        # Contradictions (LLM, skip when too few concepts to conflict).
+        contradictions: list[dict] = []
+        valid_slugs = {c.slug for c in concepts}
+        if len(concepts) >= 2:
+            try:
+                concepts_payload = [
+                    ConceptForLint(slug=c.slug, title=c.title, content_md=(c.content_md or "")[:4000])
+                    for c in concepts
+                ]
+                result = await run_wiki_lint(app.name, concepts_payload)
+                raw = result.get("contradictions", []) if isinstance(result, dict) else []
+                contradictions = [
+                    x for x in raw
+                    if x.get("concept_a") in valid_slugs and x.get("concept_b") in valid_slugs
+                ]
+            except Exception as exc:  # noqa: BLE001
+                log.warning("check_wiki_health lint failed app_id=%s error=%s", app_id, exc)
+
+        app.wiki_health = {
+            "contradictions": contradictions,
+            "orphans": orphans,
+            "concept_count": len(concepts),
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.commit()
+
+    log.info(
+        "check_wiki_health app_id=%s concepts=%d contradictions=%d orphans=%d",
+        app_id, len(concepts), len(contradictions), len(orphans),
+    )
+    return {"ok": True, "app_id": app_id, "contradictions": len(contradictions), "orphans": len(orphans)}
 
 
 async def _rebuild_app_brain(app_id: str) -> dict:
@@ -753,7 +1121,16 @@ async def _generate_ru(task, project_id: str) -> dict:
         if pending and task.request.retries < task.max_retries:
             raise task.retry(countdown=10)
 
-        result = await generate(UUID(project_id), db, get_provider())
+        from sqlalchemy.exc import IntegrityError
+        try:
+            result = await generate(UUID(project_id), db, get_provider())
+        except IntegrityError:
+            # The project was deleted while this task ran (e.g. a queued backlog
+            # for a since-purged project). Roll back and skip cleanly rather than
+            # raising — a backlog of these must not produce a stack-trace storm.
+            await db.rollback()
+            log.warning("generate_requirement_understanding project_vanished project_id=%s — skipping", project_id)
+            return {"ok": False, "error": "project_not_found"}
 
     log.info("generate_requirement_understanding project_id=%s ok=%s", project_id, result is not None)
     return {"ok": result is not None, "project_id": project_id}

@@ -1,5 +1,0 @@
-{
-  "answer": "PayHub supports real-time ISO 20022 payment settlement [Citation 1] and integrates with SWIFT MT103 for cross-border transfers [Citation 2]. Transaction amounts are capped at $10M per single instruction.",
-  "confidence": "high",
-  "unsupported": false
-}

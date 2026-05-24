@@ -6,7 +6,14 @@ import type {
   AppListItem,
   AppsFilter,
   AppSuggestion,
+  AppWikiConcept,
+  AppWikiSummary,
+  AskSessionListItem,
+  AskSessionMessage,
+  AskSessionRead,
   BrainContextResponse,
+  WikiIndexResponse,
+  WikiSectionContent,
   AssumptionItem,
   AuditEventRead,
   AuditFilters,
@@ -339,6 +346,26 @@ export const api = {
       apiFetch<BrainContextResponse>(`/api/apps/${appId}/brain-context`),
     synthesizeBrainContext: (appId: string) =>
       apiFetch<{ task_id: string | null; status: string }>(`/api/apps/${appId}/brain-context/synthesize`, { method: 'POST' }),
+    getWiki: (appId: string) =>
+      apiFetch<WikiIndexResponse>(`/api/apps/${appId}/wiki`),
+    getWikiConcept: (appId: string, slug: string) =>
+      apiFetch<AppWikiConcept>(`/api/apps/${appId}/wiki/concepts/${slug}`),
+    getWikiSummary: (appId: string, docId: string) =>
+      apiFetch<AppWikiSummary>(`/api/apps/${appId}/wiki/summaries/${docId}`),
+    rebuildWiki: (appId: string) =>
+      apiFetch<{ task_id: string | null; status: string }>(`/api/apps/${appId}/wiki/rebuild`, { method: 'POST' }),
+    checkWikiHealth: (appId: string) =>
+      apiFetch<{ task_id: string | null; status: string }>(`/api/apps/${appId}/wiki/health`, { method: 'POST' }),
+    getCorpusSection: (appId: string, docId: string, nodeId: string) =>
+      apiFetch<WikiSectionContent>(`/api/apps/${appId}/corpus/${docId}/section/${nodeId}`),
+    listAskSessions: (appId: string) =>
+      apiFetch<AskSessionListItem[]>(`/api/apps/${appId}/ask/sessions`),
+    getAskSession: (appId: string, sessionId: string) =>
+      apiFetch<AskSessionRead>(`/api/apps/${appId}/ask/sessions/${sessionId}`),
+    saveAskSession: (appId: string, body: { id: string | null; title: string; messages: AskSessionMessage[] }) =>
+      apiFetch<{ id: string; updated_at: string }>(`/api/apps/${appId}/ask/sessions`, { method: 'POST', body: JSON.stringify(body) }),
+    deleteAskSession: (appId: string, sessionId: string) =>
+      apiFetch<void>(`/api/apps/${appId}/ask/sessions/${sessionId}`, { method: 'DELETE' }),
     extractFacts: (appId: string) =>
       apiFetch<{ task_id: string }>(`/api/apps/${appId}/facts/extract`, { method: 'POST' }),
     listFacts: (appId: string, filters?: FactsFilter) => {

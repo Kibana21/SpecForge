@@ -10,20 +10,10 @@ log = logging.getLogger(__name__)
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
-# Map skill_name → fixture filename
-_SKILL_FIXTURE_MAP: dict[str, str] = {
-    "requirement_extractor": "requirement_extractor.json",
-    "gap_detector": "gap_detector.json",
-    "functional_spec": "functional_spec.json",
-    "technical_spec": "technical_spec.json",
-    "user_stories": "user_stories.json",
-    "reviewer": "reviewer.json",
-    "fact_extractor": "fact_extractor.json",
-    "fact_synthesis": "fact_synthesis.json",
-    "app_brain_qa": "app_brain_qa.json",
-    "source_tree_search": "source_tree_search.json",
-    "requirement_understanding": "requirement_understanding.json",
-}
+# All skills now run through DSPy modules (which load fixtures directly in mock
+# mode via app.services.skills.mock_fixtures), so the SkillEngine fixture map is
+# empty. Kept for the legacy MockProvider.complete contract / unknown-skill test.
+_SKILL_FIXTURE_MAP: dict[str, str] = {}
 
 
 class MockProvider(LLMProvider):

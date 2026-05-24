@@ -22,7 +22,7 @@ from app.models.project_source import DocumentTree
 from app.models.understanding import InterviewMessage, RequirementUnderstanding
 from app.services.corpus_index import IndexedDoc, RetrievedSection, get_corpus_index_provider
 from app.services.projects.app_context import load_app_facts_for_project
-from app.services.skills.skill_engine import SkillEngine
+from app.services.skills.dspy_intake import run_requirement_understanding
 
 log = logging.getLogger(__name__)
 
@@ -98,17 +98,13 @@ async def generate(project_id: uuid.UUID, db: AsyncSession, provider) -> dict | 
     facts = await load_app_facts_for_project(project_id, db)
     qa = await _gather_qa(project_id, db)
 
-    result = await SkillEngine().run(
-        _SKILL,
-        {
-            "project_name": project.name,
-            "business_unit": project.business_unit or "—",
-            "description": project.description or "—",
-            "source_sections": _format_sections(sections) or "(no source sections)",
-            "app_facts": _format_facts(facts) or "(no app facts)",
-            "qa_pairs": qa or "(none yet)",
-        },
-        provider,
+    result = await run_requirement_understanding(
+        project_name=project.name,
+        business_unit=project.business_unit or "—",
+        description=project.description or "—",
+        source_sections=_format_sections(sections) or "(no source sections)",
+        app_facts=_format_facts(facts) or "(no app facts)",
+        qa_pairs=qa or "(none yet)",
     )
 
     await _persist(project, result, db)

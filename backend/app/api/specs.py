@@ -20,11 +20,13 @@ from app.schemas.envelope import err, ok
 from app.schemas.spec import SpecPatch, SpecVersionRead
 from app.services.export import markdown_exporter
 from app.services.llm.base import LLMProvider
-from app.services.skills.skill_engine import SkillEngine
+from app.services.rag.wiki_grounding import gather_app_brain_context
+from app.services.skills.dspy_specs import (
+    run_functional_spec, run_reviewer, run_technical_spec, run_user_stories,
+)
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["specs"], dependencies=[Depends(get_current_user)])
-_skill_engine = SkillEngine()
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -130,14 +132,11 @@ async def generate_functional(
         or "None"
     )
 
-    result = await _skill_engine.run(
-        "functional_spec",
-        {
-            "project_name": project.name,
-            "extracted_requirements": _format_reqs_json(reqs),
-            "resolved_gap_answers": resolved_answers,
-        },
-        provider,
+    result = await run_functional_spec(
+        project_name=project.name,
+        extracted_requirements=_format_reqs_json(reqs),
+        resolved_gap_answers=resolved_answers,
+        app_brain_context=await gather_app_brain_context(db, project_id),
     )
 
     spec = await _allocate_and_create_spec(db, project_id, "functional", result, project.name)
@@ -160,14 +159,11 @@ async def generate_technical(
     if not func_spec:
         err("no_functional_spec", "Generate functional spec first.", 422)
 
-    result = await _skill_engine.run(
-        "technical_spec",
-        {
-            "project_name": project.name,
-            "functional_spec": json.dumps(func_spec.content_json, indent=2),
-            "extracted_requirements": _format_reqs_json(reqs),
-        },
-        provider,
+    result = await run_technical_spec(
+        project_name=project.name,
+        functional_spec=json.dumps(func_spec.content_json, indent=2),
+        extracted_requirements=_format_reqs_json(reqs),
+        app_brain_context=await gather_app_brain_context(db, project_id),
     )
 
     spec = await _allocate_and_create_spec(db, project_id, "technical", result, project.name)
@@ -190,14 +186,11 @@ async def generate_user_stories(
     if not func_spec:
         err("no_functional_spec", "Generate functional spec first.", 422)
 
-    result = await _skill_engine.run(
-        "user_stories",
-        {
-            "project_name": project.name,
-            "functional_spec": json.dumps(func_spec.content_json, indent=2),
-            "extracted_requirements": _format_reqs_json(reqs),
-        },
-        provider,
+    result = await run_user_stories(
+        project_name=project.name,
+        functional_spec=json.dumps(func_spec.content_json, indent=2),
+        extracted_requirements=_format_reqs_json(reqs),
+        app_brain_context=await gather_app_brain_context(db, project_id),
     )
 
     spec = await _allocate_and_create_spec(db, project_id, "user_stories", result, project.name)
@@ -223,16 +216,13 @@ async def run_review(
     tech_spec = await _get_latest_spec(db, project_id, "technical")
     stories_spec = await _get_latest_spec(db, project_id, "user_stories")
 
-    result = await _skill_engine.run(
-        "reviewer",
-        {
-            "project_name": project.name,
-            "functional_spec": json.dumps(func_spec.content_json, indent=2),
-            "technical_spec": json.dumps(tech_spec.content_json, indent=2) if tech_spec else "Not generated yet",
-            "user_stories": json.dumps(stories_spec.content_json, indent=2) if stories_spec else "Not generated yet",
-            "extracted_requirements": _format_reqs_json(reqs),
-        },
-        provider,
+    result = await run_reviewer(
+        project_name=project.name,
+        functional_spec=json.dumps(func_spec.content_json, indent=2),
+        technical_spec=json.dumps(tech_spec.content_json, indent=2) if tech_spec else "Not generated yet",
+        user_stories=json.dumps(stories_spec.content_json, indent=2) if stories_spec else "Not generated yet",
+        extracted_requirements=_format_reqs_json(reqs),
+        app_brain_context=await gather_app_brain_context(db, project_id),
     )
 
     spec = await _allocate_and_create_spec(db, project_id, "review", result, project.name)

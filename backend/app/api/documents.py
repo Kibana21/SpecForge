@@ -24,11 +24,9 @@ from app.schemas.requirement import ExtractedRequirementRead
 from app.services.documents import parser, storage
 from app.services.documents.malware_scanner import get_malware_scanner
 from app.services.llm.base import LLMProvider
-from app.services.skills.skill_engine import SkillEngine
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["documents"], dependencies=[Depends(get_current_user)])
-_skill_engine = SkillEngine()
 
 _REQUIREMENT_CATEGORY_MAP = {
     "functional_requirements": "functional",
@@ -182,11 +180,8 @@ async def extract_requirements(
         f"[Document: {d.filename}]\n{d.extracted_text}" for d in docs
     )
 
-    result = await _skill_engine.run(
-        "requirement_extractor",
-        {"project_name": project.name, "document_text": document_text},
-        provider,
-    )
+    from app.services.skills.dspy_intake import run_requirement_extractor
+    result = await run_requirement_extractor(project.name, document_text)
 
     await db.execute(
         delete(ExtractedRequirement).where(ExtractedRequirement.project_id == project_id)
@@ -258,11 +253,8 @@ async def detect_gaps(
         for r in reqs
     ]
 
-    result = await _skill_engine.run(
-        "gap_detector",
-        {"extracted_requirements": json.dumps(reqs_data, indent=2)},
-        provider,
-    )
+    from app.services.skills.dspy_intake import run_gap_detector
+    result = await run_gap_detector(json.dumps(reqs_data, indent=2))
 
     await db.execute(delete(GapQuestion).where(GapQuestion.project_id == project_id))
 

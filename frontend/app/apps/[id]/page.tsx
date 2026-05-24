@@ -1,22 +1,24 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, BookOpen, Brain, Database, Pencil, Plug } from 'lucide-react'
+import { ArrowLeft, BookMarked, BookOpen, Brain, Database, Pencil, Plug } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { AppShell } from '@/app/components/AppShell'
 import { EditAppModal } from '@/app/components/EditAppModal'
 import { CorpusManager } from '@/app/components/CorpusManager'
 import { BrainContext } from '@/app/components/BrainContext'
+import { BrainWiki } from '@/app/components/BrainWiki'
 import { AskPanel } from '@/app/components/AskPanel'
 import { IndexStatusBadge } from '@/app/components/IndexStatusBadge'
 import { Skeleton } from '@/app/components/Skeleton'
 import { useApp } from '@/lib/hooks/useApp'
 import { useAuth } from '@/lib/auth/AuthContext'
 
-type SectionKey = 'overview' | 'brain' | 'corpus' | 'pipeline' | 'ask'
+type SectionKey = 'overview' | 'wiki' | 'brain' | 'corpus' | 'pipeline' | 'ask'
 
 const SECTIONS: { key: SectionKey; label: string; icon: LucideIcon }[] = [
   { key: 'overview', label: 'Overview', icon: BookOpen },
+  { key: 'wiki', label: 'Brain Wiki', icon: BookMarked },
   { key: 'brain', label: 'Brain Context', icon: Brain },
   { key: 'corpus', label: 'Corpus', icon: Database },
   { key: 'pipeline', label: 'Pipeline', icon: Plug },
@@ -132,6 +134,18 @@ export default function AppDetailPage({ params }: { params: { id: string } }) {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {activeSection === 'wiki' && (
+            <div className="w-full max-w-4xl h-[calc(100vh-160px)]">
+              <BrainWiki
+                appId={app.id}
+                initialCompiledAt={app.wiki_compiled_at}
+                initialStatus={app.wiki_status}
+                lastIndexedAt={app.pipeline_summary.last_indexed_at}
+                canWrite={isAdmin}
+              />
             </div>
           )}
 

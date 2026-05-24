@@ -1,7 +1,7 @@
 """DSPy-based fact extractor — production path (non-mock only).
 
 Uses dspy.Predict with typed Pydantic output for reliable structured extraction.
-Mock path (llm_provider=mock) is handled upstream by SkillEngine + fixture.
+Mock path (llm_provider=mock) is handled upstream by the caller via mock_fixture.
 """
 import asyncio
 import functools
@@ -65,7 +65,7 @@ def _configure_dspy() -> None:
 
     configure_google_genai_env()
     settings = get_settings()
-    lm = dspy.LM(f"vertex_ai/{settings.gemini_model}", max_tokens=100000, cache=False)
+    lm = dspy.LM(f"vertex_ai/{settings.gemini_model}", max_tokens=65536, cache=False)
     dspy.configure(lm=lm)
     log.info("dspy configured lm=vertex_ai/%s", settings.gemini_model)
 

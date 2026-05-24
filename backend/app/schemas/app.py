@@ -131,6 +131,8 @@ class AppDetail(BaseModel):
     pipeline_summary: PipelineSummary
     brain_context_synthesized_at: datetime | None = None
     brain_context_status: str = "idle"
+    wiki_compiled_at: datetime | None = None
+    wiki_status: str = "idle"
     created_at: datetime
     updated_at: datetime
 
@@ -142,6 +144,108 @@ class BrainContextResponse(BaseModel):
     source_doc_count: int
 
 
+# ── Brain Wiki ──────────────────────────────────────────────────────────────────
+
+class TreeNodeRef(BaseModel):
+    doc_id: str
+    node_id: str
+    title: str = ""
+    pages: str = ""
+
+
+class AppWikiConceptRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    slug: str
+    title: str
+    brief: str
+    content_md: str
+    source_doc_ids: list = []
+    related_slugs: list[str] = []
+    tree_node_refs: list = []
+    compiled_at: datetime
+
+
+class AppWikiSummaryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    doc_id: uuid.UUID
+    brief: str
+    content_md: str
+    related_slugs: list[str] = []
+    doc_type: str
+    compiled_at: datetime
+
+
+class WikiConceptBrief(BaseModel):
+    slug: str
+    title: str
+    brief: str
+
+
+class WikiSummaryBrief(BaseModel):
+    doc_id: uuid.UUID
+    doc_name: str
+    brief: str
+    doc_type: str
+
+
+class WikiIndexResponse(BaseModel):
+    concepts: list[WikiConceptBrief]
+    summaries: list[WikiSummaryBrief]
+    status: str
+    compiled_at: datetime | None
+
+
+class AskTurn(BaseModel):
+    role: Annotated[str, Field(pattern="^(user|assistant)$")]
+    content: Annotated[str, Field(max_length=8000)]
+
+
 class AskRequest(BaseModel):
     question: Annotated[str, Field(min_length=1, max_length=1000)]
     top_k: Annotated[int, Field(default=8, ge=1, le=20)] = 8
+    mode: Annotated[str, Field(pattern="^(quick|deep)$")] = "quick"
+    history: Annotated[list[AskTurn], Field(max_length=20)] = []
+
+
+# ── Ask Brain saved sessions ────────────────────────────────────────────────────
+
+class AskSessionCitation(BaseModel):
+    id: str
+    doc_name: str
+    chunk_no: int = 0
+
+
+class AskSessionMessage(BaseModel):
+    role: Annotated[str, Field(pattern="^(user|assistant)$")]
+    content: str
+    mode: str | None = None
+    citations: list[AskSessionCitation] = []
+    trace: dict | None = None  # compact DeepTrace for explainability on replay
+
+
+class AskSessionSave(BaseModel):
+    id: uuid.UUID | None = None  # None → create a new session
+    title: Annotated[str, Field(min_length=1, max_length=200)]
+    messages: Annotated[list[AskSessionMessage], Field(max_length=200)]
+
+
+class AskSessionListItem(BaseModel):
+    id: uuid.UUID
+    title: str
+    message_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class AskSessionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    title: str
+    messages: list
+    created_at: datetime
+    updated_at: datetime

@@ -22,6 +22,8 @@ from app.models.storage import StorageFile, StorageFileBlob
 from app.models.understanding import InterviewMessage, RequirementUnderstanding
 from app.models.user import User
 from app.models.version_snapshot import VersionSnapshot
+from app.models.wiki import AppWikiConcept, AppWikiSummary
+from app.models.ask_session import AppAskSession
 
 __all__ = [
     "DocumentMarkdown",
@@ -53,4 +55,7 @@ __all__ = [
     "DocumentTree",
     "RequirementUnderstanding",
     "InterviewMessage",
+    "AppWikiSummary",
+    "AppWikiConcept",
+    "AppAskSession",
 ]

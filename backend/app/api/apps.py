@@ -21,7 +21,9 @@ from app.models.project import Project
 from app.models.project_intake import ProjectApp
 from app.models.storage import StorageFile, StorageFileBlob
 from app.models.user import User
-from app.schemas.app import AppCreate, AppDetail, AppFactRead, AppListItem, AppUpdate, AskRequest, BrainContextResponse, PipelineSummary, AppCorpusDocRead, FactCreate, FactUpdate
+from app.models.wiki import AppWikiConcept, AppWikiSummary
+from app.models.ask_session import AppAskSession
+from app.schemas.app import AppCreate, AppDetail, AppFactRead, AppListItem, AppUpdate, AskRequest, BrainContextResponse, PipelineSummary, AppCorpusDocRead, FactCreate, FactUpdate, AppWikiConceptRead, AppWikiSummaryRead, AskSessionSave, AskSessionRead
 from app.schemas.envelope import err, ok
 from app.services.documents.storage import detect_mime, sanitize_filename
 
@@ -334,6 +336,9 @@ def _app_detail(app: App, corpus_docs: list, pipeline: PipelineSummary) -> dict:
         "pipeline_summary": pipeline.model_dump(),
         "brain_context_synthesized_at": app.brain_context_synthesized_at.isoformat() if app.brain_context_synthesized_at else None,
         "brain_context_status": app.brain_context_status or "idle",
+        "wiki_compiled_at": app.wiki_compiled_at.isoformat() if app.wiki_compiled_at else None,
+        "wiki_status": app.wiki_status or "idle",
+        "wiki_health": app.wiki_health,
         "created_at": app.created_at.isoformat(),
         "updated_at": app.updated_at.isoformat(),
     }
@@ -718,6 +723,146 @@ async def trigger_brain_synthesis(
     return ok({"task_id": task.id if task else None, "status": "running"})
 
 
+# ── Brain Wiki ──────────────────────────────────────────────────────────────────
+
+@router.get("/{app_id}/wiki")
+async def get_wiki_index(
+    app: App = Depends(require_app_access),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Lightweight wiki index: concept + document-summary briefs (no bodies)."""
+    concepts = (await db.execute(
+        select(AppWikiConcept).where(AppWikiConcept.app_id == app.id).order_by(AppWikiConcept.title)
+    )).scalars().all()
+
+    summaries = (await db.execute(
+        select(AppWikiSummary, AppCorpusDoc.name)
+        .join(AppCorpusDoc, AppWikiSummary.doc_id == AppCorpusDoc.id)
+        .where(AppWikiSummary.app_id == app.id)
+        .order_by(AppCorpusDoc.name)
+    )).all()
+
+    return ok({
+        "concepts": [
+            {"slug": c.slug, "title": c.title, "brief": c.brief} for c in concepts
+        ],
+        "summaries": [
+            {"doc_id": str(s.doc_id), "doc_name": name, "brief": s.brief, "doc_type": s.doc_type}
+            for s, name in summaries
+        ],
+        "status": app.wiki_status or "idle",
+        "compiled_at": app.wiki_compiled_at.isoformat() if app.wiki_compiled_at else None,
+        "health": app.wiki_health,
+    })
+
+
+@router.get("/{app_id}/wiki/concepts/{slug}")
+async def get_wiki_concept(
+    slug: str,
+    app: App = Depends(require_app_access),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    concept = (await db.execute(
+        select(AppWikiConcept).where(AppWikiConcept.app_id == app.id, AppWikiConcept.slug == slug)
+    )).scalar_one_or_none()
+    if concept is None:
+        err("not_found", "Wiki concept not found", 404)
+    return ok(AppWikiConceptRead.model_validate(concept).model_dump(mode="json"))
+
+
+@router.get("/{app_id}/wiki/summaries/{doc_id}")
+async def get_wiki_summary(
+    doc_id: uuid.UUID,
+    app: App = Depends(require_app_access),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    summary = (await db.execute(
+        select(AppWikiSummary).where(AppWikiSummary.app_id == app.id, AppWikiSummary.doc_id == doc_id)
+    )).scalar_one_or_none()
+    if summary is None:
+        err("not_found", "Wiki summary not found", 404)
+    return ok(AppWikiSummaryRead.model_validate(summary).model_dump(mode="json"))
+
+
+@router.post("/{app_id}/wiki/rebuild", status_code=202)
+async def rebuild_wiki(
+    app: App = Depends(require_app_write_access),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Clear and recompile the entire Brain Wiki from all indexed corpus docs."""
+    if app.wiki_status == "running":
+        return ok({"status": "already_running"})
+
+    from workers.dispatch import dispatch
+    from workers.tasks import rebuild_app_wiki
+
+    task = dispatch(rebuild_app_wiki, str(app.id))
+
+    await audit.emit(db, event="app.wiki.rebuild_triggered",
+                     actor_id=str(user.id), metadata={"app_id": str(app.id)})
+    await db.commit()
+    return ok({"task_id": task.id if task else None, "status": "running"})
+
+
+@router.post("/{app_id}/wiki/health", status_code=202)
+async def check_wiki_health_endpoint(
+    app: App = Depends(require_app_write_access),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Lint the compiled wiki for contradictions + orphan concepts."""
+    concept_count = (await db.execute(
+        select(func.count(AppWikiConcept.id)).where(AppWikiConcept.app_id == app.id)
+    )).scalar_one()
+    if concept_count == 0:
+        err("no_wiki", "Compile the wiki before checking its health.", 409)
+
+    from workers.dispatch import dispatch
+    from workers.tasks import check_wiki_health
+
+    task = dispatch(check_wiki_health, str(app.id))
+    await audit.emit(db, event="app.wiki.health_checked",
+                     actor_id=str(user.id), metadata={"app_id": str(app.id)})
+    await db.commit()
+    return ok({"task_id": task.id if task else None, "status": "running"})
+
+
+@router.get("/{app_id}/corpus/{doc_id}/section/{node_id}")
+async def get_corpus_section(
+    doc_id: uuid.UUID,
+    node_id: str,
+    app: App = Depends(require_app_access),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return the source text of one PageIndex section — powers the wiki's
+    'Grounded in' peek (click a section chip to see the exact grounding text)."""
+    from app.models.corpus import AppDocTree
+    from app.services.corpus_index.base import find_node, node_text
+
+    row = (await db.execute(
+        select(AppDocTree, AppCorpusDoc.name)
+        .join(AppCorpusDoc, AppCorpusDoc.id == AppDocTree.corpus_doc_id)
+        .where(AppDocTree.corpus_doc_id == doc_id, AppDocTree.app_id == app.id)
+    )).first()
+    if row is None:
+        err("not_found", "Document tree not found", 404)
+    tree, doc_name = row
+    node = find_node(tree.tree_json, node_id)
+    if node is None:
+        err("not_found", "Section not found", 404)
+    s, e = node.get("start_index"), node.get("end_index")
+    return ok({
+        "doc_id": str(doc_id),
+        "doc_name": doc_name,
+        "node_id": node_id,
+        "title": (node.get("title") or "").strip(),
+        "pages": f"{s}-{e}" if s is not None and e is not None else "",
+        "summary": (node.get("summary") or "").strip(),
+        "text": node_text(node, tree.page_texts),
+    })
+
+
 @router.post("/{app_id}/facts/extract", status_code=202)
 async def extract_facts(
     app: App = Depends(require_app_write_access),
@@ -863,11 +1008,20 @@ async def ask_app_brain(
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     from app.services.llm import get_provider
+    from app.services.rag.agent import AppBrainAgent
     from app.services.rag.rag_service import AppBrainRAGService
 
     provider = get_provider()
-    rag_service = AppBrainRAGService()
     question_hash = hashlib.sha256(body.question.encode()).hexdigest()
+
+    # Deep mode requires a compiled wiki; otherwise transparently use Quick.
+    use_deep = body.mode == "deep"
+    if use_deep:
+        concept_count = (await db.execute(
+            select(func.count(AppWikiConcept.id)).where(AppWikiConcept.app_id == app.id)
+        )).scalar_one()
+        if concept_count == 0:
+            use_deep = False
 
     await audit.emit(
         db,
@@ -877,19 +1031,25 @@ async def ask_app_brain(
             "app_id": str(app.id),
             "question_hash": question_hash,
             "top_k": body.top_k,
+            "mode": "deep" if use_deep else "quick",
         },
     )
     await db.commit()
 
     async def event_generator():
-        async for event in rag_service.stream_answer(
-            app_id=app.id,
-            question=body.question,
-            top_k=body.top_k,
-            db=db,
-            app_name=app.name,
-            provider=provider,
-        ):
+        if body.mode == "deep" and not use_deep:
+            yield f"data: {json.dumps({'type': 'step', 'text': 'Deep search needs a compiled wiki — using Quick search.'})}\n\n"
+        if use_deep:
+            stream = AppBrainAgent().stream_answer(
+                app_id=app.id, question=body.question, top_k=body.top_k,
+                db=db, app_name=app.name, provider=provider, history=body.history,
+            )
+        else:
+            stream = AppBrainRAGService().stream_answer(
+                app_id=app.id, question=body.question, top_k=body.top_k,
+                db=db, app_name=app.name, provider=provider, history=body.history,
+            )
+        async for event in stream:
             yield f"data: {json.dumps(event)}\n\n"
 
     return StreamingResponse(
@@ -901,3 +1061,97 @@ async def ask_app_brain(
             "Transfer-Encoding": "chunked",
         },
     )
+
+
+# ── Ask Brain saved sessions (per-user chat history) ────────────────────────────
+
+@router.get("/{app_id}/ask/sessions")
+async def list_ask_sessions(
+    app: App = Depends(require_app_access),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """List the current user's saved chat sessions for this app (newest first, no bodies)."""
+    rows = (await db.execute(
+        select(
+            AppAskSession.id, AppAskSession.title,
+            func.jsonb_array_length(AppAskSession.messages),
+            AppAskSession.created_at, AppAskSession.updated_at,
+        )
+        .where(AppAskSession.app_id == app.id, AppAskSession.user_id == user.id)
+        .order_by(AppAskSession.updated_at.desc())
+    )).all()
+    return ok([
+        {
+            "id": str(sid), "title": title, "message_count": count or 0,
+            "created_at": created.isoformat(), "updated_at": updated.isoformat(),
+        }
+        for sid, title, count, created, updated in rows
+    ])
+
+
+@router.get("/{app_id}/ask/sessions/{session_id}")
+async def get_ask_session(
+    session_id: uuid.UUID,
+    app: App = Depends(require_app_access),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    sess = (await db.execute(
+        select(AppAskSession).where(
+            AppAskSession.id == session_id,
+            AppAskSession.app_id == app.id,
+            AppAskSession.user_id == user.id,
+        )
+    )).scalar_one_or_none()
+    if sess is None:
+        err("not_found", "Chat session not found", 404)
+    return ok(AskSessionRead.model_validate(sess).model_dump(mode="json"))
+
+
+@router.post("/{app_id}/ask/sessions")
+async def save_ask_session(
+    body: AskSessionSave,
+    app: App = Depends(require_app_access),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Upsert a chat session: creates one when id is null, else updates the user's own."""
+    messages = [m.model_dump() for m in body.messages]
+    sess: AppAskSession | None = None
+    if body.id is not None:
+        sess = (await db.execute(
+            select(AppAskSession).where(
+                AppAskSession.id == body.id,
+                AppAskSession.app_id == app.id,
+                AppAskSession.user_id == user.id,
+            )
+        )).scalar_one_or_none()
+    if sess is None:
+        sess = AppAskSession(app_id=app.id, user_id=user.id, title=body.title[:200], messages=messages)
+        db.add(sess)
+    else:
+        sess.title = body.title[:200]
+        sess.messages = messages
+    await db.commit()
+    await db.refresh(sess)
+    return ok({"id": str(sess.id), "updated_at": sess.updated_at.isoformat()})
+
+
+@router.delete("/{app_id}/ask/sessions/{session_id}", status_code=204)
+async def delete_ask_session(
+    session_id: uuid.UUID,
+    app: App = Depends(require_app_access),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    sess = (await db.execute(
+        select(AppAskSession).where(
+            AppAskSession.id == session_id,
+            AppAskSession.app_id == app.id,
+            AppAskSession.user_id == user.id,
+        )
+    )).scalar_one_or_none()
+    if sess is not None:
+        await db.delete(sess)
+        await db.commit()

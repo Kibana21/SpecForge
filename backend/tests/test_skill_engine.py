@@ -1,116 +1,96 @@
-"""Tests for SkillEngine with MockProvider — no DB, no API keys required."""
+"""Tests for the DSPy skill wrappers in mock mode — no DB, no API keys.
+
+Conftest sets LLM_PROVIDER=mock, so each run_* wrapper returns its fixture
+deterministically. These assert the fixtures satisfy the PRD minimums and that
+the SkillEngine fallback (still used for any future Jinja skill) behaves.
+"""
 import json
-from pathlib import Path
 
 import pytest
 
 from app.services.llm.mock_provider import MockProvider
-from app.services.skills.skill_engine import SkillEngine, SkillValidationError
+from app.services.skills.dspy_intake import (
+    run_gap_detector, run_requirement_extractor, run_requirement_understanding,
+)
+from app.services.skills.dspy_specs import (
+    run_functional_spec, run_reviewer, run_technical_spec, run_user_stories,
+)
 
-SKILL_NAMES = [
-    "requirement_extractor",
-    "gap_detector",
-    "functional_spec",
-    "technical_spec",
-    "user_stories",
-    "reviewer",
-]
-
-# Minimal context satisfying all skill templates (real values used in Phase C)
-SAMPLE_CONTEXT = {
-    "project_name": "Test Project",
-    "document_text": "Users should be able to log in and upload documents.",
-    "extracted_requirements": json.dumps({"functional_requirements": [], "non_functional_requirements": [], "constraints": [], "assumptions": [], "stakeholders": []}),
-    "resolved_gap_answers": "[]",
-    "functional_spec": json.dumps({"overview": "Test", "objectives": [], "scope": "test", "features": []}),
-    "technical_spec": json.dumps({"architecture_overview": "Test", "components": [], "data_models": [], "api_endpoints": [], "tech_stack": {}, "risks": []}),
-    "user_stories": json.dumps({"stories": []}),
-}
-
-
-@pytest.fixture
-def engine() -> SkillEngine:
-    return SkillEngine()
-
-
-@pytest.fixture
-def mock_provider() -> MockProvider:
-    return MockProvider()
+_REQS_JSON = json.dumps({
+    "functional_requirements": [], "non_functional_requirements": [],
+    "constraints": [], "assumptions": [], "stakeholders": [],
+})
+_FUNC_JSON = json.dumps({"overview": "Test", "objectives": [], "scope": "test", "features": []})
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("skill_name", SKILL_NAMES)
-async def test_skill_runs_successfully(engine: SkillEngine, mock_provider: MockProvider, skill_name: str):
-    result = await engine.run(skill_name, SAMPLE_CONTEXT, mock_provider)
-    assert isinstance(result, (dict, list)), f"Expected dict or list, got {type(result)}"
-
-
-@pytest.mark.asyncio
-async def test_requirement_extractor_returns_expected_keys(engine: SkillEngine, mock_provider: MockProvider):
-    result = await engine.run("requirement_extractor", SAMPLE_CONTEXT, mock_provider)
-    assert "functional_requirements" in result
-    assert "non_functional_requirements" in result
-    assert "constraints" in result
-    assert "assumptions" in result
-    assert "stakeholders" in result
+async def test_requirement_extractor_returns_expected_keys():
+    result = await run_requirement_extractor("Test Project", "Users log in and upload docs.")
+    for key in ("functional_requirements", "non_functional_requirements", "constraints",
+                "assumptions", "stakeholders"):
+        assert key in result
     assert len(result["functional_requirements"]) >= 5  # PRD requirement
 
 
 @pytest.mark.asyncio
-async def test_gap_detector_returns_gaps(engine: SkillEngine, mock_provider: MockProvider):
-    result = await engine.run("gap_detector", SAMPLE_CONTEXT, mock_provider)
+async def test_gap_detector_returns_gaps():
+    result = await run_gap_detector(_REQS_JSON)
     assert "gaps" in result
     assert len(result["gaps"]) >= 3  # PRD requirement
     for gap in result["gaps"]:
-        assert "id" in gap
-        assert "question" in gap
-        assert "category" in gap
-        assert "severity" in gap
+        assert {"id", "question", "category", "severity"} <= gap.keys()
 
 
 @pytest.mark.asyncio
-async def test_user_stories_returns_at_least_5(engine: SkillEngine, mock_provider: MockProvider):
-    result = await engine.run("user_stories", SAMPLE_CONTEXT, mock_provider)
+async def test_requirement_understanding_returns_structure():
+    result = await run_requirement_understanding(
+        "Test Project", "BU", "desc", "(no source sections)", "(no app facts)", "(none yet)",
+    )
+    assert "objective" in result
+    assert "field_confidence" in result
+
+
+@pytest.mark.asyncio
+async def test_functional_spec_returns_structure():
+    result = await run_functional_spec("Test Project", _REQS_JSON, "[]")
+    for key in ("overview", "objectives", "scope", "features"):
+        assert key in result
+
+
+@pytest.mark.asyncio
+async def test_technical_spec_returns_structure():
+    result = await run_technical_spec("Test Project", _FUNC_JSON, _REQS_JSON)
+    for key in ("architecture_overview", "components", "data_models", "api_endpoints",
+                "tech_stack", "risks"):
+        assert key in result
+
+
+@pytest.mark.asyncio
+async def test_user_stories_returns_at_least_5():
+    result = await run_user_stories("Test Project", _FUNC_JSON, _REQS_JSON)
     assert "stories" in result
     assert len(result["stories"]) >= 5  # PRD requirement
 
 
 @pytest.mark.asyncio
-async def test_reviewer_returns_at_least_4_comments(engine: SkillEngine, mock_provider: MockProvider):
-    result = await engine.run("reviewer", SAMPLE_CONTEXT, mock_provider)
+async def test_reviewer_returns_at_least_4_comments():
+    result = await run_reviewer("Test Project", _FUNC_JSON, "{}", "{}", _REQS_JSON)
     assert "comments" in result
     assert len(result["comments"]) >= 4  # PRD requirement
 
 
 @pytest.mark.asyncio
-async def test_skill_engine_raises_on_unknown_skill(engine: SkillEngine, mock_provider: MockProvider):
-    with pytest.raises(FileNotFoundError):
-        await engine.run("nonexistent_skill", SAMPLE_CONTEXT, mock_provider)
-
-
-@pytest.mark.asyncio
-async def test_mock_provider_returns_string(mock_provider: MockProvider):
-    result = await mock_provider.complete(
-        prompt="test", system="test system", skill_name="requirement_extractor"
-    )
-    assert isinstance(result, str)
-    parsed = json.loads(result)
-    assert isinstance(parsed, dict)
-
-
-@pytest.mark.asyncio
-async def test_mock_provider_unknown_skill_returns_empty(mock_provider: MockProvider):
-    result = await mock_provider.complete(
-        prompt="test", system="test system", skill_name="unknown_skill"
-    )
+async def test_mock_provider_unknown_skill_returns_empty():
+    result = await MockProvider().complete(prompt="test", system="sys", skill_name="unknown_skill")
     assert result == "{}"
 
 
 def test_all_fixtures_are_valid_json():
-    """Ensure every fixture file is valid JSON before any runtime call."""
-    from app.services.llm.mock_provider import FIXTURES_DIR, _SKILL_FIXTURE_MAP
-    for skill, fname in _SKILL_FIXTURE_MAP.items():
-        path = FIXTURES_DIR / fname
-        assert path.exists(), f"Fixture missing for skill={skill}: {path}"
-        data = json.loads(path.read_text())
-        assert isinstance(data, dict), f"Fixture for {skill} should be a dict"
+    """Every fixture referenced by the DSPy mock path must be valid JSON."""
+    from app.services.skills.mock_fixtures import mock_fixture
+    for name in (
+        "requirement_extractor", "gap_detector", "requirement_understanding",
+        "functional_spec", "technical_spec", "user_stories", "reviewer",
+        "source_tree_search", "fact_extractor",
+    ):
+        assert isinstance(mock_fixture(name), dict), f"Fixture {name} should be a dict"
