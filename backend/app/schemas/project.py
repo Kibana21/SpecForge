@@ -27,6 +27,11 @@ class ProjectCreate(BaseModel):
         return v.strip()
 
 
+class AppScopeEntry(BaseModel):
+    app_id: UUID
+    impact_note: str | None = None
+
+
 class ProjectUpdate(BaseModel):
     """Partial project-metadata update — only provided fields change."""
     name: str | None = None
@@ -36,6 +41,7 @@ class ProjectUpdate(BaseModel):
     priority: str | None = None
     status: str | None = None
     go_live_date: date | None = None
+    app_scope_entries: list[AppScopeEntry] | None = None  # replaces ProjectApp rows when provided
 
 
 class ProjectRead(BaseModel):

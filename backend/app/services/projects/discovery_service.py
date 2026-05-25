@@ -33,7 +33,7 @@ async def suggest_apps(query_text: str, db: AsyncSession) -> list[AppSuggestion]
             text(
                 """
                 SELECT a.id, a.name, a.short_name, a.description, a.tier,
-                       a.domain_area, a.version, a.owner_id,
+                       a.domain_area, a.version, a.owner_id, a.is_onboarded,
                        (SELECT count(*) FROM app_facts f
                           WHERE f.app_id = a.id AND f.status = 'active') AS fact_count,
                        (SELECT count(*) FROM app_corpus_docs d
@@ -48,8 +48,7 @@ async def suggest_apps(query_text: str, db: AsyncSession) -> list[AppSuggestion]
                     WHERE ch.embedding IS NOT NULL
                     GROUP BY cd.app_id
                 ) sim ON sim.app_id = a.id
-                WHERE a.is_onboarded = true
-                ORDER BY sim.score DESC NULLS LAST, a.name ASC
+                ORDER BY sim.score DESC NULLS LAST, a.is_onboarded DESC, a.name ASC
                 """
             ),
             {"vec": _vec_str(vec)},
@@ -71,6 +70,7 @@ async def suggest_apps(query_text: str, db: AsyncSession) -> list[AppSuggestion]
                 owner_id=r["owner_id"],
                 fact_count=r["fact_count"] or 0,
                 corpus_doc_count=r["corpus_doc_count"] or 0,
+                is_onboarded=bool(r["is_onboarded"]),
                 suggested=score is not None and score >= _SUGGEST_THRESHOLD,
                 match_pct=round(score * 100) if score is not None else 0,
             )

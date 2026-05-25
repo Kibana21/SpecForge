@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict
 
 
 class AppSuggestion(BaseModel):
-    """An onboarded app offered for apps-in-scope, with an AI-suggestion flag."""
+    """Any app in the registry, with AI-suggestion flag and onboarding status."""
     id: UUID
     name: str
     short_name: str
@@ -16,6 +16,7 @@ class AppSuggestion(BaseModel):
     owner_id: UUID | None = None
     fact_count: int = 0
     corpus_doc_count: int = 0
+    is_onboarded: bool = False
     suggested: bool = False
     match_pct: int = 0
 

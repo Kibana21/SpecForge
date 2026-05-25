@@ -30,15 +30,20 @@ _SKILL = "requirement_understanding"
 
 
 async def _retrieve_project_sections(
-    project_id: uuid.UUID, query: str, top_k: int, db: AsyncSession
+    project_id: uuid.UUID,
+    query: str,
+    top_k: int,
+    db: AsyncSession,
+    document_ids: list[uuid.UUID] | None = None,
 ) -> list[RetrievedSection]:
-    rows = (
-        await db.execute(
-            select(DocumentTree, Document.filename)
-            .join(Document, Document.id == DocumentTree.document_id)
-            .where(DocumentTree.project_id == project_id)
-        )
-    ).all()
+    stmt = (
+        select(DocumentTree, Document.filename)
+        .join(Document, Document.id == DocumentTree.document_id)
+        .where(DocumentTree.project_id == project_id)
+    )
+    if document_ids is not None:
+        stmt = stmt.where(DocumentTree.document_id.in_(document_ids))
+    rows = (await db.execute(stmt)).all()
     if not rows:
         return []
     docs = [

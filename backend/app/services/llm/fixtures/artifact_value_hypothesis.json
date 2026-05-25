@@ -1,0 +1,16 @@
+{
+  "value_hypothesis_if": "If we deploy a unified real-time payment processing layer with integrated fraud scoring and automated cross-channel reconciliation",
+  "value_hypothesis_then": "then Retail Banking will reduce customer payment disputes by 40%, cut reconciliation cycle time to under 4 hours, and enable same-day settlement for 95% of transactions — increasing customer NPS by 15 points and reducing operational cost by £2.4M annually for the Payments & Channels team",
+  "outcomes": [
+    {"row_key": "o-1", "outcome": "Reduced Dispute Rate", "description": "Payment disputes drop from 3.2% to under 2% within 6 months of go-live through real-time fraud scoring"},
+    {"row_key": "o-2", "outcome": "Faster Reconciliation", "description": "End-of-day reconciliation cycle reduced from 48 hours to under 4 hours via automated cross-channel matching"},
+    {"row_key": "o-3", "outcome": "Same-Day Settlement", "description": "95% of retail transactions settled same-day, up from 60%, meeting ISO 20022 obligations"},
+    {"row_key": "o-4", "outcome": "Operational Cost Reduction", "description": "Manual reconciliation headcount need reduced by 30%, saving £2.4M annually"},
+    {"row_key": "o-5", "outcome": "Improved Customer NPS", "description": "Payment-related NPS improves by 15 points driven by fewer disputes and real-time status visibility"}
+  ],
+  "open_questions": [
+    {"question": "What is the current baseline dispute rate and how is it measured?", "field": "outcomes", "why": "Need baseline to confirm the 40% reduction target is achievable"}
+  ],
+  "completeness": 88,
+  "confidence": "medium"
+}

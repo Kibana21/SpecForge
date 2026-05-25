@@ -153,6 +153,7 @@ export interface AppSuggestion {
   owner_id: string | null
   fact_count: number
   corpus_doc_count: number
+  is_onboarded: boolean
   suggested: boolean
   match_pct: number
 }
@@ -520,6 +521,67 @@ export interface AskSessionRead {
   messages: AskSessionMessage[]
   created_at: string
   updated_at: string
+}
+
+// ── Artifact / Concept Brief types ───────────────────────────────────────────
+
+export type ArtifactType = 'concept_brief' | 'brd'
+export type ArtifactStatus = 'generating' | 'in_interview' | 'validated'
+export type ArtifactRowStatus = 'active' | 'removed'
+export type ArtifactRowSource = 'ai' | 'human' | 'regeneration'
+export type ArtifactMessageRole = 'ai' | 'user' | 'question' | 'synthesis'
+
+export interface ArtifactDocument {
+  id: string
+  project_id: string
+  artifact_type: ArtifactType
+  status: ArtifactStatus
+  unit_status: Record<string, { completeness: number; confidence: Confidence }>
+  validated_at: string | null
+  validated_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ArtifactMessage {
+  id: string
+  document_id: string
+  role: ArtifactMessageRole
+  content: string
+  citations: { doc_name?: string; section_title?: string; ref?: string }[]
+  meta: { unit_key?: string; field?: string; why?: string }
+  seq: number
+  created_at: string
+}
+
+export interface ArtifactSource {
+  id: string
+  source_document_id: string
+  filename: string
+  parse_status: ParseStatus
+  included: boolean
+}
+
+export interface CbRow {
+  id: string
+  document_id: string
+  row_key: string
+  version: number
+  is_current: boolean
+  is_locked: boolean
+  status: ArtifactRowStatus
+  source: ArtifactRowSource
+  created_by: string | null
+  created_at: string
+  // typed columns (varies by table)
+  [key: string]: unknown
+}
+
+export interface ArtifactDetail {
+  document: ArtifactDocument | null
+  sections: Record<string, CbRow[]>
+  messages: ArtifactMessage[]
+  sources: ArtifactSource[]
 }
 
 // ── Audit Log types ───────────────────────────────────────────────────────────

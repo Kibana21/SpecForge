@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, ArrowRight, Check, Sparkles, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Sparkles, X, Brain } from 'lucide-react'
 import { toast } from 'sonner'
 import { AppShell } from '@/app/components/AppShell'
 import { Button } from '@/app/components/ui/button'
@@ -124,7 +124,7 @@ export default function NewProjectWizard() {
                 <p className="text-sm text-[var(--text-tertiary)]">Finding relevant apps…</p>
               ) : suggestions.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-[var(--border-default)] p-4 text-sm text-[var(--text-tertiary)]">
-                  No onboarded apps found. You can continue without apps in scope.
+                  No apps found in the registry. You can <button className="underline" onClick={() => window.open('/apps', '_blank')}>add apps</button> or continue without apps in scope.
                 </p>
               ) : (
                 <div className="space-y-2">
@@ -132,16 +132,19 @@ export default function NewProjectWizard() {
                     <button key={a.id} onClick={() => toggleApp(a.id)}
                       className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors ${
                         selected.has(a.id) ? 'border-[var(--accent)] bg-[var(--accent-subtle)]' : 'border-[var(--border-default)] hover:bg-[var(--bg-elevated)]'}`}>
-                      <span className={`flex h-5 w-5 items-center justify-center rounded border ${selected.has(a.id) ? 'border-[var(--accent)] bg-[var(--accent)] text-white' : 'border-[var(--border-default)]'}`}>
+                      <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${selected.has(a.id) ? 'border-[var(--accent)] bg-[var(--accent)] text-white' : 'border-[var(--border-default)]'}`}>
                         {selected.has(a.id) && <Check size={12} />}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-sm font-medium text-[var(--text-primary)] truncate">{a.name}</span>
                           {a.suggested && <Badge variant="ai"><Sparkles size={10} /> suggested</Badge>}
+                          {a.is_onboarded && <Badge variant="success"><Brain size={10} /> AI-grounded</Badge>}
                           {a.match_pct > 0 && <span className="text-[10px] text-[var(--text-tertiary)]">{a.match_pct}%</span>}
                         </div>
-                        <p className="text-[11px] text-[var(--text-tertiary)] truncate">Tier {a.tier} · {a.fact_count} facts · {a.corpus_doc_count} docs</p>
+                        <p className="text-[11px] text-[var(--text-tertiary)] truncate">
+                          Tier {a.tier}{a.is_onboarded ? ` · ${a.fact_count} facts · ${a.corpus_doc_count} docs` : ' · not yet onboarded in App Registry'}
+                        </p>
                       </div>
                     </button>
                   ))}
@@ -156,7 +159,20 @@ export default function NewProjectWizard() {
               <Row k="Name" v={name} />
               <Row k="Business unit" v={businessUnit} />
               <Row k="Application" v={appScope} />
-              <Row k="Apps in scope" v={`${selected.size} selected`} />
+              <div className="flex gap-3 border-b border-[var(--border-subtle)] py-2">
+                <span className="w-32 shrink-0 text-xs font-medium text-[var(--text-tertiary)]">Apps in scope</span>
+                <div className="flex flex-col gap-1">
+                  {selected.size === 0
+                    ? <span className="text-sm text-[var(--text-tertiary)]">None</span>
+                    : suggestions.filter(a => selected.has(a.id)).map(a => (
+                        <span key={a.id} className="text-sm text-[var(--text-primary)]">
+                          {a.name}
+                          <span className="ml-1.5 text-[11px] text-[var(--text-tertiary)]">T{a.tier}</span>
+                        </span>
+                      ))
+                  }
+                </div>
+              </div>
               <Row k="Description" v={description || '—'} />
               <p className="pt-2 text-sm text-[var(--text-secondary)]">
                 Creating the project will let you upload sources and generate the Requirement Understanding.

@@ -1,0 +1,18 @@
+{
+  "business_context": "The Retail Banking division is undergoing a digital transformation initiative to modernize its customer-facing payment infrastructure. The current PayHub platform processes over 2 million transactions daily but lacks real-time fraud detection and cross-channel reconciliation capabilities, resulting in elevated dispute rates and manual intervention costs.",
+  "problem_statement": "Customers and internal operations teams face significant friction due to payment processing delays, limited transaction visibility, and a fragmented reconciliation process across channels. This results in increased customer churn, higher operational costs, and regulatory exposure in markets requiring same-day settlement.",
+  "context_map": [
+    {"row_key": "business_unit", "dimension": "Business Unit", "detail": "Retail Banking – Payments & Channels"},
+    {"row_key": "new_channel", "dimension": "New Channel", "detail": "Unified real-time payment API layer integrating with PayHub, supporting web, mobile, and partner integrations"},
+    {"row_key": "customer_segments", "dimension": "Customer Segments", "detail": "Retail customers (individual account holders), SME clients, and internal operations teams"},
+    {"row_key": "current_gap", "dimension": "Current Gap", "detail": "No real-time fraud scoring at transaction ingestion; batch-only reconciliation creates 24-48h settlement lag"},
+    {"row_key": "strategic_driver", "dimension": "Strategic Driver", "detail": "Regulatory mandate for ISO 20022 compliance by Q4 2026; competitive pressure from fintech entrants"},
+    {"row_key": "engagement_goal", "dimension": "Engagement Goal", "detail": "Reduce payment dispute rate by 40% and cut reconciliation cycle time from 48h to under 4h"}
+  ],
+  "open_questions": [
+    {"question": "Which specific payment rails (SEPA, SWIFT, domestic ACH) are in scope for the real-time layer?", "field": "context_map", "why": "Needed to scope integration complexity and compliance requirements"},
+    {"question": "Is there a hard regulatory deadline for ISO 20022 adoption or is it phased?", "field": "problem_statement", "why": "Affects milestone planning and risk prioritization"}
+  ],
+  "completeness": 82,
+  "confidence": "medium"
+}

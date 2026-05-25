@@ -1,4 +1,7 @@
 import type {
+  ArtifactDetail,
+  ArtifactSource,
+  CbRow,
   AppCorpusDoc,
   AppCreate,
   AppDetail,
@@ -232,6 +235,10 @@ export const api = {
       if (json.error) throw new Error(json.error.message)
       return json.data as DocumentRead
     },
+    getContent: (projectId: string, docId: string) =>
+      apiFetch<{ id: string; filename: string; parse_status: string; text: string | null }>(
+        `/api/projects/${projectId}/documents/${docId}/content`
+      ),
     delete: (projectId: string, docId: string) =>
       apiFetch<{ id: string }>(`/api/projects/${projectId}/documents/${docId}`, {
         method: 'DELETE',
@@ -293,6 +300,49 @@ export const api = {
       apiFetch<ReviewComment>(`/api/projects/${projectId}/reviews/${commentId}`, {
         method: 'PATCH',
         body: JSON.stringify({ dismissed }),
+      }),
+  },
+
+  artifacts: {
+    get: (projectId: string, type: string) =>
+      apiFetch<ArtifactDetail>(`/api/projects/${projectId}/artifacts/${type}`),
+    generate: (projectId: string, type: string, body?: { context?: string }) =>
+      apiFetch<ArtifactDetail>(`/api/projects/${projectId}/artifacts/${type}/generate`, {
+        method: 'POST',
+        body: body ? JSON.stringify(body) : undefined,
+        headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      }),
+    generateUnit: (projectId: string, type: string, unitKey: string) =>
+      apiFetch<ArtifactDetail>(`/api/projects/${projectId}/artifacts/${type}/units/${unitKey}/generate`, { method: 'POST' }),
+    regenerateUnit: (projectId: string, type: string, unitKey: string, directive?: string) =>
+      apiFetch<ArtifactDetail>(`/api/projects/${projectId}/artifacts/${type}/units/${unitKey}/regenerate`, {
+        method: 'POST', body: JSON.stringify({ directive }),
+      }),
+    answer: (projectId: string, type: string, answer: string, seq?: number) =>
+      apiFetch<ArtifactDetail>(`/api/projects/${projectId}/artifacts/${type}/answer`, {
+        method: 'POST', body: JSON.stringify({ answer, seq }),
+      }),
+    rowHistory: (projectId: string, type: string, unitKey: string, rowKey: string, table: string) =>
+      apiFetch<CbRow[]>(`/api/projects/${projectId}/artifacts/${type}/units/${unitKey}/rows/${rowKey}/history?table=${table}`),
+    editRow: (projectId: string, type: string, table: string, rowId: string, fields: Record<string, unknown>, lock = true) =>
+      apiFetch<CbRow>(`/api/projects/${projectId}/artifacts/${type}/rows/${table}/${rowId}`, {
+        method: 'PATCH', body: JSON.stringify({ fields, lock }),
+      }),
+    restoreRow: (projectId: string, type: string, table: string, rowId: string, version: number) =>
+      apiFetch<CbRow>(`/api/projects/${projectId}/artifacts/${type}/rows/${table}/${rowId}/restore`, {
+        method: 'POST', body: JSON.stringify({ version }),
+      }),
+    unlockRow: (projectId: string, type: string, table: string, rowId: string) =>
+      apiFetch<CbRow>(`/api/projects/${projectId}/artifacts/${type}/rows/${table}/${rowId}/unlock`, { method: 'POST' }),
+    validate: (projectId: string, type: string) =>
+      apiFetch<{ ok: boolean; failures: string[] }>(`/api/projects/${projectId}/artifacts/${type}/validate`, { method: 'POST' }),
+    exportUrl: (projectId: string, type: string) =>
+      `/api/projects/${projectId}/artifacts/${type}/export/markdown`,
+    listSources: (projectId: string, type: string) =>
+      apiFetch<ArtifactSource[]>(`/api/projects/${projectId}/artifacts/${type}/sources`),
+    toggleSource: (projectId: string, type: string, sourceId: string, included: boolean) =>
+      apiFetch<{ id: string; included: boolean }>(`/api/projects/${projectId}/artifacts/${type}/sources/${sourceId}`, {
+        method: 'PATCH', body: JSON.stringify({ included }),
       }),
   },
 

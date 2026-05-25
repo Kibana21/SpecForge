@@ -130,6 +130,13 @@ def generate_requirement_understanding(self, project_id: str) -> dict:
     return _run_async(_generate_ru(self, project_id))
 
 
+# ── Artifact generation ───────────────────────────────────────────────────────
+
+@celery_app.task(name="workers.tasks.generate_concept_brief", bind=True, max_retries=2, default_retry_delay=5)
+def generate_concept_brief(self, project_id: str, artifact_type: str, context: str | None = None) -> dict:
+    return _run_async(_generate_concept_brief(project_id, artifact_type, context))
+
+
 # ── Async implementations ─────────────────────────────────────────────────────
 
 async def _ingest_corpus_doc(doc_id: str) -> dict:
@@ -1088,6 +1095,38 @@ async def _recompute_triage() -> dict:
 
     log.info("recompute_triage users=%d", len(user_ids))
     return {"ok": True, "users": len(user_ids)}
+
+
+async def _generate_concept_brief(project_id: str, artifact_type: str, context: str | None) -> dict:
+    from uuid import UUID as _UUID
+    from sqlalchemy import select as _select
+    from app.db import AsyncSessionLocal
+    from app.models.artifact import ArtifactDocument
+    from app.models.project import Project
+    from app.services.artifacts.orchestrator import generate_all
+
+    async with AsyncSessionLocal() as db:
+        project = await db.get(Project, _UUID(project_id))
+        if project is None:
+            log.error("generate_concept_brief project_id=%s not found", project_id)
+            return {"ok": False, "error": "project_not_found"}
+        try:
+            await generate_all(project, artifact_type, db, context=context)
+            return {"ok": True}
+        except Exception:
+            log.exception("generate_concept_brief failed project_id=%s", project_id)
+            # Reset status so the user can retry
+            async with AsyncSessionLocal() as db2:
+                doc = (await db2.execute(
+                    _select(ArtifactDocument).where(
+                        ArtifactDocument.project_id == _UUID(project_id),
+                        ArtifactDocument.artifact_type == artifact_type,
+                    )
+                )).scalar_one_or_none()
+                if doc and doc.status == "generating":
+                    doc.status = "in_interview"
+                    await db2.commit()
+            raise
 
 
 async def _generate_ru(task, project_id: str) -> dict:

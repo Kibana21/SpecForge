@@ -75,3 +75,28 @@ async def require_project_access(
 
 def get_provider_dep() -> LLMProvider:
     return get_provider()
+
+
+def require_artifact_validated(artifact_type: str):
+    """Gate factory: 409 unless the artifact has status=validated."""
+    async def _dep(
+        project_id: UUID,
+        db: AsyncSession = Depends(get_db),
+    ) -> None:
+        from sqlalchemy import select
+        from app.models.artifact import ArtifactDocument
+        doc = (
+            await db.execute(
+                select(ArtifactDocument).where(
+                    ArtifactDocument.project_id == project_id,
+                    ArtifactDocument.artifact_type == artifact_type,
+                )
+            )
+        ).scalar_one_or_none()
+        if doc is None or doc.status != "validated":
+            err(
+                f"{artifact_type}_not_validated",
+                f"{artifact_type.replace('_', ' ').title()} must be validated first.",
+                409,
+            )
+    return _dep

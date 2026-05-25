@@ -204,7 +204,7 @@ async def create_app(
                      metadata={"app_id": str(app.id), "short_name": app.short_name})
     await db.commit()
 
-    return ok(_app_detail(app, [], [], _pipeline_summary([], [])))
+    return ok(_app_detail(app, [], _pipeline_summary([], [])))
 
 
 # ── App suggestion (apps-in-scope, BR-M1-008) ──────────────────────────────────

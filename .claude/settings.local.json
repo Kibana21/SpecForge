@@ -43,7 +43,19 @@
       "WebFetch(domain:docs.pageindex.ai)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(make test-be *)"
+      "Bash(make test-be *)",
+      "Bash(make migrate *)",
+      "Bash(make typecheck *)",
+      "Bash(make lint *)",
+      "Bash(backend/.venv/bin/python -m pytest backend/tests/test_artifacts_api.py -v)",
+      "Bash(backend/.venv/bin/python -m pytest backend/tests/test_artifacts_api.py::test_generate_and_validate_concept_brief -v --tb=long)",
+      "Bash(backend/.venv/bin/python -m pytest backend/tests/test_artifacts_api.py::test_generate_and_validate_concept_brief -v --tb=short)",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(pkill -f \"next-server\")",
+      "Bash(backend/.venv/bin/python *)",
+      "Read(//Users/kartik/.config/amp/skills/**)",
+      "Bash(npm i *)",
+      "Bash(./server.sh)"
     ]
   }
 }

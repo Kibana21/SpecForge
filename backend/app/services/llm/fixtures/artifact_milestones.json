@@ -1,0 +1,12 @@
+{
+  "milestones": [
+    {"row_key": "ms-1", "milestone": "Discovery & Architecture Sign-off", "target": "Month 1", "description": "Finalize integration design with PayHub API team; confirm fraud scoring endpoint contract; complete ISO 20022 gap analysis"},
+    {"row_key": "ms-2", "milestone": "Reconciliation Engine MVP", "target": "Month 3", "description": "Automated cross-channel reconciliation live in staging; processing web and mobile channels; <4h cycle time validated in load tests"},
+    {"row_key": "ms-3", "milestone": "Fraud Scoring Integration", "target": "Month 4", "description": "Real-time fraud scoring integrated at transaction ingestion; shadow mode running in parallel with existing batch engine"},
+    {"row_key": "ms-4", "milestone": "Pilot Go-Live", "target": "Month 5", "description": "Full system live for 10% of retail transaction volume; dispute rate and reconciliation KPIs monitored; operations dashboard deployed"},
+    {"row_key": "ms-5", "milestone": "Full Rollout & ISO 20022 Compliance", "target": "Month 7 (Q4 2026)", "description": "100% of retail and SME transactions on new platform; ISO 20022 message formatting active for all settlement instructions; regulatory sign-off obtained"}
+  ],
+  "open_questions": [],
+  "completeness": 93,
+  "confidence": "high"
+}

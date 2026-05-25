@@ -1,4 +1,9 @@
 from app.models.app import App, AppMember
+from app.models.artifact import (
+    ArtifactDocument, ArtifactMessage, ArtifactSource,
+    CbCapability, CbContextMap, CbGateCriterion, CbMetric,
+    CbMilestone, CbOutcome, CbScopeItem, CbTextBlock,
+)
 from app.models.document_markdown import DocumentMarkdown
 from app.models.audit import AuditEvent
 from app.models.auth import PasswordResetToken, RefreshToken
@@ -26,6 +31,17 @@ from app.models.wiki import AppWikiConcept, AppWikiSummary
 from app.models.ask_session import AppAskSession
 
 __all__ = [
+    "ArtifactDocument",
+    "ArtifactMessage",
+    "ArtifactSource",
+    "CbCapability",
+    "CbContextMap",
+    "CbGateCriterion",
+    "CbMetric",
+    "CbMilestone",
+    "CbOutcome",
+    "CbScopeItem",
+    "CbTextBlock",
     "DocumentMarkdown",
     "User",
     "RefreshToken",

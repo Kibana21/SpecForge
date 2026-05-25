@@ -1,0 +1,20 @@
+{
+  "scope_items": [
+    {"row_key": "in_scope-1", "kind": "in_scope", "text": "Real-time fraud scoring for all inbound retail and SME payment transactions"},
+    {"row_key": "in_scope-2", "kind": "in_scope", "text": "Automated cross-channel reconciliation for web, mobile, and partner API channels"},
+    {"row_key": "in_scope-3", "kind": "in_scope", "text": "ISO 20022 message formatting for outgoing settlement instructions"},
+    {"row_key": "in_scope-4", "kind": "in_scope", "text": "Real-time transaction status API for customers and operations"},
+    {"row_key": "in_scope-5", "kind": "in_scope", "text": "Dispute management workflow with SLA tracking"},
+    {"row_key": "out_of_scope-1", "kind": "out_of_scope", "text": "Corporate banking or treasury payment rails — addressed in a separate programme"},
+    {"row_key": "out_of_scope-2", "kind": "out_of_scope", "text": "Replacement or re-architecture of the core PayHub transaction engine"},
+    {"row_key": "out_of_scope-3", "kind": "out_of_scope", "text": "Customer-facing mobile app UI changes — limited to API layer only"},
+    {"row_key": "out_of_scope-4", "kind": "out_of_scope", "text": "Fraud model training and MLOps pipeline — existing risk team owns the model; this project integrates with the scoring endpoint"},
+    {"row_key": "assumption-1", "kind": "assumption", "text": "PayHub exposes a stable REST API for transaction event subscription and ledger queries — confirmed with integration team in pre-discovery"},
+    {"row_key": "assumption-2", "kind": "assumption", "text": "The fraud scoring model endpoint will be available in staging by Month 2 of the project"},
+    {"row_key": "assumption-3", "kind": "assumption", "text": "ISO 20022 regulatory deadline is Q4 2026 with no grace period extensions"},
+    {"row_key": "assumption-4", "kind": "assumption", "text": "Operations team headcount will be redeployed (not made redundant) upon automation go-live, subject to HR sign-off"}
+  ],
+  "open_questions": [],
+  "completeness": 92,
+  "confidence": "high"
+}

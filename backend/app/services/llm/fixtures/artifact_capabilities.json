@@ -1,0 +1,15 @@
+{
+  "capabilities": [
+    {"row_key": "cap-1", "capability": "Real-Time Fraud Scoring", "description": "Score every inbound payment transaction against a risk model at submission time, returning a pass/review/block decision within 200ms. PayHub's existing batch fraud engine provides historical data for model training."},
+    {"row_key": "cap-2", "capability": "Cross-Channel Reconciliation Automation", "description": "Automatically match and reconcile transactions across web, mobile, and partner API channels without manual intervention. Integrates with PayHub's settlement ledger."},
+    {"row_key": "cap-3", "capability": "Real-Time Transaction Status API", "description": "Expose a unified API for customers and operations to query live transaction status, reducing inbound support calls related to payment uncertainty."},
+    {"row_key": "cap-4", "capability": "ISO 20022 Message Formatting", "description": "Transform outgoing settlement messages to ISO 20022 XML format for regulatory compliance, leveraging PayHub's existing message bus infrastructure."},
+    {"row_key": "cap-5", "capability": "Dispute Management Workflow", "description": "Structured workflow for logging, routing, and resolving payment disputes with SLA tracking. Reduces reliance on manual email-based resolution."},
+    {"row_key": "cap-6", "capability": "Operational Dashboard", "description": "Real-time visibility dashboard for the operations team showing transaction volumes, reconciliation status, fraud flags, and SLA compliance."}
+  ],
+  "open_questions": [
+    {"question": "Does the existing PayHub platform expose APIs for real-time ledger writes, or does it require batch file uploads?", "field": "capabilities", "why": "Determines whether real-time reconciliation is technically feasible without PayHub changes"}
+  ],
+  "completeness": 90,
+  "confidence": "medium"
+}

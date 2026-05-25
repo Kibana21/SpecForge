@@ -1,0 +1,13 @@
+{
+  "metrics": [
+    {"row_key": "m-1", "metric": "Payment Dispute Rate", "description": "Percentage of transactions resulting in customer disputes; target: ≤2% within 6 months of go-live", "quantifiable": true},
+    {"row_key": "m-2", "metric": "Reconciliation Cycle Time", "description": "Hours from end-of-day close to fully reconciled ledger; target: ≤4 hours", "quantifiable": true},
+    {"row_key": "m-3", "metric": "Same-Day Settlement Rate", "description": "Percentage of retail transactions settled on the same business day; target: ≥95%", "quantifiable": true},
+    {"row_key": "m-4", "metric": "Annual Operational Cost Saving", "description": "Reduction in manual reconciliation cost; target: £2.4M by end of Year 1", "quantifiable": true},
+    {"row_key": "m-5", "metric": "Payment NPS", "description": "Net Promoter Score for payment experience; target: +15 points from baseline within 12 months", "quantifiable": true},
+    {"row_key": "m-6", "metric": "Fraud Detection Precision", "description": "Ratio of correctly blocked fraudulent transactions to all blocked; target: ≥92% precision to minimize false positives", "quantifiable": true}
+  ],
+  "open_questions": [],
+  "completeness": 95,
+  "confidence": "high"
+}

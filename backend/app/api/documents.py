@@ -133,6 +133,28 @@ async def list_documents(
     return ok([DocumentRead.model_validate(d).model_dump(mode="json") for d in rows])
 
 
+@router.get("/projects/{project_id}/documents/{doc_id}/content")
+async def get_document_content(
+    project_id: UUID,
+    doc_id: UUID,
+    project: Project = Depends(get_project_or_404),
+    db: AsyncSession = Depends(get_db),
+):
+    doc = (
+        await db.execute(
+            select(Document).where(Document.id == doc_id, Document.project_id == project_id)
+        )
+    ).scalar_one_or_none()
+    if doc is None:
+        err("not_found", f"Document {doc_id} not found", 404)
+    return ok({
+        "id": str(doc.id),
+        "filename": doc.filename,
+        "parse_status": doc.parse_status,
+        "text": doc.extracted_text,
+    })
+
+
 @router.delete("/projects/{project_id}/documents/{doc_id}")
 async def delete_document(
     project_id: UUID,

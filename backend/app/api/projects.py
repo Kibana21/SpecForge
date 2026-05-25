@@ -253,12 +253,47 @@ async def update_project(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Edit project metadata (name, business unit, priority, status, go-live, …)."""
+    """Edit project metadata (name, business unit, priority, status, go-live, app scope, …)."""
     from app.core import audit
 
     changes = body.model_dump(exclude_unset=True)
+    app_scope_entries = changes.pop("app_scope_entries", None)
+
     for field, value in changes.items():
         setattr(project, field, value)
+
+    # Diff app-scope entries when provided
+    if app_scope_entries is not None:
+        from app.models.app import App
+        from app.models.project_intake import ProjectApp
+        from sqlalchemy import delete
+
+        new_ids = {UUID(str(e["app_id"])) for e in app_scope_entries}
+        # Validate they exist + are onboarded
+        valid_ids = set((
+            await db.execute(select(App.id).where(App.id.in_(new_ids), App.is_onboarded.is_(True)))
+        ).scalars().all())
+
+        # Remove stale entries
+        existing_rows = (
+            await db.execute(select(ProjectApp).where(ProjectApp.project_id == project_id))
+        ).scalars().all()
+        existing_by_app: dict = {pa.app_id: pa for pa in existing_rows}
+
+        for app_id, pa in list(existing_by_app.items()):
+            if app_id not in valid_ids:
+                await db.delete(pa)
+
+        # Upsert new/updated entries
+        notes_by_id = {UUID(str(e["app_id"])): e.get("impact_note") for e in app_scope_entries}
+        for app_id in valid_ids:
+            if app_id in existing_by_app:
+                existing_by_app[app_id].included = True
+                existing_by_app[app_id].impact_note = notes_by_id.get(app_id)
+            else:
+                db.add(ProjectApp(project_id=project_id, app_id=app_id, included=True,
+                                  impact_note=notes_by_id.get(app_id)))
+
     await audit.emit(db, event="project.updated", actor_id=str(current_user.id),
                      metadata={"project_id": str(project_id), "fields": list(changes.keys())})
     await db.commit()
