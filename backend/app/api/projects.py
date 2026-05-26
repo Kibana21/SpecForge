@@ -50,10 +50,10 @@ async def create_project(
     db.add(project)
     await db.flush()
 
-    # Apps in scope (validate they exist + are onboarded)
+    # Apps in scope (validate they exist; onboarded check omitted intentionally)
     if body.app_ids:
         valid_ids = set((
-            await db.execute(select(App.id).where(App.id.in_(body.app_ids), App.is_onboarded.is_(True)))
+            await db.execute(select(App.id).where(App.id.in_(body.app_ids)))
         ).scalars().all())
         for app_id in valid_ids:
             db.add(ProjectApp(project_id=project.id, app_id=app_id, included=True))
@@ -241,6 +241,25 @@ async def get_project(
     detail.recent_activity = recent_activity
     detail.quality = quality
     detail.ru_status = ru_status
+
+    # Stale check: any doc indexed after RU was last updated
+    from app.models.understanding import RequirementUnderstanding as RU
+    ru_row = (
+        await db.execute(
+            select(RU).where(RU.project_id == project_id)
+        )
+    ).scalar_one_or_none()
+    docs_stale = (
+        ru_row is not None
+        and ru_row.status in ("in_interview", "validated")
+        and any(
+            d.created_at > ru_row.updated_at
+            for d in project.documents
+            if d.indexing_status == "done"
+        )
+    )
+    detail.docs_stale_for_ru = docs_stale
+
     detail.stage_progress = stage_progress
     return ok(detail.model_dump(mode="json"))
 
@@ -269,9 +288,10 @@ async def update_project(
         from sqlalchemy import delete
 
         new_ids = {UUID(str(e["app_id"])) for e in app_scope_entries}
-        # Validate they exist + are onboarded
+        # Validate they exist (onboarded check intentionally omitted — a newly
+        # registered app with no corpus yet is still a valid scope entry)
         valid_ids = set((
-            await db.execute(select(App.id).where(App.id.in_(new_ids), App.is_onboarded.is_(True)))
+            await db.execute(select(App.id).where(App.id.in_(new_ids)))
         ).scalars().all())
 
         # Remove stale entries

@@ -90,3 +90,4 @@ class ProjectDetail(ProjectRead):
     recent_activity: list = []
     skill_versions: list = []
     ru_status: str | None = None
+    docs_stale_for_ru: bool = False

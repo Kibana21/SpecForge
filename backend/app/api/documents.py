@@ -155,6 +155,157 @@ async def get_document_content(
     })
 
 
+@router.get("/projects/{project_id}/documents/{doc_id}/outline")
+async def get_document_outline(
+    project_id: UUID,
+    doc_id: UUID,
+    project: Project = Depends(get_project_or_404),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.models.project_source import DocumentTree
+
+    doc = (
+        await db.execute(
+            select(Document).where(Document.id == doc_id, Document.project_id == project_id)
+        )
+    ).scalar_one_or_none()
+    if doc is None:
+        err("not_found", f"Document {doc_id} not found", 404)
+
+    tree_row = (
+        await db.execute(
+            select(DocumentTree).where(DocumentTree.document_id == doc_id)
+        )
+    ).scalar_one_or_none()
+
+    def _node(n: dict, depth: int = 0) -> dict:
+        s, e = n.get("start_index"), n.get("end_index")
+        if s is not None and e is not None:
+            pages = f"p. {s}" if s == e else f"pp. {s}–{e}"
+        else:
+            pages = None
+        return {
+            "node_id": str(n.get("node_id", "")),
+            "title": n.get("title") or "",
+            "summary": n.get("summary") or "",
+            "pages": pages,
+            "depth": depth,
+            "children": [_node(c, depth + 1) for c in (n.get("nodes") or [])],
+        }
+
+    nodes = [_node(n) for n in (tree_row.tree_json.get("nodes", []) if tree_row else [])]
+    return ok({
+        "indexing_status": doc.indexing_status,
+        "node_count": tree_row.node_count if tree_row else 0,
+        "model": tree_row.model if tree_row else None,
+        "nodes": nodes,
+    })
+
+
+@router.get("/projects/{project_id}/documents/{doc_id}/section/{node_id}")
+async def get_document_section(
+    project_id: UUID,
+    doc_id: UUID,
+    node_id: str,
+    project: Project = Depends(get_project_or_404),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.models.project_source import DocumentTree
+    from app.services.corpus_index.base import find_node, node_text
+
+    doc = (
+        await db.execute(
+            select(Document).where(Document.id == doc_id, Document.project_id == project_id)
+        )
+    ).scalar_one_or_none()
+    if doc is None:
+        err("not_found", f"Document {doc_id} not found", 404)
+
+    tree_row = (
+        await db.execute(
+            select(DocumentTree).where(DocumentTree.document_id == doc_id)
+        )
+    ).scalar_one_or_none()
+    if tree_row is None:
+        err("not_indexed", "Document has not been indexed yet", 404)
+
+    node = find_node(tree_row.tree_json, node_id)
+    if node is None:
+        err("not_found", f"Node {node_id} not found in document tree", 404)
+
+    s, e = node.get("start_index"), node.get("end_index")
+    if s is not None and e is not None:
+        pages = f"p. {s}" if s == e else f"pp. {s}–{e}"
+    else:
+        pages = None
+    text = node_text(node, tree_row.page_texts)
+    return ok({
+        "node_id": node_id,
+        "title": node.get("title") or "",
+        "pages": pages,
+        "text": text,
+    })
+
+
+@router.get("/projects/{project_id}/documents/{doc_id}/file")
+async def get_document_file(
+    project_id: UUID,
+    doc_id: UUID,
+    project: Project = Depends(get_project_or_404),
+    db: AsyncSession = Depends(get_db),
+):
+    from fastapi.responses import Response as FastAPIResponse
+
+    doc = (
+        await db.execute(
+            select(Document).where(Document.id == doc_id, Document.project_id == project_id)
+        )
+    ).scalar_one_or_none()
+    if doc is None:
+        err("not_found", f"Document {doc_id} not found", 404)
+
+    data = await storage.load(doc.storage_path)
+    return FastAPIResponse(
+        content=data,
+        media_type=doc.mime_type,
+        headers={"Content-Disposition": f'inline; filename="{doc.filename}"'},
+    )
+
+
+@router.post("/projects/{project_id}/documents/{doc_id}/reindex")
+async def reindex_document(
+    project_id: UUID,
+    doc_id: UUID,
+    project: Project = Depends(get_project_or_404),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    doc = (
+        await db.execute(
+            select(Document).where(Document.id == doc_id, Document.project_id == project_id)
+        )
+    ).scalar_one_or_none()
+    if doc is None:
+        err("not_found", f"Document {doc_id} not found", 404)
+    if doc.indexing_status == "running":
+        err("already_running", "Indexing already in progress", 409)
+
+    doc.indexing_status = "pending"
+    doc.index_error = None
+    await db.commit()
+    await db.refresh(doc)
+
+    from workers.dispatch import dispatch
+    from workers.tasks import ingest_project_source
+    dispatch(ingest_project_source, str(doc.id))
+
+    await audit.emit(db, event="source.reindex_requested", actor_id=str(user.id),
+                     metadata={"project_id": str(project_id), "doc_id": str(doc_id)})
+    await db.commit()
+
+    return ok(DocumentRead.model_validate(doc).model_dump(mode="json"))
+
+
 @router.delete("/projects/{project_id}/documents/{doc_id}")
 async def delete_document(
     project_id: UUID,

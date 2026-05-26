@@ -21,176 +21,83 @@ context used by Requirement Understanding, Concept Brief, and BRD generation.
 | **App Brain** | `app_corpus_docs`, `app_doc_trees`, `document_markdown`, vector chunks/embeddings | ← project docs must never write here |
 | **Project Docs** | `documents`, `document_trees` | ← project docs write only here |
 
-The two zones share the PageIndex provider abstraction and the LLM provider
-abstraction, but their data is completely isolated.
+The two zones share the `get_markdown_provider()` and `get_corpus_index()`
+abstractions, but their data is completely isolated. Project docs call the
+markdown provider **directly** (not via `MarkdownConverterService`, which writes
+to `document_markdown` — an App Brain table). The converted markdown is stored in
+`doc.extracted_text` which lives in the project docs zone.
 
 ---
 
 ## Supported Document Types
 
-| Type | MIME | Text extraction | PageIndex tree | AI Vision |
-|---|---|---|---|---|
-| PDF | `application/pdf` | PyMuPDF, per-page | Rich tree from PDF structure | No |
-| Word | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` | python-docx, flat text | Fair tree (page fallback) | No |
-| Plain text | `text/plain` | Raw text | Minimal (page chunks) | No |
-| Markdown | `text/markdown` | Raw text | Rich tree from `#` headings | No |
-| Images | `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `image/tiff`, `image/bmp` | ❌ (parser skips) | From AI-generated markdown | **Yes — Gemini Vision** |
+| Type | MIME | Extraction method | PageIndex tree |
+|---|---|---|---|
+| PDF | `application/pdf` | Azure Content Understanding (`prebuilt-layout`) | Rich tree from heading-structured markdown |
+| Word | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` | Azure Content Understanding (`prebuilt-layout`) | Same |
+| Images | `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `image/tiff`, `image/bmp` | Azure Content Understanding (`prebuilt-layout`) | From AI-generated markdown |
+| Plain text | `text/plain` | Raw bytes decode (UTF-8) | Minimal (page chunks) |
+| Markdown | `text/markdown` | Raw bytes decode (UTF-8) | Rich tree from `#` headings |
+
+**Key insight:** Azure `prebuilt-layout` natively handles PDF, DOCX, and images
+(JPEG, PNG, TIFF, BMP, GIF, WEBP) — producing clean, table-aware, figure-aware
+markdown for all of them. One extraction path replaces PyMuPDF, python-docx, AND
+any Gemini Vision approach. The `MockMarkdownProvider` already provides
+deterministic CI/test coverage.
 
 ---
 
 ## Processing Pipeline
 
-### Non-image documents (PDF, DOCX, TXT, MD)
+All document types follow the same two-phase pipeline:
 
 ```
 Upload
   │
-  ├─► parser.parse() [sync, in request]
-  │     extracted_text saved on Document row
-  │     parse_status = 'done'
+  ├─► Sync (in request handler)
+  │     parser.parse() on TXT/MD only (cheap, no API call)
+  │     For TXT/MD: extracted_text = raw decode, parse_status = 'done'
+  │     For PDF/DOCX/images: parse_status = 'done' (skip sync parse — let async handle it)
   │     indexing_status = 'pending'
   │
   └─► dispatch(ingest_project_source) [async, Celery]
         indexing_status: pending → running
         │
-        ├─► PageIndex.build_index(file_bytes, mime_type, filename)
-        │     PDF → page-by-page tree
-        │     MD  → md_to_tree (headings-aware)
-        │     TXT/DOCX → paginator fallback (~1500 chars/node)
+        ├─► Detect MIME category
         │
-        ├─► DocumentTree row written (or replaced if re-indexed)
-        │     tree_json, page_texts, node_count, model
+        ├─► RICH_MIMES (PDF, DOCX, images)
+        │     provider = get_markdown_provider()           ← same factory as App Brain
+        │     markdown = await provider.convert(            ← called DIRECTLY (no MarkdownConverterService)
+        │         file_bytes, mime_type                       stores nothing in document_markdown
+        │     )
+        │     doc.extracted_text = markdown
+        │     doc.parse_status = 'done'
+        │     await db.flush()
+        │
+        ├─► TEXT_MIMES (TXT, MD)
+        │     extracted_text already set in sync phase
+        │     (no-op here)
+        │
+        ├─► PageIndex.build_index(
+        │       content = doc.extracted_text.encode('utf-8'),
+        │       mime_type = 'text/markdown',               ← always markdown after conversion
+        │       filename = doc.filename
+        │   )
+        │     → md_to_tree uses # headings
+        │     → DocumentTree row written (or replaced if re-indexed)
+        │         tree_json, page_texts, node_count, model
         │
         └─► indexing_status = 'done'
               └─► IF project has RU with updated_at < doc.created_at
                     → docs_stale_for_ru = true (computed at read time)
 ```
 
-### Image documents (`image/*`)
+**Why call the provider directly instead of `MarkdownConverterService`?**
 
-```
-Upload
-  │
-  ├─► parser.parse() [sync] → extracted_text = None (parser skips images)
-  │   parse_status = 'done', indexing_status = 'pending'
-  │
-  └─► dispatch(ingest_project_source) [async, Celery]
-        │
-        ├─► Detect image/* MIME
-        │
-        ├─► load image bytes from storage
-        │
-        ├─► GeminiProvider.vision_complete(image_bytes, mime_type, IMAGE_PROMPT)
-        │     → structured markdown string
-        │
-        ├─► doc.extracted_text = markdown  [retroactively populated]
-        │   doc.parse_status = 'done'
-        │
-        ├─► PageIndex.build_index(markdown.encode(), "text/markdown", filename)
-        │     → md_to_tree uses # headings Gemini produced
-        │     → DocumentTree row written
-        │
-        └─► indexing_status = 'done'
-              └─► stale check same as above
-```
-
-**Key benefit:** images become fully AI-grounded. Their Gemini-generated markdown
-feeds into RU retrieval and artifact generation exactly like any other document.
-
----
-
-## Gemini Vision Prompt
-
-Stored in `backend/app/services/documents/image_understanding.py`.
-
-The prompt is designed to handle every image type an analyst might upload —
-architecture diagrams, ER diagrams, wireframes, whiteboard photos, screenshots,
-charts, tables, handwritten notes — and produce markdown that an AI can reason over.
-
-```
-You are a meticulous technical analyst converting an image into rich, structured
-Markdown for use in a software requirements platform. This output will be used
-by an AI to generate specifications — completeness and precision are critical.
-
-─── STEP 1: Identify the image type ───────────────────────────────────────────
-
-Begin your output with a YAML front-matter block:
-
----
-image_type: <diagram | table | document | wireframe | chart | photograph | mixed>
-summary: <one sentence — what this image shows and its purpose in a project context>
----
-
-─── STEP 2: Apply the rule for the detected type ──────────────────────────────
-
-DIAGRAM (architecture, flowchart, ER, sequence, class, network, state machine):
-  ## Overview
-  2–3 sentences on the diagram's purpose and scope.
-
-  ## Components
-  Every node, entity, service, actor, or system:
-  **<Name>** (<type>): <role or description>
-
-  ## Relationships
-  Every edge, arrow, or connection — one per line:
-  **<Source>** → [<label / protocol / cardinality>] → **<Target>**: <meaning>
-  Use → directed, ↔ bidirectional, -- association, ◇ aggregation, ◆ composition
-
-  ## Details
-  Annotations, swim lanes, colours, legends, guards, conditions, notes on nodes.
-
-TABLE / SPREADSHEET:
-  Reproduce exactly as a Markdown pipe table. Preserve every header, row label,
-  value, unit, and formula. Note merged cells as HTML comments.
-  Add a ## Notes section for footnotes, totals logic, or data type hints.
-
-DOCUMENT SCREENSHOT / HANDWRITTEN NOTES:
-  Transcribe ALL text verbatim, in reading order (columns before wrap).
-  Preserve heading levels, numbering, bullet style, indentation.
-  Unclear text: [illegible] or [unclear: best-guess].
-  Do NOT paraphrase — every word visible must appear.
-
-UI WIREFRAME / MOCKUP:
-  ## Screen: <name> for each distinct screen or panel.
-  List every UI element:
-    - **<type>** "<label>": <state | placeholder | value | constraints>
-  ## Navigation: describe any flows, arrows, or transitions between screens.
-  ## Annotations: any designer notes, redlines, or spec callouts.
-
-CHART / GRAPH:
-  Chart type, title, X-axis (label + units), Y-axis (label + units).
-  Every data series: name + values or trend description.
-  Thresholds, reference lines, anomalies, legend entries.
-  If exact values are readable state them; if approximate, say so.
-
-PHOTOGRAPH (whiteboard, physical document, equipment photo):
-  Transcribe all visible text first.
-  Then describe diagrams/sketches using spatial language (top-left, centre-right).
-  Note colours, circled items, arrows, underlines — they carry intent.
-
-MIXED: split into labelled ## sections, apply the matching rule to each part.
-
-─── STEP 3: Universal rules (apply regardless of type) ────────────────────────
-
-1. NOTHING OMITTED. Every label, number, colour code, legend entry, footnote,
-   and annotation must appear in the output.
-
-2. PRESERVE EXACT NAMES. Do not normalise, abbreviate, or paraphrase
-   identifiers, field names, system names, or technical labels.
-
-3. CODE BLOCKS for code, SQL, JSON, YAML, regex, formulas — with language hint.
-
-4. BLOCKQUOTES (>) for callouts, warning boxes, highlighted requirements,
-   or any visually emphasised note.
-
-5. SPATIAL RELATIONSHIPS MATTER. In diagrams, left/right/above/below positioning
-   conveys architectural intent — capture it explicitly.
-
-6. If the image is too low resolution or partially obscured, note it:
-   > ⚠ Partial visibility: the lower-right section is unclear.
-
-Output ONLY the Markdown. No preamble. No "Here is the result:". Just the content.
-```
+`MarkdownConverterService.convert()` writes to `document_markdown` — an App Brain
+table. By calling `provider.convert()` directly, we get the same conversion
+quality (Azure or mock) but store the result in `doc.extracted_text`, which
+belongs to the project docs zone. No zone boundary is crossed.
 
 ---
 
@@ -199,7 +106,7 @@ Output ONLY the Markdown. No preamble. No "Here is the result:". Just the conten
 ### No new Alembic migration needed
 
 All required fields already exist on the `Document` model:
-- `extracted_text` — used for AI-generated markdown (images) or parsed text (others)
+- `extracted_text` — converted markdown (all types) or raw text (TXT/MD)
 - `indexing_status` — `pending | running | done | error`
 - `index_error` — error string if PageIndex fails
 - `page_count` — set during ingest
@@ -207,65 +114,64 @@ All required fields already exist on the `Document` model:
 These fields ARE in `DocumentRead` Pydantic schema but are **missing from the
 TypeScript `DocumentRead` interface** — that's the only schema fix needed.
 
-### New: `BaseLLMProvider.vision_complete()`
+### Updated: `workers/tasks.py` — `_ingest_project_source()`
 
 ```python
-# app/services/llm/base.py
-@abstractmethod
-async def vision_complete(
-    self,
-    image_bytes: bytes,
-    mime_type: str,
-    prompt: str,
-) -> str: ...
-```
+from app.services.markdown_converter import get_markdown_provider
 
-Implementations:
-- **`GeminiProvider`**: call `gemini-2.5-flash` with inline image part + text prompt
-- **`MockLLMProvider`**: return static markdown fixture
-  (`app/services/llm/fixtures/image_understanding.md`)
-
-### New: `app/services/documents/image_understanding.py`
-
-```python
-IMAGE_MIMES = frozenset({
+RICH_MIMES = frozenset({
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "image/png", "image/jpeg", "image/jpg",
     "image/gif", "image/webp", "image/tiff", "image/bmp",
 })
 
-IMAGE_TO_MARKDOWN_PROMPT = """...(prompt above)..."""
-
-async def understand_image(
-    image_bytes: bytes,
-    mime_type: str,
-    provider,        # BaseLLMProvider
-) -> str:
-    return await provider.vision_complete(image_bytes, mime_type, IMAGE_TO_MARKDOWN_PROMPT)
-```
-
-### Updated: `workers/tasks.py` — `_ingest_project_source()`
-
-Add MIME branch before the existing PageIndex call:
-
-```python
-from app.services.documents.image_understanding import IMAGE_MIMES, understand_image
-
-if doc.mime_type in IMAGE_MIMES:
-    image_bytes = await storage.read(doc.storage_path)
-    provider = get_provider()
-    markdown = await understand_image(image_bytes, doc.mime_type, provider)
-    doc.extracted_text = markdown
-    doc.parse_status = "done"
+async def _ingest_project_source(doc_id: str, db: AsyncSession) -> None:
+    doc = await db.get(Document, uuid.UUID(doc_id))
+    # ...existing status guards...
+    doc.indexing_status = "running"
     await db.flush()
-    # Feed AI-generated markdown into PageIndex (md_to_tree path)
-    content_for_index = markdown.encode("utf-8")
-    mime_for_index = "text/markdown"
-else:
-    content_for_index = file_bytes
-    mime_for_index = doc.mime_type
 
-result = await corpus_index.build_index(content_for_index, mime_for_index, doc.filename)
-# ... rest of tree-writing logic unchanged
+    try:
+        file_bytes = await storage.read(doc.storage_path)
+
+        if doc.mime_type in RICH_MIMES:
+            # Call provider directly — do NOT use MarkdownConverterService
+            # (that writes to document_markdown, which is App Brain zone)
+            provider = get_markdown_provider()
+            markdown = await provider.convert(file_bytes, doc.mime_type)
+            doc.extracted_text = markdown
+            doc.parse_status = "done"
+            await db.flush()
+            content_for_index = markdown.encode("utf-8")
+        else:
+            # TXT/MD already have extracted_text from sync parse phase
+            content_for_index = (doc.extracted_text or "").encode("utf-8")
+
+        # Build PageIndex tree — always treat as markdown after conversion
+        corpus_index = get_corpus_index()
+        result = await corpus_index.build_index(
+            content_for_index, "text/markdown", doc.filename
+        )
+
+        # Write DocumentTree (project zone)
+        await db.execute(delete(DocumentTree).where(DocumentTree.document_id == doc.id))
+        db.add(DocumentTree(
+            document_id=doc.id,
+            tree_json=result.tree,
+            page_texts=result.page_texts,
+            node_count=result.node_count,
+            model=result.model,
+        ))
+        doc.page_count = result.node_count
+        doc.indexing_status = "done"
+        await db.commit()
+
+    except Exception as exc:
+        doc.indexing_status = "error"
+        doc.index_error = str(exc)
+        await db.commit()
+        raise
 ```
 
 ### New endpoints: `backend/app/api/documents.py`
@@ -297,9 +203,7 @@ docs_stale_for_ru = (
     and any(
         d.created_at > ru.updated_at
         for d in project.documents
-        if d.parse_status == "done"
-          and d.mime_type not in IMAGE_MIMES  # images that haven't been indexed yet don't count
-          or (d.mime_type in IMAGE_MIMES and d.indexing_status == "done")
+        if d.indexing_status == "done"
     )
 )
 ```
@@ -382,7 +286,7 @@ mime_type === "text/plain"
   Tab 1: "Text" → plain pre block (no Structure — page-chunk nodes aren't useful)
 
 mime_type === "application/pdf" or "...docx"
-  Tab 1: "Text" → plain pre block
+  Tab 1: "Rendered" → react-markdown (Azure-converted markdown)
   Tab 2: "Structure" → PageIndex tree
 ```
 
@@ -419,16 +323,15 @@ Dismiss stores in `sessionStorage` (clears on next load so it reappears if still
 
 ## Implementation Order
 
-1. **Backend: `vision_complete` on provider** — abstract method + Gemini impl + mock fixture
-2. **Backend: `image_understanding.py`** — prompt constant + `understand_image()` wrapper
-3. **Backend: `ingest_project_source` branch** — MIME detection, vision call, md_to_tree path
-4. **Backend: `/outline`, `/section/{node_id}`, `/file` endpoints**
-5. **Backend: `docs_stale_for_ru` in `ProjectDetail`**
-6. **Frontend: `DocumentRead` type** — add `indexing_status`, `page_count`, `index_error`
-7. **Frontend: `useProject` polling** — refresh when any doc indexing not done
-8. **Frontend: `DocumentList` icons + status indicators**
-9. **Frontend: `DocumentViewer` tabs** — type-aware rendering, Structure tree, image thumbnail
-10. **Frontend: stale banner** in project overview
+1. **Backend: `workers/tasks.py`** — add `RICH_MIMES`, direct `provider.convert()` call, updated tree-writing logic
+2. **Backend: `/outline`, `/section/{node_id}`, `/file` endpoints**
+3. **Backend: `docs_stale_for_ru` in `ProjectDetail`**
+4. **Frontend: `DocumentRead` type** — add `indexing_status`, `page_count`, `index_error`
+5. **Frontend: `useProject` polling** — refresh when any doc indexing not done
+6. **Frontend: `DocumentList` icons + status indicators**
+7. **Frontend: `DocumentViewer` tabs** — type-aware rendering, Structure tree, image thumbnail
+8. **Frontend: API methods** — `getOutline`, `getSection`, `getFileUrl`
+9. **Frontend: stale banner** in project overview
 
 ---
 
@@ -436,22 +339,22 @@ Dismiss stores in `sessionStorage` (clears on next load so it reappears if still
 
 - No new Alembic migration
 - No new database tables
-- App Brain tables untouched
+- App Brain tables untouched (including `document_markdown` — project docs never write there)
 - `ingest_project_source` task signature unchanged (still takes `doc_id`)
-- `document_trees` table unchanged (images write here same as other docs)
-- RU retrieval (`_retrieve_project_sections`) unchanged — it reads `extracted_text`
-  and `document_trees`, both now populated for images
+- `document_trees` table unchanged
+- RU retrieval (`_retrieve_project_sections`) unchanged — reads `extracted_text` and `document_trees`
 - Artifact retrieval unchanged — same benefit automatically
+- `MarkdownConverterService` unchanged — still used only by App Brain corpus ingestion
 
 ---
 
 ## Mock Strategy (CI/tests)
 
-- `MockLLMProvider.vision_complete()` returns content of
-  `app/services/llm/fixtures/image_understanding.md`
-- That fixture is a realistic markdown description of a fake architecture diagram
-- `ingest_project_source` with a PNG in tests → calls mock → produces tree →
+- `MockMarkdownProvider.convert()` returns content of
+  `app/services/markdown_converter/fixtures/mock_markdown.md` (existing fixture)
+- `ingest_project_source` with a PDF/image in tests → calls mock → produces tree →
   asserts `indexing_status == 'done'` and `node_count > 0`
+- No Vertex AI or Azure calls in CI
 
 ---
 
@@ -461,15 +364,13 @@ Dismiss stores in `sessionStorage` (clears on next load so it reappears if still
    attribute? Currently shows "PDF, DOCX, TXT". Update to "PDF, DOCX, TXT, MD,
    PNG, JPG" once image pipeline is live.
 
-2. **Vision cost** — Gemini vision calls are billed. Consider adding a
-   `max_image_size_bytes` config gate (e.g. reject images > 20 MB before calling
-   Vision API).
+2. **Conversion cost** — Azure Content Understanding calls are billed. Consider
+   adding a `max_file_size_bytes` config gate (e.g. reject files > 20 MB before
+   calling the provider API).
 
-3. **Re-indexing** — if a document is re-uploaded (same hash is blocked by dedup)
-   or if the Vision prompt is updated, there's no current mechanism to re-run
-   `understand_image` on existing docs. A future `POST /documents/{doc_id}/reindex`
-   endpoint could handle this.
+3. **Re-indexing** — no current mechanism to re-run conversion on existing docs
+   if the provider is changed or the file needs re-processing. A future
+   `POST /documents/{doc_id}/reindex` endpoint could handle this.
 
-4. **Structure tab for TXT** — currently hidden because page-chunk nodes are not
-   meaningful. Revisit if TXT files in practice have large structured content
-   (e.g. requirements exported as text).
+4. **Structure tab for TXT** — hidden because page-chunk nodes are not meaningful.
+   Revisit if TXT files in practice have large structured content.

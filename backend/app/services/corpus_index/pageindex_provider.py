@@ -147,7 +147,7 @@ class PageIndexProvider(CorpusIndexProvider):
         import asyncio
 
         model = _configure_litellm()
-        is_pdf = content_type == _PDF_MIME or filename.lower().endswith(".pdf")
+        is_pdf = content_type == _PDF_MIME
 
         if is_pdf:
             page_texts = _pdf_page_texts(data)

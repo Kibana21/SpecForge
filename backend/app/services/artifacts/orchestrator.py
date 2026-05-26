@@ -450,7 +450,7 @@ async def incorporate_answer(
             .order_by(ArtifactMessage.seq.desc())
         )
     ).scalars().all()
-    target_unit = questions[0].meta.get("unit_key") if questions else None
+    target_unit = (questions[0].meta or {}).get("unit_key") if questions else None
 
     if target_unit and target_unit in MANIFEST_BY_KEY:
         units_to_run = [target_unit] + downstream_of(target_unit)
@@ -562,6 +562,19 @@ async def unlock_row(table_name: str, row_id: uuid.UUID, db: AsyncSession) -> di
     row.is_locked = False
     await db.flush()
     return _row_to_dict(row, table_name)
+
+
+async def delete_row(table_name: str, row_id: uuid.UUID, db: AsyncSession) -> dict:
+    """Soft-delete a row by marking status=removed on its current version."""
+    model = CB_TABLE_MAP[table_name]
+    row = await db.get(model, row_id)
+    if row is None:
+        raise ValueError(f"Row {row_id} not found")
+    if row.is_locked:
+        raise ValueError("Row is locked — unlock before deleting")
+    row.status = "removed"
+    await db.flush()
+    return {"id": str(row_id), "status": "removed"}
 
 
 def _row_to_dict(row: Any, table_name: str) -> dict:

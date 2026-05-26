@@ -28,7 +28,7 @@ interface Props {
   project: ProjectRead & { apps_in_scope?: AppInScope[] }
   canDelete: boolean
   onClose: () => void
-  onUpdated: () => void
+  onUpdated: () => Promise<void> | void
   onDeleted: () => void
 }
 
@@ -97,7 +97,7 @@ export function EditProjectModal({ project, canDelete, onClose, onUpdated, onDel
         app_scope_entries: appEntries.map(e => ({ app_id: e.app_id, impact_note: e.impact_note || null })),
       } as Parameters<typeof api.projects.update>[1] & { app_scope_entries?: { app_id: string; impact_note: string | null }[] })
       toast.success('Project updated')
-      onUpdated()
+      await onUpdated()   // wait for SWR revalidation so modal reopens with fresh data
       onClose()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Update failed')

@@ -1,10 +1,10 @@
 'use client'
 import { useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
 import {
-  ArrowLeft, Cpu, History, Pencil, FileText, BookOpen, Layers,
-  CheckSquare, Sparkles, Lock, ChevronRight, Check, Circle
+  AlertTriangle, ArrowLeft, Cpu, History, Pencil, FileText, BookOpen, Layers,
+  CheckSquare, Sparkles, Lock, ChevronRight, Check, Circle, X
 } from 'lucide-react'
 import { useProjectContext } from '@/lib/context/ProjectContext'
 import type { ExtractedRequirement, GapQuestion, ReviewComment, SpecType, SpecVersion } from '@/lib/types'
@@ -135,13 +135,21 @@ function CountBadge({ count, variant = 'default' }: { count: number; variant?: '
 export default function WorkspacePage({ params }: { params: { id: string } }) {
   const projectId = params.id
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   const [activeTab, setActiveTab] = useState<OutputTab>('functional')
   const [generatingTab, setGeneratingTab] = useState<SpecType | null>(null)
   const [extracting, setExtracting] = useState(false)
   const [editing, setEditing] = useState(false)
-  const [view, setView] = useState<View>(null)
+  const [view, setView] = useState<View>(() => {
+    const v = searchParams.get('view')
+    return (v === 'interview' || v === 'concept-brief' || v === 'brd') ? v : null
+  })
   const [selectedDoc, setSelectedDoc] = useState<DocumentRead | null>(null)
+  const [staleBannerDismissed, setStaleBannerDismissed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    return sessionStorage.getItem(`stale-ru-${projectId}`) === '1'
+  })
 
   const { project, isLoading: projectLoading, mutate: mutateProject } = useProject(projectId)
   const { detail: cbDetail } = useArtifact(projectId, 'concept-brief')
@@ -509,7 +517,32 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
 
     // No doc selected — project overview + progress
     return (
-      <div className="flex-1 overflow-y-auto p-8">
+      <>
+        {project.docs_stale_for_ru && !staleBannerDismissed && (
+          <div className="shrink-0 flex items-center gap-3 bg-amber-50 border-b border-amber-200 px-4 py-2.5">
+            <AlertTriangle size={14} className="shrink-0 text-amber-500" />
+            <p className="flex-1 text-xs text-amber-800">
+              A document was added after your Requirement Understanding. Regenerate it to incorporate the latest sources.
+            </p>
+            <button
+              onClick={() => setView('interview')}
+              className="shrink-0 text-xs font-semibold text-amber-700 hover:text-amber-900 transition-colors"
+            >
+              Open Interview →
+            </button>
+            <button
+              onClick={() => {
+                setStaleBannerDismissed(true)
+                sessionStorage.setItem(`stale-ru-${projectId}`, '1')
+              }}
+              className="shrink-0 rounded p-0.5 text-amber-400 hover:text-amber-700 transition-colors"
+              aria-label="Dismiss"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        )}
+        <div className="flex-1 overflow-y-auto p-8">
         <div className="max-w-xl mx-auto space-y-6">
           <div>
             <h2 className="text-2xl font-bold text-[var(--text-primary)] leading-tight">{project.name}</h2>
@@ -574,6 +607,7 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
           </div>
         </div>
       </div>
+      </>
     )
   })()
 
@@ -626,7 +660,7 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
           project={project}
           canDelete
           onClose={() => setEditing(false)}
-          onUpdated={() => mutateProject()}
+          onUpdated={async () => { await mutateProject() }}
           onDeleted={() => router.push('/')}
         />
       )}

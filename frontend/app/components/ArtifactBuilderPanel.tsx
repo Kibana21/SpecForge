@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from 'react'
 import {
   ArrowLeft, CheckCircle2, Send, Sparkles, RotateCcw, Lock,
-  History, Download, ChevronDown, ChevronUp, Edit2, Building2, Loader2,
+  History, Download, ChevronDown, ChevronUp, Edit2, Building2, Loader2, Info, Trash2, Check, X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -12,7 +12,7 @@ import { Skeleton } from '@/app/components/Skeleton'
 import { api } from '@/lib/api'
 import { useArtifact } from '@/lib/hooks/useArtifact'
 import { useProject } from '@/lib/hooks/useProject'
-import type { ArtifactMessage, CbRow, Confidence } from '@/lib/types'
+import type { ArtifactMessage, CbRow, Confidence, ProjectDetail } from '@/lib/types'
 
 const CONF_VARIANT: Record<Confidence, 'success' | 'warning' | 'danger'> = {
   high: 'success', medium: 'warning', low: 'danger',
@@ -60,6 +60,19 @@ function completenessColor(pct: number) {
   if (pct >= 90) return 'text-success'
   if (pct >= 60) return 'text-warning'
   return 'text-danger'
+}
+
+function UnitScoreChip({ completeness, confidence }: { completeness: number; confidence: Confidence }) {
+  return (
+    <div className="inline-flex items-center gap-1 rounded border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-1.5 py-0.5">
+      <Info size={8} className="text-[var(--text-tertiary)] opacity-40 shrink-0" />
+      <span className="text-[9px] text-[var(--text-tertiary)]">completeness</span>
+      <span className={`text-[10px] font-semibold ${completenessColor(completeness)}`}>{completeness}%</span>
+      <span className="text-[9px] text-[var(--text-tertiary)]">·</span>
+      <span className="text-[9px] text-[var(--text-tertiary)]">confidence</span>
+      <Badge variant={CONF_VARIANT[confidence]} className="text-[9px] py-0">{confidence}</Badge>
+    </div>
+  )
 }
 
 export interface ArtifactBuilderPanelProps {
@@ -133,6 +146,20 @@ export function ArtifactBuilderPanel({ projectId, artifactType, onBack }: Artifa
     await run(
       () => api.artifacts.regenerateUnit(projectId, artifactType, unitKey),
       `${unitKey} regenerated`,
+    )
+  }
+
+  async function handleDeleteRow(table: string, rowId: string) {
+    await run(
+      () => api.artifacts.deleteRow(projectId, artifactType, table, rowId),
+      'Row deleted',
+    )
+  }
+
+  async function handleProseEdit(rowId: string, text: string) {
+    await run(
+      () => api.artifacts.editRow(projectId, artifactType, 'cb_text_blocks', rowId, { text }, false),
+      'Saved',
     )
   }
 
@@ -249,52 +276,18 @@ export function ArtifactBuilderPanel({ projectId, artifactType, onBack }: Artifa
         </div>
       ) : (
         /* ── Main two-column builder ── */
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-[minmax(0,360px)_1fr] overflow-hidden">
-          {/* ── Left: Q&A Thread ── */}
-          <div className="flex flex-col overflow-hidden border-r border-[var(--border-default)] bg-[var(--bg-base)]">
-            {/* Impacted apps strip */}
-            {project?.apps_in_scope && project.apps_in_scope.filter(a => a.included).length > 0 && (
-              <div className="shrink-0 border-b border-[var(--border-subtle)] bg-[var(--accent-subtle)]/40 px-3 py-2">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--accent-deep)] mb-1.5">
-                  Grounded in {project.apps_in_scope.filter(a => a.included).length} app{project.apps_in_scope.filter(a => a.included).length !== 1 ? 's' : ''}
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {project.apps_in_scope.filter(a => a.included).map(app => (
-                    <span key={app.app_id} className="inline-flex items-center gap-1 rounded-md bg-[var(--bg-surface)] border border-[var(--border-default)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)]">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] inline-block" />
-                      {app.name}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Thread */}
-            <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
-              {messages.map((m) => <ArtifactBubble key={m.id} m={m} />)}
-              <div ref={threadEndRef} />
-            </div>
-
-            {/* Composer */}
-            {!validated && (
-              <div className="shrink-0 border-t border-[var(--border-default)] p-3">
-                <div className="flex items-end gap-2">
-                  <textarea
-                    value={answer}
-                    onChange={(e) => setAnswer(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleAnswer() }}
-                    placeholder="Answer an open question… (⌘+Enter)"
-                    rows={2}
-                    className="flex-1 resize-none rounded-lg border border-[var(--border-default)] bg-[var(--bg-surface)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:opacity-50"
-                    disabled={busy}
-                  />
-                  <Button onClick={handleAnswer} disabled={busy || !answer.trim()} className="h-9">
-                    <Send size={14} />
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-[minmax(0,340px)_1fr] overflow-hidden">
+          {/* ── Left: Clarification Questions ── */}
+          <ClarificationPanel
+            messages={messages}
+            project={project}
+            validated={validated}
+            busy={busy}
+            answer={answer}
+            onAnswerChange={setAnswer}
+            onAnswerSubmit={handleAnswer}
+            threadEndRef={threadEndRef}
+          />
 
           {/* ── Right: Structured sections ── */}
           <div className="overflow-y-auto bg-[var(--bg-base)]">
@@ -305,6 +298,7 @@ export function ArtifactBuilderPanel({ projectId, artifactType, onBack }: Artifa
               validated={validated}
               busy={busy}
               onRegenUnit={handleRegenUnit}
+              onEditProse={handleProseEdit}
             />
 
             {/* Typed tables */}
@@ -328,6 +322,7 @@ export function ArtifactBuilderPanel({ projectId, artifactType, onBack }: Artifa
                   onEdit={(row) => setEditingRow({ table, row })}
                   onUnlock={(rowId) => handleUnlock(table, rowId)}
                   onHistory={(row) => handleShowHistory(table, row.row_key as string, unitKey)}
+                  onDelete={(rowId) => handleDeleteRow(table, rowId)}
                 />
               )
             })}
@@ -427,62 +422,130 @@ function GeneratingProgress({
 
 // ── Prose Section (text blocks) ───────────────────────────────────────────────
 
+function ProseBlock({
+  label, text, rowId, validated, busy,
+  onEdit,
+}: {
+  label: string
+  text: string
+  rowId: string | undefined
+  validated: boolean
+  busy: boolean
+  onEdit: (rowId: string, text: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(text)
+
+  function startEdit() { setDraft(text); setEditing(true) }
+  function cancel() { setEditing(false) }
+  async function save() {
+    if (!rowId) return
+    await onEdit(rowId, draft)
+    setEditing(false)
+  }
+
+  return (
+    <div className="group/prose relative">
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">{label}</p>
+        {!validated && rowId && !editing && (
+          <button
+            onClick={startEdit}
+            disabled={busy}
+            className="p-1.5 rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--accent)] hover:bg-[var(--accent-subtle)] disabled:opacity-40 transition-colors"
+            title="Edit"
+          >
+            <Edit2 size={13} />
+          </button>
+        )}
+      </div>
+      {editing ? (
+        <div className="space-y-2">
+          <textarea
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            rows={4}
+            className="w-full resize-y rounded-lg border border-[var(--accent)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
+            autoFocus
+          />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={save}
+              disabled={busy}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[var(--accent)] text-white text-xs font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
+            >
+              <Check size={12} /> Save
+            </button>
+            <button
+              onClick={cancel}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-[var(--border-default)] text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors"
+            >
+              <X size={12} /> Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap">{text}</p>
+      )}
+    </div>
+  )
+}
+
 function ProseSection({
-  sections, unitStatus, validated, busy, onRegenUnit,
+  sections, unitStatus, validated, busy, onRegenUnit, onEditProse,
 }: {
   sections: Record<string, CbRow[]>
   unitStatus: Record<string, { completeness: number; confidence: Confidence }>
   validated: boolean
   busy: boolean
   onRegenUnit: (u: string) => void
+  onEditProse: (rowId: string, text: string) => void
 }) {
   const textBlocks = sections['cb_text_blocks'] ?? []
-  const getBlock = (key: string) => textBlocks.find(r => r.field_key === key)?.text as string || '—'
+  const getRow = (key: string) => textBlocks.find(r => r.field_key === key)
+  const getText = (key: string) => getRow(key)?.text as string || '—'
+  const getId = (key: string) => getRow(key)?.id as string | undefined
 
   const proseUnits = ['problem_context', 'value_hypothesis']
 
   return (
     <div className="border-b border-[var(--border-subtle)]">
       <div className="px-4 pt-3 pb-2 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-[var(--text-primary)]">Problem Statement & Value Hypothesis</span>
-        </div>
+        <span className="text-xs font-semibold text-[var(--text-primary)]">Problem Statement & Value Hypothesis</span>
         <div className="flex items-center gap-2">
           {proseUnits.map(uk => {
             const us = unitStatus[uk]
             if (!us) return null
-            return (
-              <div key={uk} className="flex items-center gap-1">
-                <span className={`text-[10px] font-semibold ${completenessColor(us.completeness)}`}>
-                  {us.completeness}%
-                </span>
-                <Badge variant={CONF_VARIANT[us.confidence]} className="text-[9px] py-0">{us.confidence}</Badge>
-              </div>
-            )
+            return <UnitScoreChip key={uk} completeness={us.completeness} confidence={us.confidence} />
           })}
           {!validated && (
             <button
               onClick={() => onRegenUnit('problem_context')}
               disabled={busy}
-              className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--accent-subtle)] disabled:opacity-40"
-              title="Regenerate problem context"
+              className="p-1.5 rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--accent)] hover:bg-[var(--accent-subtle)] disabled:opacity-40 transition-colors"
+              title="Regenerate"
             >
-              <RotateCcw size={12} />
+              <RotateCcw size={13} />
             </button>
           )}
         </div>
       </div>
-      <div className="px-4 pb-4 space-y-3">
+      <div className="px-4 pb-4 space-y-4">
         {[
           { key: 'business_context', label: 'Business Context' },
           { key: 'problem_statement', label: 'Problem Statement' },
           { key: 'value_hypothesis_if', label: 'Value Hypothesis (If…)' },
           { key: 'value_hypothesis_then', label: '…Then' },
         ].map(({ key, label }) => (
-          <div key={key}>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-1">{label}</p>
-            <p className="text-sm text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap">{getBlock(key)}</p>
-          </div>
+          <ProseBlock
+            key={key}
+            label={label}
+            text={getText(key)}
+            rowId={getId(key)}
+            validated={validated}
+            busy={busy}
+            onEdit={onEditProse}
+          />
         ))}
       </div>
     </div>
@@ -493,7 +556,7 @@ function ProseSection({
 
 function SectionPanel({
   table, label, rows, unitKey, unitStatus, validated, busy, expanded,
-  onToggle, onRegenUnit, onEdit, onUnlock, onHistory,
+  onToggle, onRegenUnit, onEdit, onUnlock, onHistory, onDelete,
 }: {
   table: string
   label: string
@@ -508,6 +571,7 @@ function SectionPanel({
   onEdit: (r: CbRow) => void
   onUnlock: (id: string) => void
   onHistory: (r: CbRow) => void
+  onDelete: (id: string) => void
 }) {
   const cols = TABLE_COLS[table] ?? []
   const activeRows = rows.filter(r => r.status === 'active')
@@ -522,14 +586,7 @@ function SectionPanel({
           <span className="text-xs font-semibold text-[var(--text-primary)]">{label}</span>
           <span className="text-[10px] text-[var(--text-tertiary)]">({activeRows.length})</span>
           {unitStatus && (
-            <div className="flex items-center gap-1">
-              <span className={`text-[10px] font-semibold ${completenessColor(unitStatus.completeness)}`}>
-                {unitStatus.completeness}%
-              </span>
-              <Badge variant={CONF_VARIANT[unitStatus.confidence]} className="text-[9px] py-0">
-                {unitStatus.confidence}
-              </Badge>
-            </div>
+            <UnitScoreChip completeness={unitStatus.completeness} confidence={unitStatus.confidence} />
           )}
         </div>
         <div className="flex items-center gap-1.5">
@@ -537,10 +594,10 @@ function SectionPanel({
             <button
               onClick={(e) => { e.stopPropagation(); onRegenUnit(unitKey) }}
               disabled={busy}
-              className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--accent-subtle)] disabled:opacity-40"
-              title={`Regenerate ${unitKey}`}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium text-[var(--text-secondary)] border border-[var(--border-default)] bg-[var(--bg-elevated)] hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-40 transition-colors"
+              title={`Regenerate ${label}`}
             >
-              <RotateCcw size={12} />
+              <RotateCcw size={11} />
             </button>
           )}
           {expanded ? <ChevronUp size={14} className="text-[var(--text-tertiary)]" /> : <ChevronDown size={14} className="text-[var(--text-tertiary)]" />}
@@ -566,7 +623,7 @@ function SectionPanel({
                 </thead>
                 <tbody>
                   {activeRows.map(row => (
-                    <tr key={row.id as string} className="border-b border-[var(--border-subtle)] last:border-0 hover:bg-[var(--bg-elevated)] group">
+                    <tr key={row.id as string} className="border-b border-[var(--border-subtle)] last:border-0 hover:bg-[var(--bg-elevated)]">
                       {cols.map(c => (
                         <td key={c} className="py-2 pr-3 align-top text-[var(--text-primary)] leading-relaxed max-w-[200px]">
                           {c === 'quantifiable' ? (
@@ -579,20 +636,39 @@ function SectionPanel({
                         </td>
                       ))}
                       <td className="py-2 align-top">
-                        <div className="flex items-center gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-1.5 justify-end">
                           {row.is_locked ? (
-                            <button onClick={() => onUnlock(row.id as string)} title="Unlock" className="p-1 rounded hover:bg-warning-bg text-warning">
-                              <Lock size={12} />
+                            <button
+                              onClick={() => onUnlock(row.id as string)}
+                              title="Unlock row"
+                              className="p-1.5 rounded-md border border-warning/50 bg-warning/10 text-warning hover:bg-warning/20 transition-colors"
+                            >
+                              <Lock size={13} />
                             </button>
-                          ) : (
-                            !validated && (
-                              <button onClick={() => onEdit(row)} title="Edit" className="p-1 rounded hover:bg-[var(--accent-subtle)] text-[var(--text-tertiary)] hover:text-[var(--accent)]">
-                                <Edit2 size={12} />
+                          ) : !validated && (
+                            <>
+                              <button
+                                onClick={() => onEdit(row)}
+                                title="Edit"
+                                className="p-1.5 rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--accent)] hover:bg-[var(--accent-subtle)] transition-colors"
+                              >
+                                <Edit2 size={13} />
                               </button>
-                            )
+                              <button
+                                onClick={() => onDelete(row.id as string)}
+                                title="Delete"
+                                className="p-1.5 rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-danger hover:text-danger hover:bg-danger/10 transition-colors"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </>
                           )}
-                          <button onClick={() => onHistory(row)} title="History" className="p-1 rounded hover:bg-[var(--bg-elevated)] text-[var(--text-tertiary)]">
-                            <History size={12} />
+                          <button
+                            onClick={() => onHistory(row)}
+                            title="Version history"
+                            className="p-1.5 rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                          >
+                            <History size={13} />
                           </button>
                         </div>
                       </td>
@@ -609,6 +685,121 @@ function SectionPanel({
 }
 
 // ── Bubble ────────────────────────────────────────────────────────────────────
+
+// ── Clarification Panel ───────────────────────────────────────────────────────
+
+function ClarificationPanel({
+  messages, project, validated, busy, answer, onAnswerChange, onAnswerSubmit, threadEndRef,
+}: {
+  messages: ArtifactMessage[]
+  project: ProjectDetail | undefined
+  validated: boolean
+  busy: boolean
+  answer: string
+  onAnswerChange: (v: string) => void
+  onAnswerSubmit: () => void
+  threadEndRef: React.RefObject<HTMLDivElement>
+}) {
+  // "Current round" = everything after the last user answer.
+  // Questions answered in previous rounds are resolved — don't show them again.
+  const userAnswers = messages.filter(m => m.role === 'user' && !m.meta?.is_initial_context)
+  const lastAnswerSeq = userAnswers.at(-1)?.seq ?? -1
+
+  // Current open questions: generated after the last user answer
+  const currentQuestions = messages.filter(m => m.role === 'question' && m.seq > lastAnswerSeq)
+
+  // Show: current questions + the most recent user answer (so the user can see what they last said)
+  const qaMessages: ArtifactMessage[] = [
+    ...(userAnswers.length > 0 ? [userAnswers.at(-1)!] : []),
+    ...currentQuestions,
+  ].sort((a, b) => a.seq - b.seq)
+
+  const hasPendingQuestion = currentQuestions.length > 0
+  const resolvedCount = messages.filter(m => m.role === 'question' && m.seq <= lastAnswerSeq).length
+
+  const includedApps = project?.apps_in_scope?.filter(a => a.included) ?? []
+
+  return (
+    <div className="flex flex-col overflow-hidden border-r border-[var(--border-default)] bg-[var(--bg-base)]">
+      {/* Panel header */}
+      <div className="shrink-0 px-4 py-3 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+        <div className="flex items-center gap-2">
+          <p className="text-xs font-semibold text-[var(--text-primary)]">Clarification Questions</p>
+          {resolvedCount > 0 && (
+            <span className="text-[10px] text-[var(--text-tertiary)] bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-full px-1.5 py-0.5">
+              {resolvedCount} resolved
+            </span>
+          )}
+        </div>
+        <p className="text-[10px] text-[var(--text-tertiary)] mt-0.5">
+          When SpecForge needs more information to improve a section, it asks here. Answer to trigger a re-generation.
+        </p>
+      </div>
+
+      {/* Grounded apps strip */}
+      {includedApps.length > 0 && (
+        <div className="shrink-0 border-b border-[var(--border-subtle)] bg-[var(--accent-subtle)]/40 px-3 py-2">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--accent-deep)] mb-1.5">
+            Grounded in {includedApps.length} app{includedApps.length !== 1 ? 's' : ''}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {includedApps.map(app => (
+              <span key={app.app_id} className="inline-flex items-center gap-1 rounded-md bg-[var(--bg-surface)] border border-[var(--border-default)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] inline-block" />
+                {app.name}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Q&A thread */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+        {currentQuestions.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-3 py-8 text-center px-4">
+            <div className="w-10 h-10 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-default)] flex items-center justify-center">
+              <CheckCircle2 size={18} className="text-success" strokeWidth={1.5} />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-[var(--text-primary)]">
+                {resolvedCount > 0 ? 'All questions answered' : 'No open questions'}
+              </p>
+              <p className="text-xs text-[var(--text-tertiary)] mt-1 max-w-[200px]">
+                {resolvedCount > 0
+                  ? 'Your answers were incorporated. Regenerate any section to refine further.'
+                  : 'SpecForge generated all sections with enough confidence. Regenerate a section to ask new questions.'}
+              </p>
+            </div>
+          </div>
+        ) : (
+          qaMessages.map((m) => <ArtifactBubble key={m.id} m={m} />)
+        )}
+        <div ref={threadEndRef} />
+      </div>
+
+      {/* Answer composer — only when not validated and there's a pending question */}
+      {!validated && hasPendingQuestion && (
+        <div className="shrink-0 border-t border-[var(--border-default)] p-3 bg-[var(--bg-surface)]">
+          <p className="text-[10px] font-semibold text-[var(--text-tertiary)] mb-2 uppercase tracking-widest">Your answer</p>
+          <div className="flex items-end gap-2">
+            <textarea
+              value={answer}
+              onChange={(e) => onAnswerChange(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onAnswerSubmit() }}
+              placeholder="Type your answer… (⌘+Enter to send)"
+              rows={3}
+              className="flex-1 resize-none rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:opacity-50"
+              disabled={busy}
+            />
+            <Button onClick={onAnswerSubmit} disabled={busy || !answer.trim()} className="h-9 shrink-0">
+              <Send size={14} />
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 function ArtifactBubble({ m }: { m: ArtifactMessage }) {
   if (m.role === 'user') {
@@ -659,6 +850,14 @@ function ArtifactBubble({ m }: { m: ArtifactMessage }) {
 
 // ── Row Edit Modal ────────────────────────────────────────────────────────────
 
+const _SHORT_COLS = new Set(['field_key', 'dimension', 'metric', 'capability', 'milestone', 'target', 'gate_status', 'kind'])
+const _LONG_COLS  = new Set(['text', 'description', 'detail', 'notes'])
+function _fieldRows(col: string) {
+  if (_SHORT_COLS.has(col)) return 1
+  if (_LONG_COLS.has(col))  return 6
+  return 3
+}
+
 function RowEditModal({
   table, row, onClose, onSave,
 }: {
@@ -673,41 +872,57 @@ function RowEditModal({
   )
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
       <div
-        className="w-full max-w-lg bg-[var(--bg-surface)] rounded-xl shadow-2xl border border-[var(--border-default)] p-5"
+        className="w-full max-w-2xl bg-[var(--bg-surface)] rounded-2xl shadow-2xl border border-[var(--border-default)] flex flex-col max-h-[90vh]"
         onClick={e => e.stopPropagation()}
       >
-        <h3 className="text-sm font-semibold mb-4 text-[var(--text-primary)]">
-          Edit row <span className="text-[var(--text-tertiary)]">({row.row_key as string})</span>
-        </h3>
-        <div className="space-y-3 max-h-96 overflow-y-auto">
+        {/* Header */}
+        <div className="px-6 pt-5 pb-4 border-b border-[var(--border-subtle)] shrink-0">
+          <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-0.5">Edit row</p>
+          <h3 className="text-base font-semibold text-[var(--text-primary)]">{(row.row_key as string).replace(/_/g, ' ')}</h3>
+        </div>
+
+        {/* Fields — scrollable */}
+        <div className="overflow-y-auto px-6 py-5 space-y-5 flex-1">
           {cols.map(c => (
             <div key={c}>
-              <label className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)] block mb-1">
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)] block mb-2">
                 {c.replace(/_/g, ' ')}
               </label>
               {c === 'quantifiable' ? (
-                <select
-                  value={fields[c] ? 'true' : 'false'}
-                  onChange={e => setFields(f => ({ ...f, [c]: e.target.value === 'true' }))}
-                  className="w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-base)] px-3 py-2 text-sm"
-                >
-                  <option value="true">Yes</option>
-                  <option value="false">No</option>
-                </select>
+                <div className="flex gap-3">
+                  {['true', 'false'].map(val => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setFields(f => ({ ...f, [c]: val === 'true' }))}
+                      className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                        String(fields[c]) === val
+                          ? val === 'true'
+                            ? 'border-[var(--accent)] bg-[var(--accent-subtle)] text-[var(--accent)]'
+                            : 'border-[var(--border-default)] bg-[var(--bg-elevated)] text-[var(--text-primary)]'
+                          : 'border-[var(--border-subtle)] bg-transparent text-[var(--text-tertiary)] hover:border-[var(--border-default)]'
+                      }`}
+                    >
+                      {val === 'true' ? 'Yes — quantifiable' : 'No — qualitative'}
+                    </button>
+                  ))}
+                </div>
               ) : (
                 <textarea
                   value={String(fields[c] ?? '')}
                   onChange={e => setFields(f => ({ ...f, [c]: e.target.value }))}
-                  rows={2}
-                  className="w-full resize-y rounded-lg border border-[var(--border-default)] bg-[var(--bg-base)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                  rows={_fieldRows(c)}
+                  className="w-full resize-y rounded-xl border border-[var(--border-default)] bg-[var(--bg-base)] px-4 py-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] leading-relaxed focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 focus:border-[var(--accent)] transition-colors"
                 />
               )}
             </div>
           ))}
         </div>
-        <div className="flex justify-end gap-2 mt-4">
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-[var(--border-subtle)] flex justify-end gap-2 shrink-0">
           <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
           <Button size="sm" onClick={() => onSave(fields)}>Save & Lock</Button>
         </div>

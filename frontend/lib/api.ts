@@ -22,7 +22,9 @@ import type {
   AuditEventRead,
   AuditFilters,
   AuditSummary,
+  DocumentOutline,
   DocumentRead,
+  DocumentSection,
   ExtractedRequirement,
   FactsFilter,
   GapQuestion,
@@ -239,6 +241,16 @@ export const api = {
       apiFetch<{ id: string; filename: string; parse_status: string; text: string | null }>(
         `/api/projects/${projectId}/documents/${docId}/content`
       ),
+    getOutline: (projectId: string, docId: string) =>
+      apiFetch<DocumentOutline>(`/api/projects/${projectId}/documents/${docId}/outline`),
+    getSection: (projectId: string, docId: string, nodeId: string) =>
+      apiFetch<DocumentSection>(`/api/projects/${projectId}/documents/${docId}/section/${nodeId}`),
+    getFileUrl: (projectId: string, docId: string): string =>
+      `/api/projects/${projectId}/documents/${docId}/file`,
+    reindex: (projectId: string, docId: string) =>
+      apiFetch<DocumentRead>(`/api/projects/${projectId}/documents/${docId}/reindex`, {
+        method: 'POST',
+      }),
     delete: (projectId: string, docId: string) =>
       apiFetch<{ id: string }>(`/api/projects/${projectId}/documents/${docId}`, {
         method: 'DELETE',
@@ -334,6 +346,8 @@ export const api = {
       }),
     unlockRow: (projectId: string, type: string, table: string, rowId: string) =>
       apiFetch<CbRow>(`/api/projects/${projectId}/artifacts/${type}/rows/${table}/${rowId}/unlock`, { method: 'POST' }),
+    deleteRow: (projectId: string, type: string, table: string, rowId: string) =>
+      apiFetch<{ id: string; status: string }>(`/api/projects/${projectId}/artifacts/${type}/rows/${table}/${rowId}`, { method: 'DELETE' }),
     validate: (projectId: string, type: string) =>
       apiFetch<{ ok: boolean; failures: string[] }>(`/api/projects/${projectId}/artifacts/${type}/validate`, { method: 'POST' }),
     exportUrl: (projectId: string, type: string) =>

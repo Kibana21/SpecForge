@@ -21,7 +21,7 @@ from app.schemas.artifact import (
 )
 from app.schemas.envelope import err, ok
 from app.services.artifacts.orchestrator import (
-    CB_TABLE_MAP, edit_row, get_artifact_detail,
+    CB_TABLE_MAP, delete_row, edit_row, get_artifact_detail,
     get_row_history, incorporate_answer, regenerate_unit, restore_row,
     unlock_row, validate,
 )
@@ -230,6 +230,27 @@ async def restore_row_endpoint(
         err("not_found", f"Row {row_id} not found", 404)
     try:
         result = await restore_row(table, doc.id, row.row_key, body.version, db, current_user.id)
+        await db.commit()
+        return ok(result)
+    except ValueError as e:
+        err("not_found", str(e), 404)
+
+
+@router.delete("/projects/{project_id}/artifacts/{artifact_type}/rows/{table}/{row_id}")
+async def delete_row_endpoint(
+    project_id: UUID,
+    artifact_type: str,
+    table: str,
+    row_id: UUID,
+    project: Project = Depends(get_project_or_404),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if table not in VALID_TABLES:
+        err("invalid_table", f"Unknown table: {table}", 400)
+    _resolve_type(artifact_type)
+    try:
+        result = await delete_row(table, row_id, db)
         await db.commit()
         return ok(result)
     except ValueError as e:

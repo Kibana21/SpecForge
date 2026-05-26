@@ -55,7 +55,11 @@
       "Bash(backend/.venv/bin/python *)",
       "Read(//Users/kartik/.config/amp/skills/**)",
       "Bash(npm i *)",
-      "Bash(./server.sh)"
+      "Bash(./server.sh)",
+      "Bash(python -c \"from workers.tasks import _ingest_project_source, RICH_MIMES; print\\('tasks ok, RICH_MIMES count:', len\\(RICH_MIMES\\)\\)\")",
+      "Bash(graphify query *)",
+      "Bash(npx tsc *)",
+      "Bash(python -c ' *)"
     ]
   }
 }

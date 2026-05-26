@@ -100,6 +100,7 @@ export interface ProjectDetail extends ProjectRead {
   assumptions: AssumptionItem[]
   recent_activity: ActivityItem[]
   ru_status: string | null
+  docs_stale_for_ru?: boolean
 }
 
 export interface ProjectsFilter {
@@ -204,8 +205,34 @@ export interface DocumentRead {
   size_bytes: number
   parse_status: ParseStatus
   parse_error: string | null
+  indexing_status: 'pending' | 'running' | 'done' | 'error'
+  index_error: string | null
+  page_count: number | null
   created_at: string
   updated_at: string
+}
+
+export interface DocumentOutlineNode {
+  node_id: string
+  title: string
+  summary: string
+  pages: string | null
+  depth: number
+  children: DocumentOutlineNode[]
+}
+
+export interface DocumentOutline {
+  indexing_status: string
+  node_count: number
+  model: string | null
+  nodes: DocumentOutlineNode[]
+}
+
+export interface DocumentSection {
+  node_id: string
+  title: string
+  pages: string | null
+  text: string
 }
 
 export interface ExtractedRequirement {
@@ -549,7 +576,7 @@ export interface ArtifactMessage {
   role: ArtifactMessageRole
   content: string
   citations: { doc_name?: string; section_title?: string; ref?: string }[]
-  meta: { unit_key?: string; field?: string; why?: string }
+  meta: { unit_key?: string; field?: string; why?: string; is_initial_context?: boolean }
   seq: number
   created_at: string
 }

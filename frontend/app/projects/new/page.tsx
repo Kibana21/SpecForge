@@ -67,7 +67,7 @@ export default function NewProjectWizard() {
         app_ids: Array.from(selected),
       })
       toast.success('Project created')
-      router.push(`/projects/${proj.id}/interview`)
+      router.push(`/projects/${proj.id}?view=interview`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to create project')
       setBusy(false)

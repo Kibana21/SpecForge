@@ -1004,6 +1004,14 @@ async def _reset_stale_rebuild_status() -> dict:
     return {"ok": True, "reset_count": len(reset_ids)}
 
 
+RICH_MIMES = frozenset({
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "image/png", "image/jpeg", "image/jpg",
+    "image/gif", "image/webp", "image/tiff", "image/bmp",
+})
+
+
 async def _ingest_project_source(document_id: str) -> dict:
     """Build a PageIndex reasoning tree for a project source document and store it."""
     try:
@@ -1032,19 +1040,44 @@ async def _ingest_project_source(document_id: str) -> dict:
         try:
             data = await storage.load(doc.storage_path)
 
-            # PDF page count via fitz; non-PDF treated as a single logical page span.
-            if doc.mime_type == "application/pdf":
-                try:
-                    import fitz
-                    pdf = fitz.open(stream=data, filetype="pdf")
-                    doc.page_count = len(pdf)
-                    pdf.close()
-                except Exception:
-                    doc.page_count = 1
+            # For rich types (PDF, DOCX, images): convert to markdown via the
+            # provider. Store in doc.extracted_text (project zone — never writes to
+            # document_markdown which is the App Brain zone).
+            # Commit conversion separately so a PageIndex failure can't roll it back —
+            # this makes retries skip the expensive Azure call.
+            if doc.mime_type in RICH_MIMES:
+                if not doc.extracted_text:
+                    from app.services.markdown_converter import get_markdown_provider
+                    md_provider = get_markdown_provider()
+                    markdown = await md_provider.convert(data, doc.mime_type, doc.filename)
+                    doc.extracted_text = markdown
+                    doc.parse_status = "done"
+                    doc.parse_error = None
+                    # Commit conversion before PageIndex so a tree-build failure
+                    # can't roll back the (expensive) Azure result.
+                    await db.commit()
 
-            provider = get_corpus_index_provider()
-            result = await provider.build_index(
-                data=data, content_type=doc.mime_type, filename=doc.filename
+                # For PDFs: feed raw bytes to page_index_main — it uses an LLM to
+                # infer section structure directly from the PDF, which is more
+                # intelligent than md_to_tree on headingless markdown (press releases,
+                # flat reports). Azure markdown goes to extracted_text only.
+                # For DOCX / images: no native PageIndex path, so use the markdown.
+                if doc.mime_type == "application/pdf":
+                    index_data = data
+                    index_content_type = "application/pdf"
+                else:
+                    index_data = doc.extracted_text.encode("utf-8")
+                    index_content_type = "text/markdown"
+            else:
+                # TXT/MD: extracted_text already set in sync upload phase
+                index_data = (doc.extracted_text or "").encode("utf-8")
+                index_content_type = "text/markdown"
+
+            index_provider = get_corpus_index_provider()
+            result = await index_provider.build_index(
+                data=index_data,
+                content_type=index_content_type,
+                filename=doc.filename,
             )
             if doc.page_count is None:
                 doc.page_count = len(result.page_texts) or 1
@@ -1059,15 +1092,12 @@ async def _ingest_project_source(document_id: str) -> dict:
                 model=result.model,
             ))
             doc.indexing_status = "done"
-            doc.index_error = None  # clear any stale error from a prior failed run
+            doc.index_error = None
             await db.commit()
             log.info("ingest_project_source document_id=%s nodes=%d", document_id, result.node_count)
             return {"ok": True, "document_id": document_id, "nodes": result.node_count}
 
         except Exception as exc:
-            # The session may be poisoned (e.g. the doc row was deleted mid-flight by
-            # a concurrent cleanup → "0 rows matched"). Roll back, then best-effort
-            # mark the doc errored in a fresh transaction; skip if it's gone.
             await db.rollback()
             log.error("ingest_project_source document_id=%s error=%s", document_id, exc)
             d2 = await db.get(Document, UUID(document_id))
