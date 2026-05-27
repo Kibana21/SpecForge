@@ -16,7 +16,8 @@ from app.models.artifact import ArtifactDocument, ArtifactSource
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.artifact import (
-    AnswerIn, ArtifactDetailResponse, RowEditIn, RowRestoreIn,
+    AnswerIn, ArtifactDetailResponse, DiscoverAnalyzeIn, DiscoverAnswerIn,
+    DiscoverEnhanceIn, RowEditIn, RowRestoreIn,
     SourceToggleIn, UnitRegenerateIn, ValidationResponse,
 )
 from app.schemas.envelope import err, ok
@@ -84,7 +85,7 @@ async def generate_artifact(
     await db.commit()
     from workers.dispatch import dispatch
     from workers.tasks import generate_concept_brief
-    dispatch(generate_concept_brief, str(project.id), atype, body.context)
+    dispatch(generate_concept_brief, str(project.id), atype, body.context, None)
     return ok(await get_artifact_detail(project.id, atype, db))
 
 
@@ -349,6 +350,119 @@ async def validate_artifact(
         err("validation_failed", "Concept Brief validation failed", 409,
             details={"failures": result["failures"]})
     return ok(result)
+
+
+# ── Discover Phase endpoints ──────────────────────────────────────────────────
+
+@router.post("/projects/{project_id}/artifacts/{artifact_type}/discover/enhance-brief")
+async def enhance_brief_endpoint(
+    project_id: UUID,
+    artifact_type: str,
+    body: DiscoverEnhanceIn,
+    project: Project = Depends(get_project_or_404),
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    atype = _resolve_type(artifact_type)
+    from app.services.artifacts.discover import enhance_brief
+    import asyncio
+    try:
+        result = await asyncio.wait_for(
+            enhance_brief(project, atype, body.brief_text, db),
+            timeout=60.0,
+        )
+        return ok(result)
+    except asyncio.TimeoutError:
+        err("enhance_timeout", "Enhancement timed out — try again or shorten your brief", 504)
+    except Exception as e:
+        err("enhance_failed", str(e), 500)
+
+
+@router.post("/projects/{project_id}/artifacts/{artifact_type}/discover/analyze")
+async def analyze_discover_endpoint(
+    project_id: UUID,
+    artifact_type: str,
+    body: DiscoverAnalyzeIn,
+    project: Project = Depends(get_project_or_404),
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    atype = _resolve_type(artifact_type)
+    from app.services.artifacts.discover import analyze_brief, question_to_dict
+    import asyncio
+    try:
+        questions = await asyncio.wait_for(
+            analyze_brief(project, atype, body.brief_text, db),
+            timeout=90.0,
+        )
+    except asyncio.TimeoutError:
+        err("analyze_timeout", "Analysis timed out — try again", 504)
+    doc_count = len({
+        s["filename"] for q in questions
+        if q.context_sources for s in (q.context_sources.get("docs") or [])
+    })
+    app_count = len({
+        s["app_id"] for q in questions
+        if q.context_sources for s in (q.context_sources.get("apps") or [])
+    })
+    return ok({
+        "questions": [question_to_dict(q) for q in questions],
+        "doc_count": doc_count,
+        "app_count": app_count,
+    })
+
+
+@router.get("/projects/{project_id}/artifacts/{artifact_type}/discover")
+async def get_discover_endpoint(
+    project_id: UUID,
+    artifact_type: str,
+    project: Project = Depends(get_project_or_404),
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    atype = _resolve_type(artifact_type)
+    from app.services.artifacts.discover import get_questions, question_to_dict
+    state = await get_questions(project_id, atype, db)
+    return ok({
+        "questions": [question_to_dict(q) for q in state["questions"]],
+        "enhanced_brief": state["enhanced_brief"],
+    })
+
+
+@router.patch("/projects/{project_id}/artifacts/{artifact_type}/discover/questions/{question_id}")
+async def answer_discover_question_endpoint(
+    project_id: UUID,
+    artifact_type: str,
+    question_id: UUID,
+    body: DiscoverAnswerIn,
+    project: Project = Depends(get_project_or_404),
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    _resolve_type(artifact_type)
+    from app.services.artifacts.discover import answer_question, question_to_dict
+    try:
+        q = await answer_question(question_id, body.answer, db)
+        return ok(question_to_dict(q))
+    except ValueError as e:
+        err("not_found", str(e), 404)
+
+
+@router.post("/projects/{project_id}/artifacts/{artifact_type}/discover/complete")
+async def complete_discover_endpoint(
+    project_id: UUID,
+    artifact_type: str,
+    project: Project = Depends(get_project_or_404),
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    atype = _resolve_type(artifact_type)
+    from app.services.artifacts.discover import complete_discover
+    try:
+        detail = await complete_discover(project, atype, db)
+        return ok(detail)
+    except ValueError as e:
+        err("discover_incomplete", str(e), 409)
 
 
 # ── Export markdown ───────────────────────────────────────────────────────────

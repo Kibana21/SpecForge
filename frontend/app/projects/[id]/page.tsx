@@ -58,10 +58,10 @@ function NavItem({ label, sublabel, icon, active, locked, comingSoon, badge, onC
             ? 'border-l-2 border-[var(--accent)] bg-[var(--accent-subtle)]/30 text-[var(--accent-deep)] pl-[9px]'
             : locked || comingSoon
             ? 'opacity-50 cursor-not-allowed text-[var(--text-secondary)]'
-            : 'hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
+            : 'hover:bg-[var(--bg-elevated)] text-[var(--text-primary)] hover:text-[var(--text-primary)]',
         ].join(' ')}
       >
-        <span className={`shrink-0 ${active ? 'text-[var(--accent)]' : 'text-[var(--text-tertiary)]'}`}>
+        <span className={`shrink-0 ${active ? 'text-[var(--accent)]' : 'text-[var(--text-secondary)]'}`}>
           {icon}
         </span>
         <div className="flex-1 min-w-0">
@@ -259,21 +259,22 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
   // ── Artifact status helpers ────────────────────────────────────────────────
 
   const cbStatus = cbDetail?.document?.status ?? null
-  // 'generating' | 'in_interview' (=generated, chatting) | 'validated' | null (not started)
+  // 'in_discover' | 'generating' | 'in_interview' (=generated, chatting) | 'validated' | null (not started)
   function cbStatusBadge() {
     if (!cbStatus) return null
+    if (cbStatus === 'in_discover') return <span className="text-[9px] rounded px-1.5 py-0.5 bg-violet-100 text-violet-700 font-semibold">Discover</span>
     if (cbStatus === 'generating') return <span className="text-[9px] rounded px-1.5 py-0.5 bg-blue-100 text-blue-700 font-semibold animate-pulse">Generating…</span>
     if (cbStatus === 'validated') return <span className="text-[9px] rounded px-1.5 py-0.5 bg-emerald-100 text-emerald-700 font-semibold">Validated ✓</span>
     return <span className="text-[9px] rounded px-1.5 py-0.5 bg-amber-100 text-amber-700 font-semibold">Draft</span>
   }
-  const cbSublabel = !cbStatus ? 'Not started' : cbStatus === 'generating' ? 'Generating…' : cbStatus === 'validated' ? 'Validated' : 'Draft · in progress'
+  const cbSublabel = !cbStatus ? 'Not started' : cbStatus === 'in_discover' ? 'Discovery in progress' : cbStatus === 'generating' ? 'Generating…' : cbStatus === 'validated' ? 'Validated' : 'Draft · in progress'
 
   // ── Artifacts sidebar (always visible, narrow) ────────────────────────────
 
   const artifactsSidebar = (
     <aside className="w-52 shrink-0 flex flex-col overflow-y-auto border-r border-[var(--border-default)] bg-[var(--bg-surface)]">
       <div className="px-3 pt-4 pb-4 flex-1 space-y-0.5">
-        <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">
+        <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
           Artifacts
         </p>
 
@@ -371,7 +372,7 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
   const documentsPanel = (
     <div className="w-72 shrink-0 flex flex-col overflow-hidden border-r border-[var(--border-default)] bg-[var(--bg-surface)]">
       <div className="shrink-0 flex items-center justify-between px-4 pt-4 pb-2">
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
           Documents
         </span>
         {project.documents.length > 0 && (
@@ -639,7 +640,7 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
               </button>
             </div>
             {project.description && (
-              <p className="text-[11px] text-[var(--text-tertiary)] mt-0.5 truncate">
+              <p className="text-[11px] text-[var(--text-secondary)] mt-0.5 truncate">
                 {project.description}
               </p>
             )}
@@ -647,7 +648,7 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
         </div>
         <button
           onClick={() => openVersionPanel(`project:${projectId}`)}
-          className="flex items-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-[var(--bg-surface)] px-2.5 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors"
+          className="flex items-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-[var(--bg-surface)] px-2.5 py-1.5 text-xs text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"
           title="Version history"
         >
           <History size={12} />

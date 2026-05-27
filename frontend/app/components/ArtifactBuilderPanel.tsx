@@ -2,7 +2,8 @@
 import { useState, useRef, useEffect } from 'react'
 import {
   ArrowLeft, CheckCircle2, Send, Sparkles, RotateCcw, Lock,
-  History, Download, ChevronDown, ChevronUp, Edit2, Building2, Loader2, Info, Trash2, Check, X,
+  History, Download, ChevronDown, ChevronUp, ChevronRight, Edit2, Building2, Loader2, Info, Trash2, Check, X,
+  Search, FileText, Brain, Zap,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -12,7 +13,10 @@ import { Skeleton } from '@/app/components/Skeleton'
 import { api } from '@/lib/api'
 import { useArtifact } from '@/lib/hooks/useArtifact'
 import { useProject } from '@/lib/hooks/useProject'
-import type { ArtifactMessage, CbRow, Confidence, ProjectDetail } from '@/lib/types'
+import type {
+  ArtifactMessage, CbRow, Confidence, DiscoverEnhanceBriefResult,
+  DiscoverQuestion, DiscoverSource, ProjectDetail,
+} from '@/lib/types'
 
 const CONF_VARIANT: Record<Confidence, 'success' | 'warning' | 'danger'> = {
   high: 'success', medium: 'warning', low: 'danger',
@@ -94,6 +98,13 @@ export function ArtifactBuilderPanel({ projectId, artifactType, onBack }: Artifa
   const [historyData, setHistoryData] = useState<CbRow[]>([])
   const threadEndRef = useRef<HTMLDivElement>(null)
 
+  // Discover phase state
+  const [discoverQuestions, setDiscoverQuestions] = useState<DiscoverQuestion[]>([])
+  const [enhancing, setEnhancing] = useState(false)
+  const [enhanceResult, setEnhanceResult] = useState<DiscoverEnhanceBriefResult | null>(null)
+  const [discoverBusy, setDiscoverBusy] = useState(false)
+  const [discoverDrawerOpen, setDiscoverDrawerOpen] = useState(false)
+
   const doc = detail?.document ?? null
   const messages = detail?.messages ?? []
   const sections = detail?.sections ?? {}
@@ -121,10 +132,71 @@ export function ArtifactBuilderPanel({ projectId, artifactType, onBack }: Artifa
     }
   }
 
+  // Load discover questions on mount when status=in_discover
+  useEffect(() => {
+    if (doc?.status === 'in_discover' && discoverQuestions.length === 0) {
+      api.artifacts.getDiscover(projectId, artifactType)
+        .then(r => setDiscoverQuestions(r.questions))
+        .catch(() => {})
+    }
+  }, [doc?.status]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleGenerate = () => run(
     () => api.artifacts.generate(projectId, artifactType, { context: initContext || undefined }),
     `${typeLabel} generated`,
   )
+
+  async function handleEnhance() {
+    if (enhancing) return
+    setEnhancing(true)
+    try {
+      const r = await api.artifacts.enhanceBrief(projectId, artifactType, initContext)
+      setInitContext(r.enhanced_brief)
+      setEnhanceResult(r)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Enhance failed'
+      const isNetwork = msg.toLowerCase().includes('fetch') || msg.toLowerCase().includes('network')
+      toast.error(isNetwork ? 'Enhancement timed out — the AI took too long. Try again.' : msg)
+    } finally {
+      setEnhancing(false)
+    }
+  }
+
+  async function handleAnalyze() {
+    if (discoverBusy) return
+    setDiscoverBusy(true)
+    try {
+      const r = await api.artifacts.analyzeDiscover(projectId, artifactType, initContext)
+      setDiscoverQuestions(r.questions)
+      await mutate()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Analysis failed')
+    } finally {
+      setDiscoverBusy(false)
+    }
+  }
+
+  async function handleDiscoverAnswer(questionId: string, answer: string) {
+    try {
+      const updated = await api.artifacts.answerDiscover(projectId, artifactType, questionId, answer)
+      setDiscoverQuestions(qs => qs.map(q => q.id === updated.id ? updated : q))
+    } catch {
+      toast.error('Failed to save answer')
+    }
+  }
+
+  async function handleDiscoverComplete() {
+    if (discoverBusy) return
+    setDiscoverBusy(true)
+    try {
+      await api.artifacts.completeDiscover(projectId, artifactType)
+      await mutate()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to generate')
+    } finally {
+      setDiscoverBusy(false)
+    }
+  }
 
   const handleValidate = () => run(async () => {
     const result = await api.artifacts.validate(projectId, artifactType)
@@ -223,6 +295,14 @@ export function ArtifactBuilderPanel({ projectId, artifactType, onBack }: Artifa
               <CheckCircle2 size={14} /> Validate
             </Button>
           )}
+          {generated && discoverQuestions.length > 0 && (
+            <button
+              onClick={() => setDiscoverDrawerOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-[var(--bg-surface)] px-2.5 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors"
+            >
+              <Search size={13} /> Discovery Q&amp;A
+            </button>
+          )}
           {validated && (
             <a
               href={api.artifacts.exportUrl(projectId, artifactType)}
@@ -239,8 +319,18 @@ export function ArtifactBuilderPanel({ projectId, artifactType, onBack }: Artifa
       ) : doc?.status === 'generating' ? (
         /* ── Generating progress view ── */
         <GeneratingProgress unitStatus={unitStatus} />
+      ) : doc?.status === 'in_discover' ? (
+        /* ── Discover phase ── */
+        <DiscoverPhase
+          questions={discoverQuestions}
+          project={project}
+          busy={discoverBusy}
+          onAnswer={handleDiscoverAnswer}
+          onComplete={handleDiscoverComplete}
+          onBack={() => { /* reset to empty state — just mutate to reload */ mutate() }}
+        />
       ) : !generated ? (
-        /* ── Empty state ── */
+        /* ── Empty state (enhanced with ✨ button) ── */
         <div className="flex flex-1 flex-col items-center justify-center text-center gap-5 p-8">
           <div className="w-16 h-16 rounded-2xl bg-[var(--accent-subtle)] flex items-center justify-center">
             <Sparkles size={32} className="text-[var(--accent)]" strokeWidth={1.4} />
@@ -251,27 +341,67 @@ export function ArtifactBuilderPanel({ projectId, artifactType, onBack }: Artifa
               SpecForge will synthesize a structured brief from your project description, uploaded documents, and in-scope application facts.
             </p>
           </div>
-          {project?.apps_in_scope && project.apps_in_scope.length > 0 && (
+          {/* Grounding indicator */}
+          {((project?.apps_in_scope?.length ?? 0) > 0 || (project?.documents?.length ?? 0) > 0) && (
             <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)] bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg px-3 py-2">
-              <Building2 size={13} className="text-[var(--accent)]" />
-              Grounded in {project.apps_in_scope.length} in-scope app{project.apps_in_scope.length !== 1 ? 's' : ''}
+              {(project?.apps_in_scope?.length ?? 0) > 0 && (
+                <><Building2 size={13} className="text-[var(--accent)]" />
+                {project!.apps_in_scope.length} app{project!.apps_in_scope.length !== 1 ? 's' : ''}</>
+              )}
+              {(project?.apps_in_scope?.length ?? 0) > 0 && (project?.documents?.length ?? 0) > 0 && (
+                <span className="text-[var(--border-strong)]">·</span>
+              )}
+              {(project?.documents?.length ?? 0) > 0 && (
+                <><FileText size={13} className="text-[var(--accent)]" />
+                {project!.documents.length} document{project!.documents.length !== 1 ? 's' : ''}</>
+              )}
             </div>
           )}
           <div className="w-full max-w-md text-left">
-            <label className="block text-xs font-semibold text-[var(--text-secondary)] mb-1.5">
-              Describe your initiative <span className="font-normal text-[var(--text-tertiary)]">(optional)</span>
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold text-[var(--text-secondary)]">
+                Describe your initiative <span className="font-normal text-[var(--text-tertiary)]">(optional)</span>
+              </label>
+              <button
+                onClick={handleEnhance}
+                disabled={enhancing}
+                className="inline-flex items-center gap-1 rounded-md border border-[var(--border-default)] bg-[var(--bg-surface)] px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)] hover:bg-[var(--accent-subtle)] hover:text-[var(--accent)] hover:border-[var(--accent-subtle)] transition-colors disabled:opacity-50"
+              >
+                {enhancing
+                  ? <><Loader2 size={11} className="animate-spin" /> Enhancing…</>
+                  : <><Sparkles size={11} /> AI Enhance</>}
+              </button>
+            </div>
             <textarea
               value={initContext}
               onChange={(e) => setInitContext(e.target.value)}
-              rows={3}
+              rows={4}
               placeholder="e.g. We're building a real-time payment gateway for SME customers using SEPA and domestic ACH rails…"
-              className="w-full resize-y rounded-lg border border-[var(--border-default)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+              className="w-full resize-y rounded-lg border border-[var(--border-default)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-ring)]"
             />
+            {/* Post-enhance attribution banner */}
+            {enhanceResult && (
+              <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-[var(--accent-subtle)] bg-[var(--accent-subtle)] px-3 py-2 text-xs text-[var(--accent)]">
+                <CheckCircle2 size={13} className="shrink-0" />
+                <span>
+                  Enhanced using{' '}
+                  {enhanceResult.doc_sources.length > 0
+                    ? enhanceResult.doc_sources.map(d => d.filename).slice(0, 2).join(', ')
+                    : null}
+                  {enhanceResult.doc_sources.length > 0 && enhanceResult.app_sources.length > 0 ? ' + ' : null}
+                  {enhanceResult.app_sources.length > 0
+                    ? enhanceResult.app_sources.map(a => a.app_name).slice(0, 2).join(', ')
+                    : null}
+                  {enhanceResult.doc_sources.length === 0 && enhanceResult.app_sources.length === 0
+                    ? 'available context'
+                    : null}
+                </span>
+              </div>
+            )}
           </div>
-          <Button onClick={handleGenerate} disabled={busy} size="lg">
-            <Sparkles size={15} />
-            {busy ? 'Generating…' : `Generate ${typeLabel}`}
+          <Button onClick={handleAnalyze} disabled={discoverBusy} size="lg">
+            {discoverBusy ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+            {discoverBusy ? 'Analyzing…' : 'Analyze & Continue →'}
           </Button>
         </div>
       ) : (
@@ -350,7 +480,384 @@ export function ArtifactBuilderPanel({ projectId, artifactType, onBack }: Artifa
           onRestore={(rowId, version) => handleRestore(historyRow.table, rowId, version)}
         />
       )}
+
+      {/* ── Discovery Q&A Drawer ── */}
+      {discoverDrawerOpen && (
+        <DiscoverQADrawer
+          questions={discoverQuestions}
+          onClose={() => setDiscoverDrawerOpen(false)}
+        />
+      )}
     </div>
+  )
+}
+
+// ── Source Badge ─────────────────────────────────────────────────────────────
+
+const SOURCE_BADGE_MAP: Record<string, { label: string; cls: string }> = {
+  project:     { label: 'from project',    cls: 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border-default)]' },
+  brief:       { label: 'from your brief', cls: 'bg-[var(--status-info-bg)] text-[var(--status-info)] border-[var(--status-info-border)]' },
+  documents:   { label: 'from document',   cls: 'bg-[var(--status-info-bg)] text-[var(--status-info)] border-[var(--status-info-border)]' },
+  app_brain:   { label: 'from app brain',  cls: 'bg-purple-50 text-purple-700 border-purple-200' },
+  combined:    { label: 'multi-source',    cls: 'bg-[var(--status-warning-bg)] text-[var(--status-warning)] border-[var(--status-warning-border)]' },
+  ai_enhanced: { label: 'AI enhanced',     cls: 'bg-[var(--accent-subtle)] text-[var(--accent)] border-[var(--accent-subtle)]' },
+  user:        { label: 'you answered',    cls: 'bg-[var(--status-success-bg)] text-[var(--status-success)] border-[var(--status-success-border)]' },
+}
+
+function SourceBadge({ source, contextSources }: {
+  source: DiscoverSource
+  contextSources?: DiscoverQuestion['context_sources']
+}) {
+  if (!source || !SOURCE_BADGE_MAP[source]) return null
+  const { cls } = SOURCE_BADGE_MAP[source]
+  let label = SOURCE_BADGE_MAP[source].label
+  if (source === 'documents') {
+    const docName = contextSources?.docs?.[0]?.filename?.split('/').pop()
+    if (docName) label = `doc · ${docName}`
+  } else if (source === 'app_brain') {
+    const appName = contextSources?.apps?.[0]?.app_name
+    if (appName) label = `app · ${appName}`
+  }
+  return (
+    <span className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium shrink-0 ${cls}`}>
+      {label}
+    </span>
+  )
+}
+
+// ── Discover Phase ────────────────────────────────────────────────────────────
+
+const CATEGORY_META: Record<string, { emoji: string; label: string }> = {
+  initiative_context: { emoji: '🎯', label: 'Initiative Context' },
+  business_context:   { emoji: '🏢', label: 'Business Context' },
+  value_outcomes:     { emoji: '💡', label: 'Value & Outcomes' },
+  scope_assumptions:  { emoji: '📦', label: 'Scope & Assumptions' },
+  delivery:           { emoji: '🚀', label: 'Delivery' },
+}
+
+function DiscoverPhase({
+  questions, project, busy, onAnswer, onComplete, onBack,
+}: {
+  questions: DiscoverQuestion[]
+  project: ProjectDetail | undefined
+  busy: boolean
+  onAnswer: (questionId: string, answer: string) => void
+  onComplete: () => void
+  onBack: () => void
+}) {
+  const [localAnswers, setLocalAnswers] = useState<Record<string, string>>({})
+  const [saveState, setSaveState] = useState<Record<string, 'saving' | 'saved' | null>>({})
+  const [answeredOpen, setAnsweredOpen] = useState(false)
+  const [editingKey, setEditingKey] = useState<string | null>(null)
+
+  const answered = questions.filter(q => q.answer && q.answer.trim())
+  const gaps = questions.filter(q => !q.answer || !q.answer.trim())
+  const total = questions.length
+  const answeredCount = answered.length
+  const pendingCount = gaps.length
+
+  // Initialise local answers from gap questions' inferred_answer
+  useEffect(() => {
+    const init: Record<string, string> = {}
+    questions.forEach(q => { init[q.id] = '' })
+    setLocalAnswers(init)
+  }, [questions.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleBlur(q: DiscoverQuestion) {
+    const val = (localAnswers[q.id] ?? '').trim()
+    if (!val) return
+    setSaveState(s => ({ ...s, [q.id]: 'saving' }))
+    await onAnswer(q.id, val)
+    setSaveState(s => ({ ...s, [q.id]: 'saved' }))
+    setTimeout(() => setSaveState(s => ({ ...s, [q.id]: null })), 1500)
+  }
+
+  async function handleEditAnswer(q: DiscoverQuestion, val: string) {
+    setSaveState(s => ({ ...s, [q.id]: 'saving' }))
+    await onAnswer(q.id, val)
+    setSaveState(s => ({ ...s, [q.id]: 'saved' }))
+    setEditingKey(null)
+    setTimeout(() => setSaveState(s => ({ ...s, [q.id]: null })), 1500)
+  }
+
+  // Group gap questions by category
+  const gapsByCategory: Record<string, DiscoverQuestion[]> = {}
+  gaps.forEach(q => {
+    if (!gapsByCategory[q.category]) gapsByCategory[q.category] = []
+    gapsByCategory[q.category].push(q)
+  })
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Fixed header */}
+      <div className="shrink-0 border-b border-[var(--border-default)] bg-[var(--bg-surface)] px-4 pt-3 pb-3">
+        <div className="flex items-center justify-between">
+          <p className="text-base font-semibold text-[var(--text-primary)] flex items-center gap-2">
+            🔍 Discovery Questions
+          </p>
+          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border
+            ${pendingCount === 0
+              ? 'bg-[var(--status-success-bg)] text-[var(--status-success)] border-[var(--status-success-border)]'
+              : 'bg-[var(--status-info-bg)] text-[var(--status-info)] border-[var(--status-info-border)]'}`}
+          >
+            {answeredCount} of {total} complete
+          </span>
+        </div>
+        {project && (
+          <p className="mt-0.5 text-xs text-[var(--text-tertiary)]">
+            SpecForge analysed your brief
+            {(project.documents?.length ?? 0) > 0 && `, ${project.documents.length} document${project.documents.length !== 1 ? 's' : ''}`}
+            {(project.apps_in_scope?.length ?? 0) > 0 && `, and ${project.apps_in_scope.length} app${project.apps_in_scope.length !== 1 ? 's' : ''}`}.
+          </p>
+        )}
+        {/* Progress bar */}
+        <div className="mt-2 h-1.5 w-full rounded-full bg-[var(--bg-sunken)]">
+          <div
+            className="h-1.5 rounded-full bg-[var(--accent)] transition-[width] duration-300"
+            style={{ width: total > 0 ? `${(answeredCount / total) * 100}%` : '0%' }}
+          />
+        </div>
+      </div>
+
+      {/* Scrollable body */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Answered accordion */}
+        {answered.length > 0 && (
+          <div>
+            <button
+              onClick={() => setAnsweredOpen(o => !o)}
+              className="flex items-center gap-2 w-full py-1 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+            >
+              {answeredOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              {answered.length} answered
+              <span className="flex-1 h-px bg-[var(--border-default)] ml-1" />
+            </button>
+            {answeredOpen && (
+              <div className="mt-2 space-y-2">
+                {answered.map(q => (
+                  <div
+                    key={q.id}
+                    className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-surface)] px-3 py-2.5"
+                  >
+                    {editingKey === q.id ? (
+                      <AnswerEditInline
+                        question={q}
+                        onSave={(val) => handleEditAnswer(q, val)}
+                        onCancel={() => setEditingKey(null)}
+                        saving={saveState[q.id] === 'saving'}
+                      />
+                    ) : (
+                      <div className="flex items-start gap-2">
+                        <CheckCircle2 size={14} className="shrink-0 mt-0.5 text-[var(--accent)]" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[10px] text-[var(--text-tertiary)]">{q.question_key}. {q.question_text}</p>
+                          <p className="text-sm text-[var(--text-primary)] mt-0.5 truncate">{q.answer}</p>
+                        </div>
+                        <SourceBadge source={q.source} contextSources={q.context_sources} />
+                        <button
+                          onClick={() => setEditingKey(q.id)}
+                          className="shrink-0 text-[10px] text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors"
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Gap questions */}
+        {pendingCount > 0 && (
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs font-semibold text-[var(--text-secondary)]">❓ {pendingCount} gap{pendingCount !== 1 ? 's' : ''} to fill</span>
+              <span className="flex-1 h-px bg-[var(--border-default)]" />
+            </div>
+            {Object.entries(gapsByCategory).map(([category, catQuestions]) => {
+              const meta = CATEGORY_META[category] ?? { emoji: '•', label: category }
+              return (
+                <div key={category} className="mb-4">
+                  <p className="text-[11px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wide mb-2">
+                    {meta.emoji} {meta.label}
+                  </p>
+                  <div className="space-y-3">
+                    {catQuestions.map(q => {
+                      const localVal = localAnswers[q.id] ?? ''
+                      const isFilled = localVal.trim().length > 0
+                      const ss = saveState[q.id]
+                      return (
+                        <div
+                          key={q.id}
+                          className={`rounded-lg border bg-[var(--bg-surface)] px-3 py-2.5 space-y-1.5 transition-shadow
+                            ${isFilled
+                              ? 'border-[var(--status-success-border)]'
+                              : 'border-[var(--border-default)]'}
+                            focus-within:ring-1 focus-within:ring-[var(--accent-ring)] focus-within:border-[var(--accent)]`}
+                        >
+                          <p className="text-xs font-medium text-[var(--text-primary)]">
+                            <span className="text-[10px] text-[var(--text-tertiary)] mr-1">{q.question_key}.</span>
+                            {q.question_text}
+                          </p>
+                          <textarea
+                            value={localVal}
+                            onChange={e => setLocalAnswers(a => ({ ...a, [q.id]: e.target.value }))}
+                            onBlur={() => handleBlur(q)}
+                            rows={2}
+                            placeholder={q.inferred_answer ? `Hint: ${q.inferred_answer}` : 'Type your answer…'}
+                            className="w-full resize-none rounded border border-[var(--border-default)] bg-[var(--bg-elevated)] px-2.5 py-1.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] placeholder:italic placeholder:text-xs focus:outline-none focus:border-[var(--accent)]"
+                          />
+                          {ss && (
+                            <p className={`text-[10px] ${ss === 'saved' ? 'text-[var(--status-success)]' : 'text-[var(--text-tertiary)]'}`}>
+                              {ss === 'saving' ? 'Saving…' : 'Saved ✓'}
+                            </p>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {pendingCount === 0 && answered.length > 0 && (
+          <div className="flex flex-col items-center gap-2 py-6 text-center">
+            <CheckCircle2 size={28} className="text-[var(--accent)]" />
+            <p className="text-sm font-medium text-[var(--text-primary)]">All questions answered</p>
+            <p className="text-xs text-[var(--text-tertiary)]">Click Generate to create your Concept Brief.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Fixed footer */}
+      <div className="shrink-0 border-t border-[var(--border-default)] flex items-center justify-between px-4 py-3">
+        <Button variant="outline" size="sm" onClick={onBack} disabled={busy}>
+          <ArrowLeft size={14} /> Back to brief
+        </Button>
+        <Button
+          size="default"
+          onClick={onComplete}
+          disabled={busy || pendingCount > 0}
+          title={pendingCount > 0 ? `Answer ${pendingCount} remaining question${pendingCount !== 1 ? 's' : ''} first` : undefined}
+        >
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+          {busy ? 'Generating…' : 'Generate Concept Brief →'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function AnswerEditInline({ question, onSave, onCancel, saving }: {
+  question: DiscoverQuestion
+  onSave: (val: string) => void
+  onCancel: () => void
+  saving: boolean
+}) {
+  const [val, setVal] = useState(question.answer ?? '')
+  return (
+    <div className="space-y-2">
+      <p className="text-[10px] text-[var(--text-tertiary)]">{question.question_key}. {question.question_text}</p>
+      <textarea
+        value={val}
+        onChange={e => setVal(e.target.value)}
+        rows={2}
+        autoFocus
+        className="w-full resize-none rounded border border-[var(--accent)] bg-[var(--bg-elevated)] px-2.5 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none"
+      />
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => onSave(val)}
+          disabled={saving || !val.trim()}
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[var(--accent)] text-white text-xs font-semibold hover:opacity-90 disabled:opacity-50"
+        >
+          <Check size={11} /> Save
+        </button>
+        <button
+          onClick={onCancel}
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-[var(--border-default)] text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"
+        >
+          <X size={11} /> Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Discover Q&A Drawer ───────────────────────────────────────────────────────
+
+function DiscoverQADrawer({ questions, onClose }: {
+  questions: DiscoverQuestion[]
+  onClose: () => void
+}) {
+  // Group by category
+  const byCategory: Record<string, DiscoverQuestion[]> = {}
+  questions.forEach(q => {
+    if (!byCategory[q.category]) byCategory[q.category] = []
+    byCategory[q.category].push(q)
+  })
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-[var(--text-primary)]/20 z-40"
+        onClick={onClose}
+      />
+      {/* Panel */}
+      <div className="fixed top-0 right-0 h-full w-[400px] max-w-[90vw] bg-[var(--bg-surface)] border-l border-[var(--border-default)] shadow-[-4px_0_24px_rgba(0,0,0,0.08)] z-50 flex flex-col">
+        {/* Header */}
+        <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-[var(--border-default)]">
+          <p className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
+            <Search size={14} className="text-[var(--text-tertiary)]" />
+            Discovery Q&amp;A
+          </p>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-5">
+          {Object.entries(byCategory).map(([category, qs]) => {
+            const meta = CATEGORY_META[category] ?? { emoji: '•', label: category }
+            return (
+              <div key={category}>
+                <p className="text-[11px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wide mb-2">
+                  {meta.emoji} {meta.label}
+                </p>
+                <div className="space-y-3">
+                  {qs.map(q => (
+                    <div key={q.id}>
+                      <p className="text-xs text-[var(--text-secondary)]">
+                        <span className="text-[10px] text-[var(--text-tertiary)] mr-1">{q.question_key}.</span>
+                        {q.question_text}
+                      </p>
+                      {q.answer ? (
+                        <>
+                          <p className="text-sm text-[var(--text-primary)] mt-0.5 leading-relaxed">{q.answer}</p>
+                          <div className="mt-1">
+                            <SourceBadge source={q.source} contextSources={q.context_sources} />
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-sm text-[var(--text-tertiary)] italic mt-0.5">—</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </>
   )
 }
 
@@ -510,7 +1017,7 @@ function ProseSection({
 
   return (
     <div className="border-b border-[var(--border-subtle)]">
-      <div className="px-4 pt-3 pb-2 flex items-center justify-between">
+      <div className="px-4 pt-3 pb-2 flex items-center justify-between bg-[var(--bg-elevated)]">
         <span className="text-xs font-semibold text-[var(--text-primary)]">Problem Statement & Value Hypothesis</span>
         <div className="flex items-center gap-2">
           {proseUnits.map(uk => {
@@ -580,7 +1087,7 @@ function SectionPanel({
     <div className="border-b border-[var(--border-subtle)]">
       <button
         onClick={onToggle}
-        className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-[var(--bg-elevated)] transition-colors"
+        className="w-full px-4 py-2.5 flex items-center justify-between bg-[var(--bg-elevated)] hover:bg-[var(--bg-sunken)] transition-colors"
       >
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold text-[var(--text-primary)]">{label}</span>
@@ -594,7 +1101,7 @@ function SectionPanel({
             <button
               onClick={(e) => { e.stopPropagation(); onRegenUnit(unitKey) }}
               disabled={busy}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium text-[var(--text-secondary)] border border-[var(--border-default)] bg-[var(--bg-elevated)] hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-40 transition-colors"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium text-[var(--text-secondary)] border border-[var(--border-default)] bg-[var(--bg-surface)] hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-40 transition-colors"
               title={`Regenerate ${label}`}
             >
               <RotateCcw size={11} />
@@ -688,6 +1195,15 @@ function SectionPanel({
 
 // ── Clarification Panel ───────────────────────────────────────────────────────
 
+const UNIT_LABELS: Record<string, string> = {
+  problem_context:  'Problem Statement',
+  value_hypothesis: 'Value Hypothesis',
+  metrics:          'Metrics',
+  capabilities:     'Capabilities',
+  scope:            'Scope',
+  milestones:       'Milestones',
+}
+
 function ClarificationPanel({
   messages, project, validated, busy, answer, onAnswerChange, onAnswerSubmit, threadEndRef,
 }: {
@@ -700,39 +1216,46 @@ function ClarificationPanel({
   onAnswerSubmit: () => void
   threadEndRef: React.RefObject<HTMLDivElement>
 }) {
-  // "Current round" = everything after the last user answer.
-  // Questions answered in previous rounds are resolved — don't show them again.
+  const [expandedPending, setExpandedPending] = useState<string | null>(null)
+  const [showResolved, setShowResolved] = useState(false)
+
   const userAnswers = messages.filter(m => m.role === 'user' && !m.meta?.is_initial_context)
   const lastAnswerSeq = userAnswers.at(-1)?.seq ?? -1
+  const lastAnswer = userAnswers.at(-1)
 
-  // Current open questions: generated after the last user answer
-  const currentQuestions = messages.filter(m => m.role === 'question' && m.seq > lastAnswerSeq)
+  // Current open questions (after last answer), ascending by seq
+  const currentQuestions = messages
+    .filter(m => m.role === 'question' && m.seq > lastAnswerSeq)
+    .sort((a, b) => a.seq - b.seq)
 
-  // Show: current questions + the most recent user answer (so the user can see what they last said)
-  const qaMessages: ArtifactMessage[] = [
-    ...(userAnswers.length > 0 ? [userAnswers.at(-1)!] : []),
-    ...currentQuestions,
-  ].sort((a, b) => a.seq - b.seq)
+  // Active = last by seq (matches backend: desc-sorted questions[0])
+  const activeQuestion = currentQuestions.at(-1) ?? null
+  // Pending = all except the active one, shown collapsed below
+  const pendingQuestions = currentQuestions.slice(0, -1)
 
-  const hasPendingQuestion = currentQuestions.length > 0
+  // Resolved history (questions + answers before last answer)
+  const resolvedMessages = messages
+    .filter(m => (m.role === 'question' || (m.role === 'user' && !m.meta?.is_initial_context)) && m.seq <= lastAnswerSeq)
+    .sort((a, b) => a.seq - b.seq)
+
   const resolvedCount = messages.filter(m => m.role === 'question' && m.seq <= lastAnswerSeq).length
-
   const includedApps = project?.apps_in_scope?.filter(a => a.included) ?? []
 
   return (
     <div className="flex flex-col overflow-hidden border-r border-[var(--border-default)] bg-[var(--bg-base)]">
-      {/* Panel header */}
+
+      {/* Header */}
       <div className="shrink-0 px-4 py-3 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between">
           <p className="text-xs font-semibold text-[var(--text-primary)]">Clarification Questions</p>
-          {resolvedCount > 0 && (
-            <span className="text-[10px] text-[var(--text-tertiary)] bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-full px-1.5 py-0.5">
-              {resolvedCount} resolved
-            </span>
-          )}
+          <span className="text-[10px] text-[var(--text-tertiary)]">
+            {currentQuestions.length > 0 ? `${currentQuestions.length} open` : ''}
+            {currentQuestions.length > 0 && resolvedCount > 0 ? ' · ' : ''}
+            {resolvedCount > 0 ? `${resolvedCount} resolved` : ''}
+          </span>
         </div>
         <p className="text-[10px] text-[var(--text-tertiary)] mt-0.5">
-          When SpecForge needs more information to improve a section, it asks here. Answer to trigger a re-generation.
+          Answer one at a time — each answer refines its section, then the next question activates.
         </p>
       </div>
 
@@ -753,9 +1276,11 @@ function ClarificationPanel({
         </div>
       )}
 
-      {/* Q&A thread */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
-        {currentQuestions.length === 0 ? (
+      {/* Scroll area */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+
+        {/* Empty state */}
+        {currentQuestions.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full gap-3 py-8 text-center px-4">
             <div className="w-10 h-10 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-default)] flex items-center justify-center">
               <CheckCircle2 size={18} className="text-success" strokeWidth={1.5} />
@@ -771,32 +1296,119 @@ function ClarificationPanel({
               </p>
             </div>
           </div>
-        ) : (
-          qaMessages.map((m) => <ArtifactBubble key={m.id} m={m} />)
         )}
+
+        {/* Last answer context pill */}
+        {lastAnswer && currentQuestions.length > 0 && (
+          <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2">
+            <p className="text-[10px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wide mb-0.5">Your last answer</p>
+            <p className="text-xs text-[var(--text-secondary)] line-clamp-3">{lastAnswer.content}</p>
+          </div>
+        )}
+
+        {/* ── Active question card ── */}
+        {activeQuestion && (
+          <div className="rounded-xl border-2 border-[var(--accent)] bg-[var(--bg-surface)] overflow-hidden shadow-sm">
+            {/* Section refresh tag */}
+            <div className="px-3 pt-3 flex items-center gap-2">
+              <span className="inline-flex items-center gap-1 rounded-md bg-[var(--accent-subtle)] px-2 py-0.5 text-[10px] font-semibold text-[var(--accent)]">
+                <RotateCcw size={9} />
+                Will refresh: {activeQuestion.meta?.unit_key ? (UNIT_LABELS[activeQuestion.meta.unit_key] ?? activeQuestion.meta.unit_key) : 'section'}
+              </span>
+            </div>
+
+            {/* Question text */}
+            <div className="px-3 pt-2 pb-1">
+              <p className="text-sm font-medium text-[var(--text-primary)] leading-snug">
+                {activeQuestion.content}
+              </p>
+              {activeQuestion.meta?.why && (
+                <p className="mt-1.5 text-[11px] text-[var(--text-secondary)] italic leading-snug">
+                  {activeQuestion.meta.why}
+                </p>
+              )}
+            </div>
+
+            {/* Answer input */}
+            {!validated && (
+              <div className="px-3 pb-3 pt-2">
+                <textarea
+                  value={answer}
+                  onChange={(e) => onAnswerChange(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onAnswerSubmit() }}
+                  placeholder="Type your answer… (⌘+Enter to send)"
+                  rows={3}
+                  className="w-full resize-none rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent-ring)] disabled:opacity-50"
+                  disabled={busy}
+                />
+                <div className="flex justify-end mt-2">
+                  <Button onClick={onAnswerSubmit} disabled={busy || !answer.trim()}>
+                    {busy
+                      ? <><Loader2 size={13} className="animate-spin" /> Refining…</>
+                      : <><Send size={13} /> Submit answer</>}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Pending questions (collapsed, dimmed) ── */}
+        {pendingQuestions.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] px-0.5">
+              Up next · {pendingQuestions.length}
+            </p>
+            {pendingQuestions.map((q) => {
+              const isOpen = expandedPending === q.id
+              return (
+                <button
+                  key={q.id}
+                  onClick={() => setExpandedPending(isOpen ? null : q.id)}
+                  className="w-full text-left rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2.5 opacity-55 hover:opacity-80 transition-opacity"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <p className={`text-xs text-[var(--text-secondary)] ${isOpen ? '' : 'line-clamp-2'}`}>
+                      {q.content}
+                    </p>
+                    {isOpen
+                      ? <ChevronUp size={12} className="shrink-0 mt-0.5 text-[var(--text-tertiary)]" />
+                      : <ChevronDown size={12} className="shrink-0 mt-0.5 text-[var(--text-tertiary)]" />}
+                  </div>
+                  {isOpen && q.meta?.why && (
+                    <p className="mt-1.5 text-[10px] text-[var(--text-tertiary)] italic leading-snug">{q.meta.why}</p>
+                  )}
+                  {q.meta?.unit_key && (
+                    <p className="mt-1.5 text-[10px] text-[var(--text-tertiary)]">
+                      → {UNIT_LABELS[q.meta.unit_key] ?? q.meta.unit_key}
+                    </p>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        {/* ── Resolved history toggle ── */}
+        {resolvedCount > 0 && (
+          <div>
+            <button
+              onClick={() => setShowResolved(v => !v)}
+              className="flex items-center gap-1 text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors px-0.5"
+            >
+              <ChevronRight size={11} className={`transition-transform ${showResolved ? 'rotate-90' : ''}`} />
+              {resolvedCount} resolved question{resolvedCount !== 1 ? 's' : ''}
+            </button>
+            {showResolved && (
+              <div className="mt-2 space-y-2">
+                {resolvedMessages.map((m) => <ArtifactBubble key={m.id} m={m} />)}
+              </div>
+            )}
+          </div>
+        )}
+
         <div ref={threadEndRef} />
       </div>
-
-      {/* Answer composer — only when not validated and there's a pending question */}
-      {!validated && hasPendingQuestion && (
-        <div className="shrink-0 border-t border-[var(--border-default)] p-3 bg-[var(--bg-surface)]">
-          <p className="text-[10px] font-semibold text-[var(--text-tertiary)] mb-2 uppercase tracking-widest">Your answer</p>
-          <div className="flex items-end gap-2">
-            <textarea
-              value={answer}
-              onChange={(e) => onAnswerChange(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onAnswerSubmit() }}
-              placeholder="Type your answer… (⌘+Enter to send)"
-              rows={3}
-              className="flex-1 resize-none rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:opacity-50"
-              disabled={busy}
-            />
-            <Button onClick={onAnswerSubmit} disabled={busy || !answer.trim()} className="h-9 shrink-0">
-              <Send size={14} />
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

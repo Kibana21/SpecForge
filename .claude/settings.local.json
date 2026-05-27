@@ -59,7 +59,9 @@
       "Bash(python -c \"from workers.tasks import _ingest_project_source, RICH_MIMES; print\\('tasks ok, RICH_MIMES count:', len\\(RICH_MIMES\\)\\)\")",
       "Bash(graphify query *)",
       "Bash(npx tsc *)",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(curl -s http://127.0.0.1:8000/health)",
+      "Bash(curl -s http://127.0.0.1:8000/api/projects)"
     ]
   }
 }

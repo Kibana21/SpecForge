@@ -133,8 +133,11 @@ def generate_requirement_understanding(self, project_id: str) -> dict:
 # ── Artifact generation ───────────────────────────────────────────────────────
 
 @celery_app.task(name="workers.tasks.generate_concept_brief", bind=True, max_retries=2, default_retry_delay=5)
-def generate_concept_brief(self, project_id: str, artifact_type: str, context: str | None = None) -> dict:
-    return _run_async(_generate_concept_brief(project_id, artifact_type, context))
+def generate_concept_brief(
+    self, project_id: str, artifact_type: str,
+    context: str | None = None, discover_context: str | None = None,
+) -> dict:
+    return _run_async(_generate_concept_brief(project_id, artifact_type, context, discover_context))
 
 
 # ── Async implementations ─────────────────────────────────────────────────────
@@ -1127,7 +1130,10 @@ async def _recompute_triage() -> dict:
     return {"ok": True, "users": len(user_ids)}
 
 
-async def _generate_concept_brief(project_id: str, artifact_type: str, context: str | None) -> dict:
+async def _generate_concept_brief(
+    project_id: str, artifact_type: str,
+    context: str | None, discover_context: str | None = None,
+) -> dict:
     from uuid import UUID as _UUID
     from sqlalchemy import select as _select
     from app.db import AsyncSessionLocal
@@ -1141,7 +1147,8 @@ async def _generate_concept_brief(project_id: str, artifact_type: str, context: 
             log.error("generate_concept_brief project_id=%s not found", project_id)
             return {"ok": False, "error": "project_not_found"}
         try:
-            await generate_all(project, artifact_type, db, context=context)
+            await generate_all(project, artifact_type, db, context=context,
+                               discover_context=discover_context)
             return {"ok": True}
         except Exception:
             log.exception("generate_concept_brief failed project_id=%s", project_id)

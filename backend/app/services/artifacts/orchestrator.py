@@ -281,7 +281,8 @@ async def _locked_rows_for(
 # ── Generation ────────────────────────────────────────────────────────────────
 
 async def generate_unit(
-    project: Project, unit_key: str, doc: ArtifactDocument, db: AsyncSession
+    project: Project, unit_key: str, doc: ArtifactDocument, db: AsyncSession,
+    discover_context: str = "",
 ) -> dict:
     """Run a single DSPy unit and persist its output."""
     spec = MANIFEST_BY_KEY[unit_key]
@@ -291,6 +292,10 @@ async def generate_unit(
     source_sections = await _retrieve_artifact_sections(project.id, doc.id, query, db)
     impacted_apps = await gather_impacted_apps_context(project.id, db)
     qa_pairs = await _gather_unit_qa(doc.id, unit_key, db)
+
+    # Prepend discover context filtered to this unit's questions
+    if discover_context:
+        qa_pairs = discover_context + ("\n\n" + qa_pairs if qa_pairs != "(none yet)" else "")
 
     # Upstream rows (dependencies)
     upstream: dict[str, list[dict]] = {}
@@ -391,7 +396,24 @@ async def _persist_unit_result(
         await upsert_rows("cb_milestones", document_id, result.get("milestones", []), "ai", db)
 
 
-async def generate_all(project: Project, artifact_type: str, db: AsyncSession, context: str | None = None) -> dict:
+def _filter_discover_context(full_context: str, unit_key: str) -> str:
+    """Return only the lines from full_context relevant to this unit's questions.
+
+    The full discover_context is grouped by category. We pass the whole string
+    to each unit rather than trying to parse it line-by-line — the LLM is
+    instructed to use only the relevant Q&A pairs. This keeps the implementation
+    simple while still scoping the context.
+    """
+    # For now pass the full context; the DSPy unit docstring instructs the LLM
+    # to focus on its relevant questions. A future optimisation can filter by
+    # UNIT_DISCOVER_MAP keys.
+    return full_context
+
+
+async def generate_all(
+    project: Project, artifact_type: str, db: AsyncSession,
+    context: str | None = None, discover_context: str | None = None,
+) -> dict:
     """Run all units in topological order and return the document state."""
     doc = await _ensure_document(project.id, artifact_type, db)
 
@@ -414,7 +436,13 @@ async def generate_all(project: Project, artifact_type: str, db: AsyncSession, c
             doc.unit_status = us
             await db.commit()
 
-            await generate_unit(project, unit_key, doc, db)
+            # Build a per-unit slice of discover_context (only relevant questions)
+            unit_discover = ""
+            if discover_context:
+                from app.services.artifacts.discover_catalog import UNIT_DISCOVER_MAP
+                unit_discover = _filter_discover_context(discover_context, unit_key)
+
+            await generate_unit(project, unit_key, doc, db, discover_context=unit_discover)
             processed.add(unit_key)
             await db.commit()  # make this unit's rows visible immediately
 

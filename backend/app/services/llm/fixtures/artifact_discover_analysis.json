@@ -1,0 +1,76 @@
+{
+  "analyses": [
+    {
+      "question_key": "1b",
+      "answered": true,
+      "extracted_answer": "Manual reconciliation and settlement delays across premium collections, agent commissions, and customer refunds — no centralised payment platform exists.",
+      "source": "documents"
+    },
+    {
+      "question_key": "1c",
+      "answered": false,
+      "extracted_answer": "AIA is facing upcoming regulatory changes from MAS around payment infrastructure resilience.",
+      "source": "documents"
+    },
+    {
+      "question_key": "2b",
+      "answered": true,
+      "extracted_answer": "Insurance agents, finance teams, and end customers seeking refund payouts.",
+      "source": "app_brain"
+    },
+    {
+      "question_key": "2c",
+      "answered": true,
+      "extracted_answer": "No centralised payment platform; manual processes via spreadsheets and batch file exchanges with 3–5 day settlement cycles.",
+      "source": "combined"
+    },
+    {
+      "question_key": "3a",
+      "answered": false,
+      "extracted_answer": "Reduce settlement time and operational cost of reconciliation.",
+      "source": "brief"
+    },
+    {
+      "question_key": "3b",
+      "answered": true,
+      "extracted_answer": "Reduced reconciliation time by 70%, fewer payment exceptions, same-day domestic settlement.",
+      "source": "documents"
+    },
+    {
+      "question_key": "3c",
+      "answered": false,
+      "extracted_answer": "",
+      "source": ""
+    },
+    {
+      "question_key": "4a",
+      "answered": true,
+      "extracted_answer": "Automated multi-rail reconciliation, exception handling with SLA alerting, agent commission disbursement, customer refund processing, compliance audit ledger.",
+      "source": "brief"
+    },
+    {
+      "question_key": "4b",
+      "answered": false,
+      "extracted_answer": "",
+      "source": ""
+    },
+    {
+      "question_key": "4c",
+      "answered": false,
+      "extracted_answer": "Assumes SEPA-equivalent domestic rails are available and core banking APIs can expose settlement data.",
+      "source": "brief"
+    },
+    {
+      "question_key": "5a",
+      "answered": false,
+      "extracted_answer": "",
+      "source": ""
+    },
+    {
+      "question_key": "5b",
+      "answered": false,
+      "extracted_answer": "Phased delivery preferred — MVP targets reconciliation and exception handling first.",
+      "source": "brief"
+    }
+  ]
+}

@@ -83,3 +83,44 @@ class ArtifactDetailResponse(BaseModel):
 class ValidationResponse(BaseModel):
     ok: bool
     failures: list[str] = []
+
+
+# ── Discover Phase schemas ────────────────────────────────────────────────────
+
+class DiscoverEnhanceIn(BaseModel):
+    brief_text: str
+
+
+class DiscoverAnalyzeIn(BaseModel):
+    brief_text: str
+
+
+class DiscoverAnswerIn(BaseModel):
+    answer: str
+
+
+class DiscoverQuestionOut(BaseModel):
+    id: str
+    question_key: str
+    category: str
+    question_text: str
+    answer: str | None = None
+    inferred_answer: str | None = None
+    source: str | None = None
+    context_sources: dict | None = None
+    seq: int
+    created_at: str
+    updated_at: str
+
+
+class DiscoverEnhanceResult(BaseModel):
+    enhanced_brief: str
+    doc_count: int
+    app_count: int
+    doc_sources: list[dict] = []
+    app_sources: list[dict] = []
+
+
+class DiscoverStateResponse(BaseModel):
+    questions: list[DiscoverQuestionOut] = []
+    enhanced_brief: str | None = None

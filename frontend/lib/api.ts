@@ -2,6 +2,9 @@ import type {
   ArtifactDetail,
   ArtifactSource,
   CbRow,
+  DiscoverEnhanceBriefResult,
+  DiscoverQuestion,
+  DiscoverStateResponse,
   AppCorpusDoc,
   AppCreate,
   AppDetail,
@@ -358,6 +361,30 @@ export const api = {
       apiFetch<{ id: string; included: boolean }>(`/api/projects/${projectId}/artifacts/${type}/sources/${sourceId}`, {
         method: 'PATCH', body: JSON.stringify({ included }),
       }),
+
+    // Discover Phase
+    enhanceBrief: (projectId: string, type: string, briefText: string) =>
+      apiFetch<DiscoverEnhanceBriefResult>(
+        `/api/projects/${projectId}/artifacts/${type}/discover/enhance-brief`,
+        { method: 'POST', body: JSON.stringify({ brief_text: briefText }) },
+      ),
+    analyzeDiscover: (projectId: string, type: string, briefText: string) =>
+      apiFetch<{ questions: DiscoverQuestion[]; doc_count: number; app_count: number }>(
+        `/api/projects/${projectId}/artifacts/${type}/discover/analyze`,
+        { method: 'POST', body: JSON.stringify({ brief_text: briefText }) },
+      ),
+    getDiscover: (projectId: string, type: string) =>
+      apiFetch<DiscoverStateResponse>(`/api/projects/${projectId}/artifacts/${type}/discover`),
+    answerDiscover: (projectId: string, type: string, questionId: string, answer: string) =>
+      apiFetch<DiscoverQuestion>(
+        `/api/projects/${projectId}/artifacts/${type}/discover/questions/${questionId}`,
+        { method: 'PATCH', body: JSON.stringify({ answer }) },
+      ),
+    completeDiscover: (projectId: string, type: string) =>
+      apiFetch<ArtifactDetail>(
+        `/api/projects/${projectId}/artifacts/${type}/discover/complete`,
+        { method: 'POST' },
+      ),
   },
 
   apps: {

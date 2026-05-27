@@ -1,8 +1,8 @@
 from app.models.app import App, AppMember
 from app.models.artifact import (
     ArtifactDocument, ArtifactMessage, ArtifactSource,
-    CbCapability, CbContextMap, CbGateCriterion, CbMetric,
-    CbMilestone, CbOutcome, CbScopeItem, CbTextBlock,
+    CbCapability, CbContextMap, CbDiscoverEnhancedBrief, CbDiscoverQuestion,
+    CbGateCriterion, CbMetric, CbMilestone, CbOutcome, CbScopeItem, CbTextBlock,
 )
 from app.models.document_markdown import DocumentMarkdown
 from app.models.audit import AuditEvent
@@ -36,6 +36,8 @@ __all__ = [
     "ArtifactSource",
     "CbCapability",
     "CbContextMap",
+    "CbDiscoverEnhancedBrief",
+    "CbDiscoverQuestion",
     "CbGateCriterion",
     "CbMetric",
     "CbMilestone",

@@ -553,10 +553,44 @@ export interface AskSessionRead {
 // ── Artifact / Concept Brief types ───────────────────────────────────────────
 
 export type ArtifactType = 'concept_brief' | 'brd'
-export type ArtifactStatus = 'generating' | 'in_interview' | 'validated'
+export type ArtifactStatus = 'in_discover' | 'generating' | 'in_interview' | 'validated'
 export type ArtifactRowStatus = 'active' | 'removed'
 export type ArtifactRowSource = 'ai' | 'human' | 'regeneration'
 export type ArtifactMessageRole = 'ai' | 'user' | 'question' | 'synthesis'
+
+export type DiscoverSource =
+  | 'project' | 'brief' | 'documents' | 'app_brain' | 'combined'
+  | 'ai_enhanced' | 'user' | null
+
+export interface DiscoverQuestion {
+  id: string
+  question_key: string
+  category: string
+  question_text: string
+  answer: string | null
+  inferred_answer: string | null
+  source: DiscoverSource
+  context_sources: {
+    docs: { doc_id: string; filename: string; section: string }[]
+    apps: { app_id: string; app_name: string }[]
+  } | null
+  seq: number
+  created_at: string
+  updated_at: string
+}
+
+export interface DiscoverEnhanceBriefResult {
+  enhanced_brief: string
+  doc_count: number
+  app_count: number
+  doc_sources: { doc_id: string; filename: string; section: string }[]
+  app_sources: { app_id: string; app_name: string }[]
+}
+
+export interface DiscoverStateResponse {
+  questions: DiscoverQuestion[]
+  enhanced_brief: string | null
+}
 
 export interface ArtifactDocument {
   id: string

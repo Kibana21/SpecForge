@@ -17,7 +17,7 @@ from app.models.base import uuid_pk
 # ── Shared enums (created in migration 0015) ──────────────────────────────────
 
 ArtifactType = Enum("concept_brief", "brd", name="artifact_type", create_type=False)
-ArtifactStatus = Enum("in_interview", "validated", "generating", name="artifact_status", create_type=False)
+ArtifactStatus = Enum("in_interview", "validated", "generating", "in_discover", name="artifact_status", create_type=False)
 ArtifactRowStatus = Enum("active", "removed", name="artifact_row_status", create_type=False)
 ArtifactRowSource = Enum("ai", "human", "regeneration", name="artifact_row_source", create_type=False)
 ArtifactMessageRole = Enum("ai", "user", "question", "synthesis", name="artifact_message_role", create_type=False)
@@ -270,3 +270,47 @@ class CbGateCriterion(Base):
     criterion: Mapped[str] = mapped_column(Text, nullable=False)
     gate_status: Mapped[str] = mapped_column(Text, nullable=False, server_default="Pending")
     notes: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+
+
+# ── Discover Phase tables (migration 0017) ────────────────────────────────────
+
+class CbDiscoverQuestion(Base):
+    """One row per (artifact_document, question_key). Upserted by analyze_brief."""
+    __tablename__ = "cb_discover_questions"
+    __table_args__ = (
+        UniqueConstraint("artifact_document_id", "question_key", name="uq_cb_discover_questions_doc_key"),
+        Index("ix_cb_discover_questions_doc", "artifact_document_id"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    artifact_document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("artifact_documents.id", ondelete="CASCADE"), nullable=False
+    )
+    question_key: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(Text, nullable=False)
+    question_text: Mapped[str] = mapped_column(Text, nullable=False)
+    answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    inferred_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str | None] = mapped_column(Text, nullable=True)
+    context_sources: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default="now()")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default="now()")
+
+
+class CbDiscoverEnhancedBrief(Base):
+    """Stores original + enhanced brief text with attribution, for audit trail."""
+    __tablename__ = "cb_discover_enhanced_briefs"
+    __table_args__ = (
+        Index("ix_cb_discover_enhanced_briefs_doc", "artifact_document_id"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    artifact_document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("artifact_documents.id", ondelete="CASCADE"), nullable=False
+    )
+    original_brief: Mapped[str] = mapped_column(Text, nullable=False)
+    enhanced_brief: Mapped[str] = mapped_column(Text, nullable=False)
+    doc_sources: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    app_sources: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default="now()")
