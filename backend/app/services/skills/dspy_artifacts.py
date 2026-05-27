@@ -78,6 +78,16 @@ class OpenQuestion(BaseModel):
     question: str
     field: str
     why: str
+    example: str = Field(
+        default="",
+        description=(
+            "A concrete sample answer showing the format and detail needed. "
+            "If the user already gave a partial answer, note what's missing first, "
+            "then give the example. E.g. 'You said \"reduce call volume\" — "
+            "we need a number: e.g. \"Reduce average handle time from 8 min to "
+            "under 3 min by Q3 2026\"'"
+        ),
+    )
 
 
 # ── Shared signature inputs (all units receive these) ─────────────────────────
@@ -115,6 +125,10 @@ class ProblemContextSignature(dspy.Signature):
     statement in source sections [S#] and impacted applications. Reflect the apps'
     impact notes in current_gap, strategic_driver, and new_channel. Reproduce locked
     rows verbatim. Keep existing row_keys stable; mint new keys only for new rows.
+    For every open_question, populate `example` with a concrete sample answer in the
+    expected format and detail. If qa_pairs shows the user already gave a partial answer
+    to this question, begin 'You said \"...\" — ' noting exactly what was provided, state
+    what is still missing, then give a full concrete example answer.
     """
 
     project_name: str = dspy.InputField()
@@ -163,6 +177,10 @@ class ValueHypothesisSignature(dspy.Signature):
     Write a testable 'If [action] then [measurable result] for [who]' hypothesis split
     across value_hypothesis_if and value_hypothesis_then. List 3–6 concrete outcomes
     grounded in problem context and impacted applications. Keep row_keys stable.
+    For every open_question, populate `example` with a concrete sample answer in the
+    expected format and detail. If qa_pairs shows the user already gave a partial answer
+    to this question, begin 'You said \"...\" — ' noting exactly what was provided, state
+    what is still missing, then give a full concrete example answer.
     """
 
     project_name: str = dspy.InputField()
@@ -209,6 +227,10 @@ class MetricsSignature(dspy.Signature):
     Produce at least one quantifiable metric (quantifiable=true) with a specific numeric
     target. Ground metrics in outcomes and any KPIs from source documents or impacted
     applications. Keep row_keys stable.
+    For every open_question, populate `example` with a concrete sample answer in the
+    expected format and detail. If qa_pairs shows the user already gave a partial answer
+    to this question, begin 'You said \"...\" — ' noting exactly what was provided, state
+    what is still missing, then give a full concrete example answer.
     """
 
     project_name: str = dspy.InputField()
@@ -255,6 +277,10 @@ class CapabilitiesSignature(dspy.Signature):
     List solution-agnostic capabilities traceable to problems and outcomes. Ground in
     impacted applications — call out where an app supports, enables, or limits a
     capability. Keep row_keys stable.
+    For every open_question, populate `example` with a concrete sample answer in the
+    expected format and detail. If qa_pairs shows the user already gave a partial answer
+    to this question, begin 'You said \"...\" — ' noting exactly what was provided, state
+    what is still missing, then give a full concrete example answer.
     """
 
     project_name: str = dspy.InputField()
@@ -301,6 +327,10 @@ class ScopeSignature(dspy.Signature):
     Produce in_scope items aligned to capabilities, out_of_scope explicit exclusions,
     and assumption items. Reflect impacted applications' documented limitations and
     integration constraints. At least 1 of each kind. Keep row_keys stable.
+    For every open_question, populate `example` with a concrete sample answer in the
+    expected format and detail. If qa_pairs shows the user already gave a partial answer
+    to this question, begin 'You said \"...\" — ' noting exactly what was provided, state
+    what is still missing, then give a full concrete example answer.
     """
 
     project_name: str = dspy.InputField()
@@ -346,6 +376,10 @@ class MilestonesSignature(dspy.Signature):
 
     Produce a realistic milestone table with target dates or relative timeframes.
     Ground in scope and impacted applications' integration complexity. Keep row_keys stable.
+    For every open_question, populate `example` with a concrete sample answer in the
+    expected format and detail. If qa_pairs shows the user already gave a partial answer
+    to this question, begin 'You said \"...\" — ' noting exactly what was provided, state
+    what is still missing, then give a full concrete example answer.
     """
 
     project_name: str = dspy.InputField()

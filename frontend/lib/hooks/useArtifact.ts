@@ -8,8 +8,13 @@ export function useArtifact(projectId: string, type: string) {
     () => api.artifacts.get(projectId, type),
     {
       revalidateOnFocus: false,
-      // refreshInterval: poll every 2s while generating, stop otherwise
-      refreshInterval: (data) => data?.document?.status === 'generating' ? 2000 : 0,
+      refreshInterval: (data) => {
+        const status = data?.document?.status
+        if (status === 'generating') return 2000
+        // Poll while a section is refining in the background
+        if (data?.document?.unit_status?.['_current_unit']) return 2000
+        return 0
+      },
     },
   )
   return { detail: data, error, isLoading, mutate }

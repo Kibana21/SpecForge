@@ -141,8 +141,18 @@ async def answer_question(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    from app.config import get_settings
     atype = _resolve_type(artifact_type)
-    detail = await incorporate_answer(project_id, atype, body.answer, db, body.seq)
+    if get_settings().llm_provider == "mock":
+        detail = await incorporate_answer(project_id, atype, body.answer, db, body.seq)
+        return ok(detail)
+
+    # Real LLM: persist answer immediately, kick regeneration off to Celery, return fast.
+    from app.services.artifacts.orchestrator import save_answer
+    from workers.dispatch import dispatch
+    from workers.tasks import incorporate_answer_task
+    detail = await save_answer(project_id, atype, body.answer, db, body.seq)
+    dispatch(incorporate_answer_task, str(project_id), atype, body.seq)
     return ok(detail)
 
 

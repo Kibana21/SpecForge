@@ -140,6 +140,13 @@ def generate_concept_brief(
     return _run_async(_generate_concept_brief(project_id, artifact_type, context, discover_context))
 
 
+@celery_app.task(name="workers.tasks.incorporate_answer_task", bind=True, max_retries=1, default_retry_delay=5)
+def incorporate_answer_task(
+    self, project_id: str, artifact_type: str, question_seq: int | None = None,
+) -> dict:
+    return _run_async(_incorporate_answer_bg(project_id, artifact_type, question_seq))
+
+
 # ── Async implementations ─────────────────────────────────────────────────────
 
 async def _ingest_corpus_doc(doc_id: str) -> dict:
@@ -1164,6 +1171,20 @@ async def _generate_concept_brief(
                     doc.status = "in_interview"
                     await db2.commit()
             raise
+
+
+async def _incorporate_answer_bg(
+    project_id: str, artifact_type: str, question_seq: int | None,
+) -> dict:
+    from uuid import UUID as _UUID
+    from app.services.artifacts.orchestrator import run_regeneration
+
+    try:
+        await run_regeneration(_UUID(project_id), artifact_type, question_seq)
+        return {"ok": True}
+    except Exception:
+        log.exception("incorporate_answer_task failed project_id=%s", project_id)
+        raise
 
 
 async def _generate_ru(task, project_id: str) -> dict:

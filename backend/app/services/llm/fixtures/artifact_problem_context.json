@@ -10,8 +10,18 @@
     {"row_key": "engagement_goal", "dimension": "Engagement Goal", "detail": "Reduce payment dispute rate by 40% and cut reconciliation cycle time from 48h to under 4h"}
   ],
   "open_questions": [
-    {"question": "Which specific payment rails (SEPA, SWIFT, domestic ACH) are in scope for the real-time layer?", "field": "context_map", "why": "Needed to scope integration complexity and compliance requirements"},
-    {"question": "Is there a hard regulatory deadline for ISO 20022 adoption or is it phased?", "field": "problem_statement", "why": "Affects milestone planning and risk prioritization"}
+    {
+      "question": "Which specific payment rails (SEPA, SWIFT, domestic ACH) are in scope for the real-time layer?",
+      "field": "context_map",
+      "why": "Needed to scope integration complexity and compliance requirements",
+      "example": "e.g. 'SEPA Credit Transfer and domestic Faster Payments are in scope; SWIFT cross-border is out of scope for Phase 1'"
+    },
+    {
+      "question": "Is there a hard regulatory deadline for ISO 20022 adoption or is it phased?",
+      "field": "problem_statement",
+      "why": "Affects milestone planning and risk prioritization",
+      "example": "e.g. 'Hard deadline: 30 Nov 2026 for all new outgoing settlement messages; existing messages get a 6-month grace period'"
+    }
   ],
   "completeness": 82,
   "confidence": "medium"

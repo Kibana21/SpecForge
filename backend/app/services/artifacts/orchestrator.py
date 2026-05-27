@@ -351,7 +351,7 @@ async def generate_unit(
         db.add(ArtifactMessage(
             document_id=doc.id, project_id=project.id, role="question",
             content=oq.get("question", ""), citations=[],
-            meta={"unit_key": unit_key, "field": oq.get("field"), "why": oq.get("why")},
+            meta={"unit_key": unit_key, "field": oq.get("field"), "why": oq.get("why"), "example": oq.get("example", "")},
             seq=seq,
         ))
         seq += 1
@@ -459,37 +459,106 @@ async def generate_all(
 async def incorporate_answer(
     project_id: uuid.UUID, artifact_type: str, answer: str, db: AsyncSession, seq: int | None = None
 ) -> dict:
-    """Append user answer and re-run the tagged unit + its downstream dependents."""
-    project = await db.get(Project, project_id)
+    """Save user answer then immediately re-run the tagged unit in the same session.
+    Used by the mock path and tests. Production uses save_answer + dispatch to Celery."""
     doc = await _ensure_document(project_id, artifact_type, db)
+    await _save_answer_message(doc.id, project_id, answer, db)
+    return await _run_unit_for_answer(project_id, artifact_type, doc, seq, db)
 
-    next_seq = await _next_seq(doc.id, db)
+
+async def save_answer(
+    project_id: uuid.UUID, artifact_type: str, answer: str, db: AsyncSession, seq: int | None = None
+) -> dict:
+    """Persist the user answer and mark _current_unit so the UI can show a section-level
+    spinner. Status stays 'in_interview'. Caller dispatches incorporate_answer_task to Celery."""
+    doc = await _ensure_document(project_id, artifact_type, db)
+    await _save_answer_message(doc.id, project_id, answer, db)
+    # Resolve target unit now so the frontend knows which section is refining
+    target_unit = await _resolve_target_unit(doc.id, seq, db)
+    us = dict(doc.unit_status or {})
+    us.pop("_refine_error", None)   # clear any previous failure marker
+    us["_current_unit"] = target_unit
+    doc.unit_status = us
+    await db.commit()
+    return await get_artifact_detail(project_id, artifact_type, db)
+
+
+async def run_regeneration(
+    project_id: uuid.UUID, artifact_type: str, question_seq: int | None = None
+) -> None:
+    """Background entry-point (called from Celery). Opens its own DB session."""
+    from app.db import AsyncSessionLocal
+    async with AsyncSessionLocal() as db:
+        doc = await _ensure_document(project_id, artifact_type, db)
+        # Resolve target unit upfront so error handler can record which unit failed
+        target_unit = await _resolve_target_unit(doc.id, question_seq, db)
+        try:
+            await _run_unit_for_answer(project_id, artifact_type, doc, question_seq, db)
+        except Exception:
+            # Clear the in-progress marker and record the failure so the UI can
+            # show an error toast instead of silently doing nothing.
+            us = dict(doc.unit_status or {})
+            us.pop("_current_unit", None)
+            us["_refine_error"] = target_unit or "unknown"
+            doc.unit_status = us
+            await db.commit()
+            raise
+
+
+async def _resolve_target_unit(
+    document_id: uuid.UUID, question_seq: int | None, db: AsyncSession
+) -> str | None:
+    if question_seq is not None:
+        pinned = (await db.execute(
+            select(ArtifactMessage).where(
+                ArtifactMessage.document_id == document_id,
+                ArtifactMessage.role == "question",
+                ArtifactMessage.seq == question_seq,
+            )
+        )).scalar_one_or_none()
+        if pinned:
+            return (pinned.meta or {}).get("unit_key")
+    questions = (await db.execute(
+        select(ArtifactMessage)
+        .where(ArtifactMessage.document_id == document_id, ArtifactMessage.role == "question")
+        .order_by(ArtifactMessage.seq.desc())
+    )).scalars().all()
+    return (questions[0].meta or {}).get("unit_key") if questions else None
+
+
+async def _save_answer_message(
+    document_id: uuid.UUID, project_id: uuid.UUID, answer: str, db: AsyncSession
+) -> None:
+    seq = await _next_seq(document_id, db)
     db.add(ArtifactMessage(
-        document_id=doc.id, project_id=project_id, role="user",
-        content=answer, citations=[], meta={}, seq=next_seq,
+        document_id=document_id, project_id=project_id, role="user",
+        content=answer, citations=[], meta={}, seq=seq,
     ))
     await db.flush()
 
-    # Find which unit to re-run (last unanswered question's unit_key)
-    questions = (
-        await db.execute(
-            select(ArtifactMessage)
-            .where(ArtifactMessage.document_id == doc.id, ArtifactMessage.role == "question")
-            .order_by(ArtifactMessage.seq.desc())
-        )
-    ).scalars().all()
-    target_unit = (questions[0].meta or {}).get("unit_key") if questions else None
+
+async def _run_unit_for_answer(
+    project_id: uuid.UUID, artifact_type: str, doc: ArtifactDocument,
+    question_seq: int | None, db: AsyncSession
+) -> dict:
+    """Resolve target unit from question_seq and regenerate only that unit.
+    No cascade — answering a question refines just its own section so that
+    questions in sibling sections are never silently swept away."""
+    project = await db.get(Project, project_id)
+    target_unit = await _resolve_target_unit(doc.id, question_seq, db)
 
     if target_unit and target_unit in MANIFEST_BY_KEY:
-        units_to_run = [target_unit] + downstream_of(target_unit)
-        for unit_key in units_to_run:
-            if unit_key in MANIFEST_BY_KEY:
-                await generate_unit(project, unit_key, doc, db)
+        await generate_unit(project, target_unit, doc, db)
     else:
-        # Re-run all
         for unit_key in TOPO_ORDER:
             await generate_unit(project, unit_key, doc, db)
 
+    # Clear progress markers and set final status
+    us = dict(doc.unit_status or {})
+    us.pop("_current_unit", None)
+    us.pop("_refine_error", None)
+    doc.unit_status = us
+    doc.status = "in_interview"
     await refresh_gate(doc, db)
     await db.commit()
     return await get_artifact_detail(project_id, artifact_type, db)

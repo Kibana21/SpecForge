@@ -9,7 +9,12 @@
     {"row_key": "o-5", "outcome": "Improved Customer NPS", "description": "Payment-related NPS improves by 15 points driven by fewer disputes and real-time status visibility"}
   ],
   "open_questions": [
-    {"question": "What is the current baseline dispute rate and how is it measured?", "field": "outcomes", "why": "Need baseline to confirm the 40% reduction target is achievable"}
+    {
+      "question": "What is the current baseline dispute rate and how is it measured?",
+      "field": "outcomes",
+      "why": "Need baseline to confirm the 40% reduction target is achievable",
+      "example": "e.g. 'Current dispute rate is 3.2% of transactions, measured monthly as (disputes raised / transactions processed). Source: Operations MI report, Jan 2026'"
+    }
   ],
   "completeness": 88,
   "confidence": "medium"

@@ -8,7 +8,12 @@
     {"row_key": "cap-6", "capability": "Operational Dashboard", "description": "Real-time visibility dashboard for the operations team showing transaction volumes, reconciliation status, fraud flags, and SLA compliance."}
   ],
   "open_questions": [
-    {"question": "Does the existing PayHub platform expose APIs for real-time ledger writes, or does it require batch file uploads?", "field": "capabilities", "why": "Determines whether real-time reconciliation is technically feasible without PayHub changes"}
+    {
+      "question": "Does the existing PayHub platform expose APIs for real-time ledger writes, or does it require batch file uploads?",
+      "field": "capabilities",
+      "why": "Determines whether real-time reconciliation is technically feasible without PayHub changes",
+      "example": "e.g. 'PayHub exposes a REST API for real-time ledger writes (POST /ledger/entries); batch file upload is only used for end-of-day settlement runs'"
+    }
   ],
   "completeness": 90,
   "confidence": "medium"

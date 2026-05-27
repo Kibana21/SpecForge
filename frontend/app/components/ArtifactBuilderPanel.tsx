@@ -1,7 +1,7 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
 import {
-  ArrowLeft, CheckCircle2, Send, Sparkles, RotateCcw, Lock,
+  ArrowLeft, CheckCircle2, Send, Sparkles, RotateCcw, Lock, AlertTriangle,
   History, Download, ChevronDown, ChevronUp, ChevronRight, Edit2, Building2, Loader2, Info, Trash2, Check, X,
   Search, FileText, Brain, Zap,
 } from 'lucide-react'
@@ -111,6 +111,51 @@ export function ArtifactBuilderPanel({ projectId, artifactType, onBack }: Artifa
   const unitStatus = doc?.unit_status ?? {}
   const generated = doc !== null
   const validated = doc?.status === 'validated'
+  const refiningUnit = (unitStatus['_current_unit'] as unknown as string | undefined) ?? null
+  const refineError = (unitStatus['_refine_error'] as unknown as string | undefined) ?? null
+
+  // Toast when background refinement fails (suppress repeats for same error)
+  const shownRefineErrorRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (refineError && refineError !== shownRefineErrorRef.current) {
+      shownRefineErrorRef.current = refineError
+      toast.error('Section refinement failed — please try again.')
+    }
+  }, [refineError])
+
+  // Toast when background refinement completes successfully
+  const prevRefiningUnitRef = useRef<string | null>(null)
+  useEffect(() => {
+    const prev = prevRefiningUnitRef.current
+    prevRefiningUnitRef.current = refiningUnit
+    if (prev && !refiningUnit && !refineError) {
+      toast.success('Section refined — check for any new follow-up questions.')
+    }
+  }, [refiningUnit, refineError])
+
+  // Open clarification questions grouped by unit_key.
+  // A question is open if no synthesis for its unit_key was emitted AFTER it
+  // (a later synthesis means the unit was regenerated and the question resolved).
+  const _latestSynthesisSeq: Record<string, number> = {}
+  messages.forEach(m => {
+    if (m.role === 'synthesis' && m.meta?.unit_key) {
+      const uk = m.meta.unit_key as string
+      if ((m.seq ?? 0) > (_latestSynthesisSeq[uk] ?? -1)) _latestSynthesisSeq[uk] = m.seq ?? 0
+    }
+  })
+  const questionsByUnit: Record<string, ArtifactMessage[]> = {}
+  messages
+    .filter(m => {
+      if (m.role !== 'question') return false
+      const uk = (m.meta?.unit_key as string) ?? 'unknown'
+      return (m.seq ?? 0) > (_latestSynthesisSeq[uk] ?? -1)
+    })
+    .forEach(q => {
+      const uk = (q.meta?.unit_key as string) ?? 'unknown'
+      if (!questionsByUnit[uk]) questionsByUnit[uk] = []
+      questionsByUnit[uk].push(q)
+    })
+  Object.values(questionsByUnit).forEach(qs => qs.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0)))
 
   const typeLabel = artifactType === 'concept-brief' ? 'Concept Brief' : artifactType
 
@@ -207,11 +252,24 @@ export function ArtifactBuilderPanel({ projectId, artifactType, onBack }: Artifa
     return result
   }, `${typeLabel} validated`)
 
-  async function handleAnswer() {
+  async function handleAnswer(questionSeq?: number) {
     if (!answer.trim() || busy) return
     const a = answer.trim()
     setAnswer('')
-    await run(() => api.artifacts.answer(projectId, artifactType, a), 'Answer incorporated')
+    setBusy(true)
+    try {
+      const detail = await api.artifacts.answer(projectId, artifactType, a, questionSeq)
+      // Seed the SWR cache immediately with the returned detail, which already
+      // has _current_unit set by save_answer. Using revalidate:false avoids a
+      // redundant re-fetch that could race with the Celery task start and miss
+      // the _current_unit window. SWR will poll (refreshInterval=2000) from here.
+      await mutate(detail, { revalidate: false })
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to submit answer')
+      await mutate()
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function handleRegenUnit(unitKey: string) {
@@ -405,58 +463,58 @@ export function ArtifactBuilderPanel({ projectId, artifactType, onBack }: Artifa
           </Button>
         </div>
       ) : (
-        /* ── Main two-column builder ── */
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-[minmax(0,340px)_1fr] overflow-hidden">
-          {/* ── Left: Clarification Questions ── */}
-          <ClarificationPanel
-            messages={messages}
-            project={project}
+        /* ── Full-width document view ── */
+        <div className="flex-1 overflow-y-auto bg-[var(--bg-base)]">
+          {/* Prose blocks — prose units own problem_context + value_hypothesis questions */}
+          <ProseSection
+            sections={sections}
+            unitStatus={unitStatus}
             validated={validated}
             busy={busy}
+            refining={refiningUnit === 'problem_context' || refiningUnit === 'value_hypothesis'}
+            onRegenUnit={handleRegenUnit}
+            onEditProse={handleProseEdit}
+            openQuestions={[
+              ...(questionsByUnit['problem_context'] ?? []),
+              ...(questionsByUnit['value_hypothesis'] ?? []),
+            ]}
             answer={answer}
             onAnswerChange={setAnswer}
             onAnswerSubmit={handleAnswer}
-            threadEndRef={threadEndRef}
           />
 
-          {/* ── Right: Structured sections ── */}
-          <div className="overflow-y-auto bg-[var(--bg-base)]">
-            {/* Prose blocks (business context + problem statement + value hypothesis) */}
-            <ProseSection
-              sections={sections}
-              unitStatus={unitStatus}
-              validated={validated}
-              busy={busy}
-              onRegenUnit={handleRegenUnit}
-              onEditProse={handleProseEdit}
-            />
-
-            {/* Typed tables */}
-            {SECTION_ORDER.filter(t => t !== 'cb_text_blocks').map(table => {
-              const rows = sections[table] ?? []
-              const unitKey = UNIT_FOR_TABLE[table]
-              const us = unitStatus[unitKey]
-              return (
-                <SectionPanel
-                  key={table}
-                  table={table}
-                  label={SECTION_LABELS[table]}
-                  rows={rows}
-                  unitKey={unitKey}
-                  unitStatus={us}
-                  validated={validated}
-                  busy={busy}
-                  expanded={isExpanded(table)}
-                  onToggle={() => toggleSection(table)}
-                  onRegenUnit={handleRegenUnit}
-                  onEdit={(row) => setEditingRow({ table, row })}
-                  onUnlock={(rowId) => handleUnlock(table, rowId)}
-                  onHistory={(row) => handleShowHistory(table, row.row_key as string, unitKey)}
-                  onDelete={(rowId) => handleDeleteRow(table, rowId)}
-                />
-              )
-            })}
-          </div>
+          {/* Typed table sections — each owns its own unit_key's questions */}
+          {SECTION_ORDER.filter(t => t !== 'cb_text_blocks').map(table => {
+            const unitKey = UNIT_FOR_TABLE[table]
+            // Prose section already owns these two unit_keys — don't duplicate
+            const ownedByProse = unitKey === 'problem_context' || unitKey === 'value_hypothesis'
+            const rows = sections[table] ?? []
+            const us = unitStatus[unitKey]
+            return (
+              <SectionPanel
+                key={table}
+                table={table}
+                label={SECTION_LABELS[table]}
+                rows={rows}
+                unitKey={unitKey}
+                unitStatus={us}
+                validated={validated}
+                busy={busy}
+                expanded={isExpanded(table)}
+                onToggle={() => toggleSection(table)}
+                onRegenUnit={handleRegenUnit}
+                onEdit={(row) => setEditingRow({ table, row })}
+                onUnlock={(rowId) => handleUnlock(table, rowId)}
+                onHistory={(row) => handleShowHistory(table, row.row_key as string, unitKey)}
+                onDelete={(rowId) => handleDeleteRow(table, rowId)}
+                openQuestions={ownedByProse ? [] : (questionsByUnit[unitKey] ?? [])}
+                refining={refiningUnit === unitKey}
+                answer={answer}
+                onAnswerChange={setAnswer}
+                onAnswerSubmit={handleAnswer}
+              />
+            )
+          })}
         </div>
       )}
 
@@ -999,14 +1057,20 @@ function ProseBlock({
 }
 
 function ProseSection({
-  sections, unitStatus, validated, busy, onRegenUnit, onEditProse,
+  sections, unitStatus, validated, busy, refining, onRegenUnit, onEditProse,
+  openQuestions, answer, onAnswerChange, onAnswerSubmit,
 }: {
   sections: Record<string, CbRow[]>
   unitStatus: Record<string, { completeness: number; confidence: Confidence }>
   validated: boolean
   busy: boolean
+  refining?: boolean
   onRegenUnit: (u: string) => void
   onEditProse: (rowId: string, text: string) => void
+  openQuestions: ArtifactMessage[]
+  answer: string
+  onAnswerChange: (v: string) => void
+  onAnswerSubmit: (questionSeq?: number) => void
 }) {
   const textBlocks = sections['cb_text_blocks'] ?? []
   const getRow = (key: string) => textBlocks.find(r => r.field_key === key)
@@ -1014,11 +1078,24 @@ function ProseSection({
   const getId = (key: string) => getRow(key)?.id as string | undefined
 
   const proseUnits = ['problem_context', 'value_hypothesis']
+  const hasQuestion = openQuestions.length > 0
 
   return (
     <div className="border-b border-[var(--border-subtle)]">
       <div className="px-4 pt-3 pb-2 flex items-center justify-between bg-[var(--bg-elevated)]">
-        <span className="text-xs font-semibold text-[var(--text-primary)]">Problem Statement & Value Hypothesis</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-[var(--text-primary)]">Problem Statement & Value Hypothesis</span>
+          {refining && (
+            <span className="inline-flex items-center gap-1 text-[10px] text-[var(--text-tertiary)]">
+              <Loader2 size={10} className="animate-spin" /> Refining…
+            </span>
+          )}
+          {!refining && hasQuestion && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 border border-amber-200 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">
+              <AlertTriangle size={8} /> {openQuestions.length}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           {proseUnits.map(uk => {
             const us = unitStatus[uk]
@@ -1054,6 +1131,16 @@ function ProseSection({
             onEdit={onEditProse}
           />
         ))}
+        {hasQuestion && (
+          <InlineClarification
+            questions={openQuestions}
+            answer={answer}
+            onAnswerChange={onAnswerChange}
+            onAnswerSubmit={onAnswerSubmit}
+            busy={busy}
+            validated={validated}
+          />
+        )}
       </div>
     </div>
   )
@@ -1062,8 +1149,9 @@ function ProseSection({
 // ── Section Panel (typed tables) ──────────────────────────────────────────────
 
 function SectionPanel({
-  table, label, rows, unitKey, unitStatus, validated, busy, expanded,
+  table, label, rows, unitKey, unitStatus, validated, busy, expanded, refining,
   onToggle, onRegenUnit, onEdit, onUnlock, onHistory, onDelete,
+  openQuestions = [], answer = '', onAnswerChange, onAnswerSubmit,
 }: {
   table: string
   label: string
@@ -1073,15 +1161,21 @@ function SectionPanel({
   validated: boolean
   busy: boolean
   expanded: boolean
+  refining?: boolean
   onToggle: () => void
   onRegenUnit: (u: string) => void
   onEdit: (r: CbRow) => void
   onUnlock: (id: string) => void
   onHistory: (r: CbRow) => void
   onDelete: (id: string) => void
+  openQuestions?: ArtifactMessage[]
+  answer?: string
+  onAnswerChange?: (v: string) => void
+  onAnswerSubmit?: (questionSeq?: number) => void
 }) {
   const cols = TABLE_COLS[table] ?? []
   const activeRows = rows.filter(r => r.status === 'active')
+  const hasQuestion = openQuestions.length > 0
 
   return (
     <div className="border-b border-[var(--border-subtle)]">
@@ -1094,6 +1188,16 @@ function SectionPanel({
           <span className="text-[10px] text-[var(--text-tertiary)]">({activeRows.length})</span>
           {unitStatus && (
             <UnitScoreChip completeness={unitStatus.completeness} confidence={unitStatus.confidence} />
+          )}
+          {refining && (
+            <span className="inline-flex items-center gap-1 text-[10px] text-[var(--text-tertiary)]">
+              <Loader2 size={10} className="animate-spin" /> Refining…
+            </span>
+          )}
+          {!refining && hasQuestion && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 border border-amber-200 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">
+              <AlertTriangle size={8} /> {openQuestions.length}
+            </span>
           )}
         </div>
         <div className="flex items-center gap-1.5">
@@ -1185,6 +1289,16 @@ function SectionPanel({
               </table>
             </div>
           )}
+          {openQuestions.length > 0 && onAnswerChange && onAnswerSubmit && (
+            <InlineClarification
+              questions={openQuestions}
+              answer={answer}
+              onAnswerChange={onAnswerChange}
+              onAnswerSubmit={onAnswerSubmit}
+              busy={busy}
+              validated={validated}
+            />
+          )}
         </div>
       )}
     </div>
@@ -1192,6 +1306,102 @@ function SectionPanel({
 }
 
 // ── Bubble ────────────────────────────────────────────────────────────────────
+
+// ── Inline Clarification Card ─────────────────────────────────────────────────
+
+function InlineClarification({
+  questions, answer, onAnswerChange, onAnswerSubmit, busy, validated,
+}: {
+  questions: ArtifactMessage[]
+  answer: string
+  onAnswerChange: (v: string) => void
+  onAnswerSubmit: (questionSeq?: number) => void
+  busy: boolean
+  validated: boolean
+}) {
+  const [expandedQ, setExpandedQ] = useState<string | null>(null)
+
+  if (questions.length === 0) return null
+
+  // Active = last by seq (matches backend desc-sorted questions[0])
+  const activeQ = questions.at(-1)!
+  const pendingQs = questions.slice(0, -1)
+
+  return (
+    <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/70 overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-amber-200/80 flex items-center gap-2">
+        <AlertTriangle size={12} className="text-amber-600 shrink-0" />
+        <span className="text-[11px] font-semibold text-amber-800">
+          SpecForge needs more information to refine this section
+        </span>
+        {questions.length > 1 && (
+          <span className="ml-auto text-[10px] text-amber-600">{questions.length} questions</span>
+        )}
+      </div>
+
+      {/* Active question */}
+      <div className="px-4 pt-3 pb-2">
+        <p className="text-sm font-medium text-amber-900 leading-snug">{activeQ.content}</p>
+        {activeQ.meta?.why && (
+          <p className="mt-1.5 text-[11px] text-amber-700 italic leading-snug">{activeQ.meta.why}</p>
+        )}
+        {activeQ.meta?.example && (
+          <p className="mt-2 text-[11px] text-amber-800 bg-amber-100/80 rounded-md px-2.5 py-1.5 leading-snug border border-amber-200/60">
+            <span className="font-semibold">Example: </span>{activeQ.meta.example}
+          </p>
+        )}
+      </div>
+
+      {/* Pending questions — collapsed, expandable */}
+      {pendingQs.map(q => {
+        const isOpen = expandedQ === q.id
+        return (
+          <button
+            key={q.id}
+            onClick={() => setExpandedQ(isOpen ? null : q.id)}
+            className="w-full px-4 py-2 border-t border-amber-200/70 text-left hover:bg-amber-100/50 transition-colors"
+          >
+            <div className="flex items-start gap-2">
+              <p className={`text-xs text-amber-700 flex-1 ${isOpen ? '' : 'line-clamp-1'}`}>{q.content}</p>
+              {isOpen
+                ? <ChevronUp size={11} className="shrink-0 mt-0.5 text-amber-500" />
+                : <ChevronDown size={11} className="shrink-0 mt-0.5 text-amber-500" />}
+            </div>
+            {isOpen && q.meta?.why && (
+              <p className="mt-1 text-[10px] text-amber-600 italic">{q.meta.why}</p>
+            )}
+          </button>
+        )
+      })}
+
+      {/* Answer input */}
+      {!validated && (
+        <div className="px-4 py-3 border-t border-amber-200/70">
+          <textarea
+            value={answer}
+            onChange={e => onAnswerChange(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onAnswerSubmit(activeQ.seq) }}
+            placeholder="Type your answer… (⌘+Enter to send)"
+            rows={2}
+            className="w-full resize-none rounded-lg border border-amber-200 bg-white/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:opacity-50"
+            disabled={busy}
+          />
+          <div className="flex justify-end mt-2">
+            <Button
+              onClick={() => onAnswerSubmit(activeQ.seq)}
+              disabled={busy || !answer.trim()}
+              className="bg-amber-600 hover:bg-amber-700 text-white border-0"
+            >
+              {busy
+                ? <><Loader2 size={13} className="animate-spin" /> Refining…</>
+                : <><Send size={13} /> Submit answer</>}
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ── Clarification Panel ───────────────────────────────────────────────────────
 
@@ -1325,6 +1535,11 @@ function ClarificationPanel({
               {activeQuestion.meta?.why && (
                 <p className="mt-1.5 text-[11px] text-[var(--text-secondary)] italic leading-snug">
                   {activeQuestion.meta.why}
+                </p>
+              )}
+              {activeQuestion.meta?.example && (
+                <p className="mt-2 text-[11px] text-[var(--text-secondary)] bg-[var(--bg-elevated)] rounded-md px-2.5 py-1.5 leading-snug border border-[var(--border-subtle)]">
+                  <span className="font-semibold text-[var(--text-primary)]">Example: </span>{activeQuestion.meta.example}
                 </p>
               )}
             </div>

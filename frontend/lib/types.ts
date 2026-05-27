@@ -610,7 +610,7 @@ export interface ArtifactMessage {
   role: ArtifactMessageRole
   content: string
   citations: { doc_name?: string; section_title?: string; ref?: string }[]
-  meta: { unit_key?: string; field?: string; why?: string; is_initial_context?: boolean }
+  meta: { unit_key?: string; field?: string; why?: string; example?: string; is_initial_context?: boolean }
   seq: number
   created_at: string
 }
