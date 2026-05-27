@@ -10,7 +10,7 @@ import { toast } from 'sonner'
 import { Button } from '@/app/components/ui/button'
 import { Badge } from '@/app/components/ui/badge'
 import { Skeleton } from '@/app/components/Skeleton'
-import { api } from '@/lib/api'
+import { api, authedFetch } from '@/lib/api'
 import { useArtifact } from '@/lib/hooks/useArtifact'
 import { useProject } from '@/lib/hooks/useProject'
 import type {
@@ -252,6 +252,26 @@ export function ArtifactBuilderPanel({ projectId, artifactType, onBack }: Artifa
     return result
   }, `${typeLabel} validated`)
 
+  async function handleExportMd() {
+    try {
+      const res = await authedFetch(api.artifacts.exportUrl(projectId, artifactType))
+      if (!res.ok) throw new Error('Export failed')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      const cd = res.headers.get('content-disposition')
+      const fname = cd?.match(/filename="([^"]+)"/)?.[1] ?? `concept-brief.md`
+      a.download = fname
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch {
+      toast.error('Failed to export — try again')
+    }
+  }
+
   async function handleAnswer(questionSeq?: number) {
     if (!answer.trim() || busy) return
     const a = answer.trim()
@@ -361,13 +381,13 @@ export function ArtifactBuilderPanel({ projectId, artifactType, onBack }: Artifa
               <Search size={13} /> Discovery Q&amp;A
             </button>
           )}
-          {validated && (
-            <a
-              href={api.artifacts.exportUrl(projectId, artifactType)}
+          {generated && (
+            <button
+              onClick={handleExportMd}
               className="flex items-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-[var(--bg-surface)] px-2.5 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors"
             >
               <Download size={13} /> Export MD
-            </a>
+            </button>
           )}
         </div>
       </div>
@@ -1097,11 +1117,14 @@ function ProseSection({
           )}
         </div>
         <div className="flex items-center gap-2">
-          {proseUnits.map(uk => {
-            const us = unitStatus[uk]
-            if (!us) return null
-            return <UnitScoreChip key={uk} completeness={us.completeness} confidence={us.confidence} />
-          })}
+          {(() => {
+            const scores = proseUnits.map(uk => unitStatus[uk]).filter(Boolean) as { completeness: number; confidence: Confidence }[]
+            if (scores.length === 0) return null
+            const avg = Math.round(scores.reduce((s, u) => s + u.completeness, 0) / scores.length)
+            const confOrder: Confidence[] = ['low', 'medium', 'high']
+            const minConf = scores.reduce((w, u) => confOrder.indexOf(u.confidence) < confOrder.indexOf(w) ? u.confidence : w, scores[0].confidence)
+            return <UnitScoreChip completeness={avg} confidence={minConf} />
+          })()}
           {!validated && (
             <button
               onClick={() => onRegenUnit('problem_context')}
