@@ -1187,6 +1187,66 @@ async def _incorporate_answer_bg(
         raise
 
 
+# ── BRD generation ────────────────────────────────────────────────────────────
+
+@celery_app.task(name="workers.tasks.generate_brd", bind=True, max_retries=2, default_retry_delay=10)
+def generate_brd(
+    self, project_id: str, context: str | None = None, discover_context: str | None = None,
+) -> dict:
+    return _run_async(_generate_brd(project_id, context, discover_context))
+
+
+@celery_app.task(name="workers.tasks.incorporate_brd_answer_task", bind=True, max_retries=1, default_retry_delay=5)
+def incorporate_brd_answer_task(
+    self, project_id: str, question_seq: int | None = None,
+) -> dict:
+    return _run_async(_incorporate_brd_answer_bg(project_id, question_seq))
+
+
+async def _generate_brd(
+    project_id: str, context: str | None, discover_context: str | None,
+) -> dict:
+    from uuid import UUID as _UUID
+    from sqlalchemy import select as _select
+    from app.db import AsyncSessionLocal
+    from app.models.artifact import ArtifactDocument
+    from app.models.project import Project
+    from app.services.artifacts.brd_orchestrator import generate_brd_all
+
+    async with AsyncSessionLocal() as db:
+        project = await db.get(Project, _UUID(project_id))
+        if project is None:
+            log.error("generate_brd project_id=%s not found", project_id)
+            return {"ok": False, "error": "project_not_found"}
+        try:
+            await generate_brd_all(project, db, context=context, discover_context=discover_context)
+            return {"ok": True}
+        except Exception:
+            log.exception("generate_brd failed project_id=%s", project_id)
+            async with AsyncSessionLocal() as db2:
+                doc = (await db2.execute(
+                    _select(ArtifactDocument).where(
+                        ArtifactDocument.project_id == _UUID(project_id),
+                        ArtifactDocument.artifact_type == "brd",
+                    )
+                )).scalar_one_or_none()
+                if doc and doc.status == "generating":
+                    doc.status = "in_interview"
+                    await db2.commit()
+            raise
+
+
+async def _incorporate_brd_answer_bg(project_id: str, question_seq: int | None) -> dict:
+    from uuid import UUID as _UUID
+    from app.services.artifacts.brd_orchestrator import run_brd_regeneration
+    try:
+        await run_brd_regeneration(_UUID(project_id), question_seq)
+        return {"ok": True}
+    except Exception:
+        log.exception("incorporate_brd_answer_task failed project_id=%s", project_id)
+        raise
+
+
 async def _generate_ru(task, project_id: str) -> dict:
     try:
         UUID(project_id)

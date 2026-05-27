@@ -1,4 +1,11 @@
-"""Fixed catalog of 14 discovery questions and their mappings."""
+"""Fixed discovery question catalogs per artifact type.
+
+Concept Brief: 14 questions (CB_DISCOVER_QUESTIONS, existing).
+BRD: 18 questions (BRD_DISCOVER_QUESTIONS, new).
+
+Both sets are scoped by artifact_document_id at the DB level — the same
+CbDiscoverQuestion table serves both artifact types.
+"""
 from __future__ import annotations
 
 from app.models.project import Project
@@ -58,3 +65,96 @@ UNIT_DISCOVER_MAP: dict[str, list[str]] = {
 # Ordered keys for seq assignment
 QUESTION_KEYS: list[str] = [q["key"] for q in DISCOVER_QUESTIONS]
 QUESTION_BY_KEY: dict[str, dict] = {q["key"]: q for q in DISCOVER_QUESTIONS}
+
+# ── BRD Discover catalog (18 questions, 7 categories) ─────────────────────────
+
+BRD_DISCOVER_QUESTIONS: list[dict] = [
+    # 🎯 Initiative
+    {"key": "brd_1a", "category": "initiative",
+     "text": "What is the full initiative name and business sponsor?"},
+    {"key": "brd_1b", "category": "initiative",
+     "text": "What strategic objective does this initiative serve (e.g. cost reduction, revenue growth, compliance)?"},
+    {"key": "brd_1c", "category": "initiative",
+     "text": "What is the target go-live date or must-meet regulatory deadline?"},
+    # 📊 Objectives
+    {"key": "brd_2a", "category": "objectives",
+     "text": "What are the top 3–5 measurable business objectives this BRD must achieve?"},
+    {"key": "brd_2b", "category": "objectives",
+     "text": "Who owns each objective — which business leader is accountable?"},
+    # 👥 Stakeholders
+    {"key": "brd_3a", "category": "stakeholders",
+     "text": "Who are the primary business stakeholders and what is their level of influence?"},
+    {"key": "brd_3b", "category": "stakeholders",
+     "text": "Which operations or compliance teams must be engaged for sign-off?"},
+    # 🔄 Processes
+    {"key": "brd_4a", "category": "processes",
+     "text": "Walk me through the current (as-is) process step by step. Where are the biggest pain points?"},
+    {"key": "brd_4b", "category": "processes",
+     "text": "What does the ideal (to-be) process look like? Which steps should be automated or eliminated?"},
+    # 📦 Scope
+    {"key": "brd_5a", "category": "scope",
+     "text": "What capabilities or features are definitively in scope for this initiative?"},
+    {"key": "brd_5b", "category": "scope",
+     "text": "What is explicitly out of scope? What might seem related but is excluded from this initiative?"},
+    {"key": "brd_5c", "category": "scope",
+     "text": "What assumptions underpin the scope — about systems, teams, data, or timelines?"},
+    # ⚠ Risks
+    {"key": "brd_6a", "category": "risks",
+     "text": "What are the top 3 risks that could prevent this initiative from succeeding?"},
+    {"key": "brd_6b", "category": "risks",
+     "text": "What mitigation strategies are already in place or planned for these risks?"},
+    # 🚀 Delivery
+    {"key": "brd_7a", "category": "delivery",
+     "text": "Is a phased delivery approach planned — what does Phase 1 (MVP) include?"},
+    {"key": "brd_7b", "category": "delivery",
+     "text": "What are the key delivery milestones and who is responsible for each?"},
+    # 📈 KPIs
+    {"key": "brd_8a", "category": "kpis",
+     "text": "What KPIs will measure success — and what are the current baseline values?"},
+    {"key": "brd_8b", "category": "kpis",
+     "text": "What are the specific targets and timeframes for each KPI?"},
+]
+
+BRD_PROJECT_PREFILL: dict[str, "Callable[[Project], str]"] = {  # type: ignore[name-defined]
+    "brd_1a": lambda p: p.name or "",
+}
+
+BRD_LLM_ANALYSIS_KEYS: list[str] = [
+    q["key"] for q in BRD_DISCOVER_QUESTIONS if q["key"] not in BRD_PROJECT_PREFILL
+]
+
+BRD_UNIT_DISCOVER_MAP: dict[str, list[str]] = {
+    "business_context":      ["brd_1a", "brd_1b"],
+    "problem_statement":     ["brd_1b", "brd_4a"],
+    "objectives":            ["brd_2a", "brd_2b"],
+    "stakeholders":          ["brd_3a", "brd_3b"],
+    "actors":                ["brd_3a"],
+    "scope":                 ["brd_5a", "brd_5b", "brd_5c"],
+    "asis_process":          ["brd_4a"],
+    "tobe_process":          ["brd_4b"],
+    "business_requirements": ["brd_5a", "brd_5b"],
+    "data_entities":         [],
+    "report_requirements":   ["brd_8a"],
+    "assumptions":           ["brd_5c"],
+    "constraints":           ["brd_5c"],
+    "dependencies":          ["brd_7a", "brd_7b"],
+    "risks":                 ["brd_6a", "brd_6b"],
+    "implementation_phases": ["brd_7a", "brd_7b"],
+    "milestones":            ["brd_7b", "brd_1c"],
+    "kpis":                  ["brd_8a", "brd_8b"],
+    "open_questions":        [],
+    "decisions":             [],
+    "references":            [],
+    "glossary":              [],
+}
+
+BRD_QUESTION_KEYS: list[str] = [q["key"] for q in BRD_DISCOVER_QUESTIONS]
+BRD_QUESTION_BY_KEY: dict[str, dict] = {q["key"]: q for q in BRD_DISCOVER_QUESTIONS}
+
+# ── Routing helper ─────────────────────────────────────────────────────────────
+
+def get_catalog_for_artifact(artifact_type: str) -> tuple[list[dict], dict, list[str]]:
+    """Return (questions, prefill_map, llm_analysis_keys) for the given artifact type."""
+    if artifact_type == "brd":
+        return BRD_DISCOVER_QUESTIONS, BRD_PROJECT_PREFILL, BRD_LLM_ANALYSIS_KEYS
+    return DISCOVER_QUESTIONS, PROJECT_PREFILL, LLM_ANALYSIS_KEYS

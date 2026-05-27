@@ -1,0 +1,21 @@
+{
+  "phases": [
+    {
+      "row_key": "PH-001",
+      "phase_name": "Phase 1 — MVP: Core Matching Engine",
+      "description": "Deliver the automated settlement matching engine with real-time ledger event ingestion, basic exception queue, and audit trail capture. Covers all must-have BRs.",
+      "target_date": "2026-Q3",
+      "included_br_refs": ["BR-001", "BR-002", "BR-003"]
+    },
+    {
+      "row_key": "PH-002",
+      "phase_name": "Phase 2 — Enhanced Reporting & Analytics",
+      "description": "Deliver advanced management dashboards, regulatory report templates, and performance analytics. Covers should-have BRs deferred from Phase 1.",
+      "target_date": "2026-Q4",
+      "included_br_refs": []
+    }
+  ],
+  "open_questions": [],
+  "completeness": 85,
+  "confidence": "medium"
+}

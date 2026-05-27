@@ -1,0 +1,31 @@
+{
+  "report_requirements": [
+    {
+      "row_key": "RPT-001",
+      "report_name": "Daily Reconciliation Summary",
+      "description": "End-of-day summary of total transactions processed, matched count, exception count, and resolution rate. Delivered to operations management.",
+      "audience": "Operations Manager",
+      "frequency": "daily",
+      "key_metrics": ["total_transactions", "matched_count", "exception_count", "resolution_rate_pct", "avg_resolution_time_hrs"]
+    },
+    {
+      "row_key": "RPT-002",
+      "report_name": "Exception Ageing Report",
+      "description": "List of all open exceptions with age, assigned analyst, and SLA status. Used for daily standup and escalation decisions.",
+      "audience": "Operations Analyst",
+      "frequency": "daily",
+      "key_metrics": ["exception_id", "age_hours", "sla_status", "assigned_analyst", "escalation_flag"]
+    },
+    {
+      "row_key": "RPT-003",
+      "report_name": "Regulatory Audit Trail Export",
+      "description": "On-demand export of all reconciliation audit events for a specified date range. Formatted for regulatory submission.",
+      "audience": "Compliance Officer",
+      "frequency": "monthly",
+      "key_metrics": ["event_count", "unmatched_items", "override_count", "analyst_actions", "sla_breaches"]
+    }
+  ],
+  "open_questions": [],
+  "completeness": 85,
+  "confidence": "medium"
+}

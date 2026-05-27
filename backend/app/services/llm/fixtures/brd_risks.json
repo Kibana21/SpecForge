@@ -1,0 +1,43 @@
+{
+  "risks": [
+    {
+      "row_key": "RSK-001",
+      "risk": "Core ledger API not ready by project kick-off",
+      "description": "If the core ledger API event streaming capability is delayed beyond Q2 2026, the reconciliation engine cannot be built against a live endpoint, forcing a rework of the integration layer.",
+      "severity": "high",
+      "likelihood": "medium",
+      "mitigation": "Implement fallback processing with a scheduled batch pull adapter as a temporary bridge; engage IT Architecture monthly for API readiness tracking; escalation path to CTO if delayed past 30 June 2026.",
+      "owner": "IT Architecture"
+    },
+    {
+      "row_key": "RSK-002",
+      "risk": "Vendor delays to payments gateway unified ID delivery",
+      "description": "The payments gateway vendor's ID schema update is on their roadmap but not contractually committed; slippage would break the automated matching logic.",
+      "severity": "high",
+      "likelihood": "medium",
+      "mitigation": "Negotiate SLA commitment with the vendor as part of the next contract renewal; develop a fuzzy-matching fallback using amount, date, and counterparty as composite key; track vendor milestone monthly.",
+      "owner": "Payments Gateway Team Lead"
+    },
+    {
+      "row_key": "RSK-003",
+      "risk": "Operations team resistance to new workflow",
+      "description": "Analysts accustomed to spreadsheet-based reconciliation may resist adopting the new exception queue interface, leading to shadow processes that undermine the audit trail.",
+      "severity": "medium",
+      "likelihood": "medium",
+      "mitigation": "Engage operations team as co-designers during UAT; run parallel processing for 4 weeks post go-live so analysts retain a safety net; provide structured training and a feedback channel.",
+      "owner": "Head of Operations"
+    },
+    {
+      "row_key": "RSK-004",
+      "risk": "Regulatory deadline missed due to scope creep",
+      "description": "Additional requirements added mid-delivery could push go-live past the 30 September 2026 regulatory reporting deadline.",
+      "severity": "critical",
+      "likelihood": "low",
+      "mitigation": "Strict change control board with fortnightly reviews; any change request assessed for timeline impact before approval; Phase 2 backlog maintained for post-deadline enhancements.",
+      "owner": "Programme Manager"
+    }
+  ],
+  "open_questions": [],
+  "completeness": 90,
+  "confidence": "high"
+}

@@ -1,0 +1,23 @@
+{
+  "decisions": [
+    {
+      "row_key": "DEC-001",
+      "decision": "Use real-time API event streaming (not batch file transfer) as the primary integration pattern between the core ledger and the reconciliation engine.",
+      "rationale": "Batch processing cannot achieve the ≤2-day cycle time target in OBJ-001. Real-time streaming is the only architecture that makes the KPI achievable.",
+      "owner": "IT Architecture",
+      "decision_date": "2026-05-01",
+      "alternatives_considered": "Batch CSV export (current state) — rejected due to cycle time constraint. Message queue polling — considered but deprioritised due to latency concerns at peak volume."
+    },
+    {
+      "row_key": "DEC-002",
+      "decision": "Adopt a phased delivery approach: Phase 1 MVP by Q3 2026 covering all must-have BRs; Phase 2 enhanced reporting in Q4 2026.",
+      "rationale": "Regulatory deadline of 30 September 2026 is non-negotiable (CON-003). Phased delivery de-risks delivery of the compliance-critical features while keeping advanced analytics achievable.",
+      "owner": "Programme Manager",
+      "decision_date": "2026-04-15",
+      "alternatives_considered": "Single big-bang delivery — rejected due to timeline risk. Skip enhanced reporting entirely — rejected because management reporting is a stakeholder priority for STK-001."
+    }
+  ],
+  "open_questions": [],
+  "completeness": 80,
+  "confidence": "medium"
+}

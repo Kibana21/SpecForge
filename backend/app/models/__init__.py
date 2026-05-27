@@ -29,6 +29,12 @@ from app.models.user import User
 from app.models.version_snapshot import VersionSnapshot
 from app.models.wiki import AppWikiConcept, AppWikiSummary
 from app.models.ask_session import AppAskSession
+from app.models.brd import (
+    BrdActor, BrdAssumption, BrdBusinessRequirement, BrdConstraint, BrdDataEntity,
+    BrdDecision, BrdDependency, BrdGlossaryEntry, BrdKpi, BrdMilestone, BrdObjective,
+    BrdOpenQuestion, BrdPhase, BrdProcessStep, BrdReference, BrdReportRequirement,
+    BrdRisk, BrdScopeItem, BrdStakeholder, BrdTextBlock, BrdTraceability,
+)
 
 __all__ = [
     "ArtifactDocument",
@@ -76,4 +82,25 @@ __all__ = [
     "AppWikiSummary",
     "AppWikiConcept",
     "AppAskSession",
+    "BrdActor",
+    "BrdAssumption",
+    "BrdBusinessRequirement",
+    "BrdConstraint",
+    "BrdDataEntity",
+    "BrdDecision",
+    "BrdDependency",
+    "BrdGlossaryEntry",
+    "BrdKpi",
+    "BrdMilestone",
+    "BrdObjective",
+    "BrdOpenQuestion",
+    "BrdPhase",
+    "BrdProcessStep",
+    "BrdReference",
+    "BrdReportRequirement",
+    "BrdRisk",
+    "BrdScopeItem",
+    "BrdStakeholder",
+    "BrdTextBlock",
+    "BrdTraceability",
 ]

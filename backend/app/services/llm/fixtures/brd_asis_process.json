@@ -1,0 +1,52 @@
+{
+  "steps": [
+    {
+      "row_key": "ASIS-001",
+      "step_type": "asis",
+      "step_number": 1,
+      "actor": "Core Ledger System",
+      "action": "Generates end-of-day transaction export file in CSV format.",
+      "pain_point": "Batch-only; no real-time visibility. File format inconsistencies require manual cleanup.",
+      "improvement": null
+    },
+    {
+      "row_key": "ASIS-002",
+      "step_type": "asis",
+      "step_number": 2,
+      "actor": "Operations Analyst",
+      "action": "Manually downloads CSV from ledger portal and uploads to shared reconciliation spreadsheet.",
+      "pain_point": "Error-prone manual transfer; version control issues with shared spreadsheets.",
+      "improvement": null
+    },
+    {
+      "row_key": "ASIS-003",
+      "step_type": "asis",
+      "step_number": 3,
+      "actor": "Payments Gateway",
+      "action": "Generates separate settlement status report via email distribution list.",
+      "pain_point": "No standard identifier linking gateway records to ledger entries; analyst must manually cross-reference.",
+      "improvement": null
+    },
+    {
+      "row_key": "ASIS-004",
+      "step_type": "asis",
+      "step_number": 4,
+      "actor": "Operations Analyst",
+      "action": "Manually matches ledger entries to gateway settlement records using VLOOKUP in Excel.",
+      "pain_point": "Takes 2–3 hours per day; high error rate; no audit trail for matching decisions.",
+      "improvement": null
+    },
+    {
+      "row_key": "ASIS-005",
+      "step_type": "asis",
+      "step_number": 5,
+      "actor": "Operations Analyst",
+      "action": "Emails discrepancy list to relevant team for investigation; awaits response.",
+      "pain_point": "No SLA on responses; average 3-day turnaround; email threads are not auditable.",
+      "improvement": null
+    }
+  ],
+  "open_questions": [],
+  "completeness": 90,
+  "confidence": "high"
+}

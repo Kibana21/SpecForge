@@ -1,0 +1,35 @@
+{
+  "open_questions_list": [
+    {
+      "row_key": "OQ-001",
+      "question": "What is the agreed SLA for the payments gateway vendor to deliver the unified transaction ID schema?",
+      "context": "The matching engine depends on this schema; without a contractual commitment, DEP-002 carries high delivery risk.",
+      "owner": "Payments Gateway Team Lead",
+      "due_date": "2026-06-01"
+    },
+    {
+      "row_key": "OQ-002",
+      "question": "Has the central bank confirmed the 7-year retention period applies to reconciliation audit events specifically, or only to primary transaction records?",
+      "context": "CON-001 specifies 7 years but this needs formal legal confirmation to size the immutable storage correctly.",
+      "owner": "Chief Compliance Officer",
+      "due_date": "2026-06-15"
+    },
+    {
+      "row_key": "OQ-003",
+      "question": "Will the Phase 2 enhanced reporting scope be formally approved before Phase 1 go-live, or is it deferred to a separate business case?",
+      "context": "Phase 2 scope uncertainty affects the data model decisions being made in Phase 1.",
+      "owner": "Head of Operations",
+      "due_date": "2026-07-15"
+    }
+  ],
+  "open_questions": [
+    {
+      "question": "What is the contracted SLA for the payments gateway vendor unified ID delivery?",
+      "field": "dependencies",
+      "why": "Delivery risk is unquantified without a contractual commitment.",
+      "example": "Vendor has committed to delivery by 30 June 2026 under amendment 3 of the master services agreement."
+    }
+  ],
+  "completeness": 80,
+  "confidence": "medium"
+}

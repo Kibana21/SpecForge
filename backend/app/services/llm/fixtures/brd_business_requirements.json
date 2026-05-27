@@ -1,0 +1,102 @@
+{
+  "business_requirements": [
+    {
+      "row_key": "BR-001",
+      "title": "Automated Settlement Matching",
+      "description": "The system must automatically match settlement records from the core ledger against payments gateway confirmations using a unified transaction ID, with no manual intervention for matched items.",
+      "priority": "must",
+      "category": "functional",
+      "acceptance_criteria": [
+        {
+          "given": "a transaction event is published by the core ledger",
+          "when": "the payments gateway confirmation arrives within the same business day",
+          "then": "the reconciliation engine matches and marks both records as reconciled within 60 seconds"
+        },
+        {
+          "given": "a matched transaction record",
+          "when": "an audit query is run",
+          "then": "the system returns a full audit trail including source system IDs, match timestamp, and analyst ID if a manual step occurred"
+        }
+      ],
+      "objective_refs": ["OBJ-001", "OBJ-002"],
+      "stakeholder_refs": ["STK-001", "STK-003"],
+      "rationale": "Addresses the primary root cause of manual matching identified in the as-is process analysis.",
+      "completeness": 95,
+      "confidence": "high"
+    },
+    {
+      "row_key": "BR-002",
+      "title": "Exception Queue with Automated Routing",
+      "description": "Unmatched transactions must be automatically routed to a prioritised exception queue visible to operations analysts, with a configurable SLA timer.",
+      "priority": "must",
+      "category": "functional",
+      "acceptance_criteria": [
+        {
+          "given": "a transaction remains unmatched after 2 hours",
+          "when": "the reconciliation engine processes its next cycle",
+          "then": "the transaction appears in the exception queue assigned to the correct operations analyst with full context"
+        },
+        {
+          "given": "an exception item is in the queue",
+          "when": "the SLA timer expires",
+          "then": "the item is automatically escalated to the Operations Manager with an alert notification"
+        }
+      ],
+      "objective_refs": ["OBJ-002"],
+      "stakeholder_refs": ["STK-001", "STK-003"],
+      "rationale": "Eliminates email-based exception management identified as a root cause of the 5-day resolution cycle.",
+      "completeness": 95,
+      "confidence": "high"
+    },
+    {
+      "row_key": "BR-003",
+      "title": "Full Audit Trail Capture",
+      "description": "All reconciliation events — matches, exceptions, overrides, and approvals — must be immutably logged with timestamp, actor ID, and system source.",
+      "priority": "must",
+      "category": "compliance",
+      "acceptance_criteria": [
+        {
+          "given": "any reconciliation action is performed",
+          "when": "the action completes",
+          "then": "an immutable audit entry is created within 1 second, capturing event type, timestamp, actor, and source system references"
+        },
+        {
+          "given": "a regulatory audit request is received",
+          "when": "the compliance officer exports the audit package",
+          "then": "the export contains all events for the requested date range in a machine-readable and human-readable format within 5 minutes"
+        }
+      ],
+      "objective_refs": ["OBJ-003"],
+      "stakeholder_refs": ["STK-002", "STK-005"],
+      "rationale": "Directly satisfies OBJ-003 and CCO sign-off requirement for regulatory examination readiness.",
+      "completeness": 95,
+      "confidence": "high"
+    }
+  ],
+  "traceability": [
+    {
+      "source_row_key": "BR-001",
+      "target_kind": "cb_capability",
+      "target_ref": "cap_001",
+      "target_label": "Automated reconciliation matching engine",
+      "confidence": "high"
+    },
+    {
+      "source_row_key": "BR-002",
+      "target_kind": "cb_capability",
+      "target_ref": "cap_002",
+      "target_label": "Exception queue management",
+      "confidence": "high"
+    },
+    {
+      "source_row_key": "BR-003",
+      "target_kind": "cb_capability",
+      "target_ref": "cap_003",
+      "target_label": "Audit trail and compliance reporting",
+      "confidence": "high"
+    }
+  ],
+  "open_questions": [],
+  "completeness": 90,
+  "confidence": "high"
+}

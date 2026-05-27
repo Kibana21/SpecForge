@@ -1,0 +1,39 @@
+{
+  "objectives": [
+    {
+      "row_key": "OBJ-001",
+      "statement": "Reduce settlement reconciliation cycle from 5 days to ≤2 days within 6 months of go-live.",
+      "category": "operational",
+      "priority": "must",
+      "owner": "Head of Operations",
+      "cb_outcome_ref": "outcome_001"
+    },
+    {
+      "row_key": "OBJ-002",
+      "statement": "Eliminate 90% of manual exception-handling steps by automating discrepancy detection and routing.",
+      "category": "efficiency",
+      "priority": "must",
+      "owner": "Operations Manager",
+      "cb_outcome_ref": "outcome_002"
+    },
+    {
+      "row_key": "OBJ-003",
+      "statement": "Achieve full audit traceability for all settlement events to satisfy regulatory examination requirements.",
+      "category": "compliance",
+      "priority": "must",
+      "owner": "Chief Compliance Officer",
+      "cb_outcome_ref": "outcome_003"
+    },
+    {
+      "row_key": "OBJ-004",
+      "statement": "Provide real-time settlement status visibility to front-office and operations stakeholders.",
+      "category": "strategic",
+      "priority": "should",
+      "owner": "Head of Technology",
+      "cb_outcome_ref": "outcome_004"
+    }
+  ],
+  "open_questions": [],
+  "completeness": 90,
+  "confidence": "high"
+}

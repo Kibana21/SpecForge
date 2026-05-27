@@ -1,0 +1,35 @@
+{
+  "references": [
+    {
+      "row_key": "REF-001",
+      "title": "Central Bank Data Governance Framework v3.2",
+      "reference_type": "regulation",
+      "location": "Regulatory portal — compliance/data-governance-framework-v3.2.pdf",
+      "description": "Defines mandatory data retention periods and audit trail requirements for financial institutions. Referenced in CON-001."
+    },
+    {
+      "row_key": "REF-002",
+      "title": "IT Architecture Decision Record ADR-2024-017",
+      "reference_type": "document",
+      "location": "Confluence — IT Architecture / Decision Records / ADR-2024-017",
+      "description": "Records the decision to maintain core ledger platform at v14.2 and the API integration approach. Referenced in CON-002."
+    },
+    {
+      "row_key": "REF-003",
+      "title": "Settlement Reconciliation Process Audit Report FY2025",
+      "reference_type": "document",
+      "location": "SharePoint — Operations / Audit / FY2025 / Reconciliation-Audit-Report.pdf",
+      "description": "Internal audit finding that identified the 5-day average reconciliation cycle time and manual matching inefficiencies. Source for problem statement and KPI baseline."
+    },
+    {
+      "row_key": "REF-004",
+      "title": "Core Ledger API Specification v2.1",
+      "reference_type": "system",
+      "location": "Developer portal — core-ledger/api-docs/v2.1",
+      "description": "Technical specification for the event streaming API to be consumed by the reconciliation engine."
+    }
+  ],
+  "open_questions": [],
+  "completeness": 80,
+  "confidence": "medium"
+}

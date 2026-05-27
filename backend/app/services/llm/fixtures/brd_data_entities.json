@@ -1,0 +1,39 @@
+{
+  "entities": [
+    {
+      "row_key": "DAT-001",
+      "entity_name": "Settlement Transaction",
+      "description": "A single financial settlement event originating from the core ledger, carrying debit/credit amounts, currency, counterparty references, and settlement date.",
+      "owner_system": "Core Ledger System",
+      "data_sensitivity": "confidential",
+      "key_attributes": ["transaction_id", "ledger_entry_date", "amount", "currency", "counterparty_id", "settlement_status"]
+    },
+    {
+      "row_key": "DAT-002",
+      "entity_name": "Payment Confirmation",
+      "description": "A confirmation message from the payments gateway indicating the execution status of an outgoing or incoming payment instruction.",
+      "owner_system": "Payments Gateway",
+      "data_sensitivity": "confidential",
+      "key_attributes": ["payment_ref", "gateway_status", "execution_timestamp", "network_ref", "linked_transaction_id"]
+    },
+    {
+      "row_key": "DAT-003",
+      "entity_name": "Reconciliation Match Record",
+      "description": "The output of the matching engine linking a Settlement Transaction to a Payment Confirmation, with match type, confidence score, and analyst override flag.",
+      "owner_system": "Reconciliation Engine",
+      "data_sensitivity": "internal",
+      "key_attributes": ["match_id", "transaction_id", "payment_ref", "match_type", "matched_at", "analyst_id"]
+    },
+    {
+      "row_key": "DAT-004",
+      "entity_name": "Audit Event",
+      "description": "An immutable log entry recording every reconciliation action for regulatory compliance and operational traceability.",
+      "owner_system": "Reconciliation Engine",
+      "data_sensitivity": "restricted",
+      "key_attributes": ["event_id", "event_type", "actor_id", "source_system", "event_timestamp", "payload_ref"]
+    }
+  ],
+  "open_questions": [],
+  "completeness": 85,
+  "confidence": "medium"
+}

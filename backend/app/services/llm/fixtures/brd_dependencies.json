@@ -1,0 +1,28 @@
+{
+  "dependencies": [
+    {
+      "row_key": "DEP-001",
+      "dependency": "Core Ledger API event streaming capability must be enabled and tested by the integration team before reconciliation engine development begins.",
+      "dependency_type": "internal",
+      "owner": "IT Architecture",
+      "due_date": "2026-07-01"
+    },
+    {
+      "row_key": "DEP-002",
+      "dependency": "Payments Gateway vendor must deliver unified transaction ID schema support in their next scheduled release.",
+      "dependency_type": "vendor",
+      "owner": "Payments Gateway Team Lead",
+      "due_date": "2026-06-30"
+    },
+    {
+      "row_key": "DEP-003",
+      "dependency": "Regulatory sign-off from Compliance on the audit trail data model before development of the audit capture module.",
+      "dependency_type": "regulatory",
+      "owner": "Chief Compliance Officer",
+      "due_date": "2026-06-15"
+    }
+  ],
+  "open_questions": [],
+  "completeness": 85,
+  "confidence": "medium"
+}

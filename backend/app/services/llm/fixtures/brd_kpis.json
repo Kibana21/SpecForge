@@ -1,0 +1,40 @@
+{
+  "kpis": [
+    {
+      "row_key": "KPI-001",
+      "kpi_name": "Settlement Reconciliation Cycle Time",
+      "description": "Average time from transaction posting in the ledger to final reconciliation confirmation.",
+      "baseline": "Current: 5 days average",
+      "target": "Target: ≤2 days average",
+      "timeframe": "Q3 2026 (6 months post go-live)",
+      "data_source": "Reconciliation Engine — Daily Summary Report",
+      "objective_ref": "OBJ-001",
+      "cb_metric_ref": "metric_001"
+    },
+    {
+      "row_key": "KPI-002",
+      "kpi_name": "Manual Exception Rate",
+      "description": "Percentage of total daily transactions that require manual analyst intervention.",
+      "baseline": "Current: ~40% require manual touch",
+      "target": "Target: ≤10% require manual touch",
+      "timeframe": "Q4 2026 (3 months post go-live)",
+      "data_source": "Exception Queue Dashboard",
+      "objective_ref": "OBJ-002",
+      "cb_metric_ref": "metric_002"
+    },
+    {
+      "row_key": "KPI-003",
+      "kpi_name": "Audit Trail Coverage",
+      "description": "Percentage of reconciliation actions that have a complete, immutable audit log entry.",
+      "baseline": "Current: ~60% (manual steps have no systematic logging)",
+      "target": "Target: 100% coverage",
+      "timeframe": "Q3 2026 (at go-live)",
+      "data_source": "Audit Trail Module — Compliance Dashboard",
+      "objective_ref": "OBJ-003",
+      "cb_metric_ref": "metric_003"
+    }
+  ],
+  "open_questions": [],
+  "completeness": 90,
+  "confidence": "high"
+}

@@ -1,0 +1,56 @@
+{
+  "scope_items": [
+    {
+      "row_key": "SCP-IN-001",
+      "kind": "in_scope",
+      "text": "Automated matching of settlement records between the core ledger and payments gateway using a unified transaction ID.",
+      "rationale": "Core pain point identified in as-is process; directly addresses OBJ-001.",
+      "cb_scope_ref": "scope_001"
+    },
+    {
+      "row_key": "SCP-IN-002",
+      "kind": "in_scope",
+      "text": "Real-time exception queue with automated routing to the responsible operations analyst.",
+      "rationale": "Eliminates manual triage; supports OBJ-002.",
+      "cb_scope_ref": "scope_002"
+    },
+    {
+      "row_key": "SCP-IN-003",
+      "kind": "in_scope",
+      "text": "Full audit trail capture for all reconciliation events, exportable for regulatory submission.",
+      "rationale": "Required for OBJ-003 and compliance sign-off.",
+      "cb_scope_ref": "scope_003"
+    },
+    {
+      "row_key": "SCP-OUT-001",
+      "kind": "out_of_scope",
+      "text": "Front-office trade booking system integration — covered by a separate programme.",
+      "rationale": "Out of budget and timeline for this initiative; separate workstream already planned.",
+      "cb_scope_ref": null
+    },
+    {
+      "row_key": "SCP-OUT-002",
+      "kind": "out_of_scope",
+      "text": "Multi-currency FX netting — deferred to Phase 2.",
+      "rationale": "Complexity requires dedicated analysis; deferred to avoid scope creep.",
+      "cb_scope_ref": null
+    },
+    {
+      "row_key": "SCP-ASM-001",
+      "kind": "assumption",
+      "text": "The core ledger system API will be available for real-time event streaming by project kick-off.",
+      "rationale": "IT Architecture has confirmed API readiness is on the Q2 roadmap.",
+      "cb_scope_ref": "assumption_001"
+    },
+    {
+      "row_key": "SCP-ASM-002",
+      "kind": "assumption",
+      "text": "Operations team headcount remains stable during the transition period — no planned reorganisation.",
+      "rationale": "HR has confirmed no structural changes planned for FY2026.",
+      "cb_scope_ref": "assumption_002"
+    }
+  ],
+  "open_questions": [],
+  "completeness": 90,
+  "confidence": "high"
+}

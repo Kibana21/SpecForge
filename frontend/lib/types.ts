@@ -693,3 +693,135 @@ export interface AuditSummary {
   deletions_7d: number
   ai_actions_today: number
 }
+
+// ── BRD types ─────────────────────────────────────────────────────────────────
+
+export interface BrdTextBlockRow {
+  id: string; row_key: string; version: number
+  is_current: boolean; is_locked: boolean; status: string; source: string
+  field_key: string; text: string; created_at: string
+}
+
+export interface BrdObjectiveRow {
+  id: string; row_key: string; version: number
+  is_current: boolean; is_locked: boolean; status: string; source: string
+  statement: string; category: string
+  priority: 'must' | 'should' | 'could' | 'wont'
+  owner: string; cb_outcome_ref: string; created_at: string
+}
+
+export interface BrdStakeholderRow {
+  id: string; row_key: string; version: number
+  is_current: boolean; is_locked: boolean; status: string; source: string
+  name: string; stakeholder_type: string; role: string
+  interest: string; influence: string; created_at: string
+}
+
+export interface BrdActorRow {
+  id: string; row_key: string; version: number
+  is_current: boolean; is_locked: boolean; status: string; source: string
+  name: string; actor_type: string; description: string
+  interactions: string; created_at: string
+}
+
+export interface BrdScopeItemRow {
+  id: string; row_key: string; version: number
+  is_current: boolean; is_locked: boolean; status: string; source: string
+  kind: 'in_scope' | 'out_of_scope' | 'assumption'
+  text: string; rationale: string; cb_scope_ref: string; created_at: string
+}
+
+export interface BrdProcessStepRow {
+  id: string; row_key: string; version: number
+  is_current: boolean; is_locked: boolean; status: string; source: string
+  step_type: 'asis' | 'tobe'
+  step_number: number; actor: string; action: string
+  pain_point: string; improvement: string; created_at: string
+}
+
+export interface AcceptanceCriterion {
+  given: string; when: string; then: string
+}
+
+export interface BrdBusinessRequirementRow {
+  id: string; row_key: string; version: number
+  is_current: boolean; is_locked: boolean; status: string; source: string
+  title: string; description: string
+  priority: 'must' | 'should' | 'could' | 'wont'
+  category: string
+  acceptance_criteria: AcceptanceCriterion[]
+  objective_refs: string[]; stakeholder_refs: string[]
+  rationale: string; completeness: number; confidence: string; created_at: string
+}
+
+export interface BrdRiskRow {
+  id: string; row_key: string; version: number
+  is_current: boolean; is_locked: boolean; status: string; source: string
+  risk: string; description: string
+  severity: 'critical' | 'high' | 'medium' | 'low'
+  likelihood: 'high' | 'medium' | 'low'
+  mitigation: string; owner: string; created_at: string
+}
+
+export interface BrdKpiRow {
+  id: string; row_key: string; version: number
+  is_current: boolean; is_locked: boolean; status: string; source: string
+  kpi_name: string; description: string
+  baseline: string; target: string; timeframe: string
+  data_source: string; objective_ref: string; cb_metric_ref: string; created_at: string
+}
+
+export interface BrdTraceabilityRow {
+  id: string; source_table: string; source_row_key: string
+  target_kind: string; target_ref: string; target_label: string; confidence: string
+}
+
+export interface BrdCoverageReport {
+  covered_count: number; total_count: number
+  all_covered: boolean; uncovered_keys: string[]
+}
+
+export interface BrdFinding {
+  check_id: string; description: string
+  group: 'critical' | 'major' | 'minor' | 'coverage' | 'warnings'
+  row_key: string | null; suggested_fix: string
+}
+
+export interface BrdFindings {
+  ok: boolean; findings: BrdFinding[]
+}
+
+export interface BrdBundleReadiness {
+  can_generate: boolean; blocking_reason: string | null
+  docs_all_ready: boolean; cb_ready: boolean
+  cb_status: string | null
+  pending_doc_count: number; failed_doc_count: number
+  docs: Array<{
+    id: string; filename: string
+    indexing_status: 'pending' | 'running' | 'done' | 'error'
+    page_count: number | null
+  }>
+}
+
+export interface BrdDocument {
+  id: string; project_id: string; artifact_type: string
+  status: 'in_discover' | 'in_interview' | 'generating' | 'validated'
+  unit_status: Record<string, { completeness: number; confidence: string }> | null
+  validated_at: string | null; validated_by: string | null
+  validated_snapshot_key: string | null
+  created_at: string; updated_at: string
+}
+
+export interface BrdDetail {
+  document: BrdDocument | null
+  sections: Record<string, unknown[]>
+  traceability_by_source: Record<string, BrdTraceabilityRow[]>
+  messages: Array<{
+    id: string; role: string; content: string
+    citations: unknown[]; meta: Record<string, unknown>; seq: number; created_at: string
+  }>
+  sources: Array<{
+    id: string; source_document_id: string
+    filename: string; parse_status: string; included: boolean
+  }>
+}

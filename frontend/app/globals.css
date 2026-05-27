@@ -78,6 +78,19 @@ body {
   }
 }
 
+@layer utilities {
+  @keyframes confetti-burst {
+    0%   { transform: translateY(0) scale(1); opacity: 1; }
+    100% { transform: translateY(-80px) scale(0.5) rotate(45deg); opacity: 0; }
+  }
+  .animate-confetti {
+    animation: confetti-burst 600ms ease-out forwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-confetti { animation: none; }
+  }
+}
+
 /* Thin scrollbar for panels */
 ::-webkit-scrollbar {
   width: 6px;

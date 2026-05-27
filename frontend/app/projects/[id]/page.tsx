@@ -26,6 +26,7 @@ import { EditProjectModal } from '@/app/components/EditProjectModal'
 import { ArtifactBuilderPanel } from '@/app/components/ArtifactBuilderPanel'
 import { InterviewPanel } from '@/app/components/InterviewPanel'
 import { DocumentViewer } from '@/app/components/DocumentViewer'
+import { BrdBuilderView } from '@/app/components/brd/BrdBuilderView'
 import type { DocumentRead } from '@/lib/types'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -153,6 +154,11 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
 
   const { project, isLoading: projectLoading, mutate: mutateProject } = useProject(projectId)
   const { detail: cbDetail } = useArtifact(projectId, 'concept-brief')
+  const { data: brdDetail } = useSWR(
+    `brd-detail-${projectId}`,
+    () => api.brd.get(projectId),
+    { revalidateOnFocus: false },
+  )
   const { openVersionPanel } = useProjectContext()
 
   const { data: specs, mutate: mutateSpecs } = useSWR<SpecVersion[]>(
@@ -255,10 +261,26 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
   }
 
   const ruValidated = project.ru_validated
+  const cbValidated = cbDetail?.document?.status === 'validated'
 
   // ── Artifact status helpers ────────────────────────────────────────────────
 
   const cbStatus = cbDetail?.document?.status ?? null
+  const brdStatus = brdDetail?.document?.status ?? null
+
+  function brdStatusBadge() {
+    if (!brdStatus) return null
+    if (brdStatus === 'generating') return <span className="text-[9px] rounded px-1.5 py-0.5 bg-blue-100 text-blue-700 font-semibold animate-pulse">Generating…</span>
+    if (brdStatus === 'validated') return <span className="text-[9px] rounded px-1.5 py-0.5 bg-emerald-100 text-emerald-700 font-semibold">Validated ✓</span>
+    if (brdStatus === 'in_interview') return <span className="text-[9px] rounded px-1.5 py-0.5 bg-amber-100 text-amber-700 font-semibold">Draft</span>
+    return null
+  }
+  const brdSublabel = !brdStatus
+    ? (cbValidated ? 'Business Requirements' : 'Unlocks after CB')
+    : brdStatus === 'generating' ? 'Generating…'
+    : brdStatus === 'validated' ? 'Validated'
+    : 'Draft · in progress'
+
   // 'in_discover' | 'generating' | 'in_interview' (=generated, chatting) | 'validated' | null (not started)
   function cbStatusBadge() {
     if (!cbStatus) return null
@@ -305,46 +327,13 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
         {/* 3. BRD */}
         <NavItem
           label="BRD"
-          sublabel={ruValidated ? 'Business Requirements' : 'Unlocks after RU'}
+          sublabel={brdSublabel}
           icon={<BookOpen size={14} />}
           active={view === 'brd'}
-          locked={!ruValidated}
-          onClick={ruValidated ? () => setView('brd') : undefined}
-        >
-          {view === 'brd' && (
-            <>
-              {(
-                [
-                  { key: 'functional' as OutputTab, label: 'Functional' },
-                  { key: 'technical' as OutputTab, label: 'Technical' },
-                  { key: 'user_stories' as OutputTab, label: 'User Stories' },
-                  { key: 'gaps' as OutputTab, label: 'Open Questions' },
-                  { key: 'review' as OutputTab, label: 'Review' },
-                ] as { key: OutputTab; label: string }[]
-              ).map(({ key, label }) => {
-                const isSpecTab = key === 'functional' || key === 'technical' || key === 'user_stories'
-                const ver = isSpecTab ? versionMap[key as SpecType] : undefined
-                const badge =
-                  key === 'gaps' && unresolvedGaps.length > 0 ? (
-                    <CountBadge count={unresolvedGaps.length} variant={blockerGaps.length > 0 ? 'danger' : 'warning'} />
-                  ) : key === 'review' && criticalReviews.length > 0 ? (
-                    <CountBadge count={criticalReviews.length} variant="warning" />
-                  ) : ver ? (
-                    <span className="text-[9px] text-[var(--text-tertiary)]">v{ver}</span>
-                  ) : undefined
-                return (
-                  <SubNavItem
-                    key={key}
-                    label={label}
-                    active={activeTab === key}
-                    badge={badge}
-                    onClick={() => setActiveTab(key)}
-                  />
-                )
-              })}
-            </>
-          )}
-        </NavItem>
+          locked={!cbValidated}
+          badge={brdStatusBadge()}
+          onClick={cbValidated ? () => setView('brd') : undefined}
+        />
 
         {/* 4. FRS */}
         <NavItem
@@ -442,66 +431,10 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
 
     if (view === 'brd') {
       return (
-        <div className="flex flex-col h-full">
-          <div className="flex items-center justify-between pl-3 pr-4 py-2 border-b border-[var(--border-default)] bg-[var(--bg-surface)]">
-            <button
-              onClick={() => setView(null)}
-              className="inline-flex items-center gap-1 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--text-tertiary)] transition-colors shrink-0"
-            >
-              <ArrowLeft size={11} />
-              BRD
-            </button>
-          </div>
-          <div className="flex items-center justify-between pl-0 pr-4 pt-0 border-b border-[var(--border-default)]">
-            <OutputTabs
-              activeTab={activeTab}
-              onTabChange={setActiveTab}
-              loadingTabs={loadingTabs}
-              versionMap={versionMap}
-            />
-            <div className="flex items-center gap-2 shrink-0 pb-3 pt-3">
-              <ExportMenu projectId={projectId} />
-              <GenerateSpecsButton
-                projectId={projectId}
-                onGenerating={handleGenerating}
-                onComplete={handleGenerateComplete}
-                disabled={!project?.ru_validated}
-                disabledReason="Validate the Requirement Understanding first"
-              />
-            </div>
-          </div>
-
-          {!ruValidated && (
-            <button
-              onClick={() => setView('interview')}
-              className="flex w-full items-center gap-2 border-b border-warning-border bg-warning-bg/40 px-4 py-2 text-left text-xs text-[var(--text-secondary)] hover:bg-warning-bg/60 transition-colors"
-            >
-              <Cpu size={13} className="text-warning shrink-0" />
-              <span>Requirement Understanding not validated — spec generation is locked.</span>
-              <span className="ml-auto font-semibold text-[var(--accent-deep)]">Open interview →</span>
-            </button>
-          )}
-
-          <div className="flex-1 overflow-y-auto">
-            {activeTab === 'gaps' ? (
-              gaps && gaps.length > 0 ? (
-                <GapQuestions projectId={projectId} gaps={gaps} onGapUpdate={() => mutateGaps()} />
-              ) : (
-                <EmptyState title="No gap questions" description="Upload documents and run 'Extract Requirements' to detect gaps." />
-              )
-            ) : activeTab === 'review' ? (
-              reviews && reviews.length > 0 ? (
-                <ReviewComments projectId={projectId} comments={reviews} onCommentUpdate={() => mutateReviews()} />
-              ) : (
-                <EmptyState title="No review comments" description="Generate all specs first, then the reviewer runs automatically." />
-              )
-            ) : activeSpec ? (
-              <SpecEditor projectId={projectId} spec={activeSpec} onSaved={() => mutateSpecs()} />
-            ) : (
-              <EmptyState title={`No ${activeTab.replace('_', ' ')} spec yet`} description="Click 'Generate Specs' to create specs from your requirements." />
-            )}
-          </div>
-        </div>
+        <BrdBuilderView
+          projectId={projectId}
+          onBack={() => setView(null)}
+        />
       )
     }
 
@@ -598,11 +531,11 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
                 onClick={() => setView('interview')}
               />
               <ProgressStep
-                done={!!specs?.length}
-                locked={!ruValidated}
-                label="BRD Specs"
-                sublabel={!ruValidated ? 'Locked — validate RU first' : specs?.length ? `${specs.length} spec${specs.length !== 1 ? 's' : ''} generated` : 'Ready to generate'}
-                onClick={ruValidated ? () => setView('brd') : undefined}
+                done={false}
+                locked={!cbValidated}
+                label="BRD"
+                sublabel={!cbValidated ? 'Unlocks after Concept Brief is validated' : 'Ready to build'}
+                onClick={cbValidated ? () => setView('brd') : undefined}
               />
             </div>
           </div>

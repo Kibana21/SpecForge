@@ -1,0 +1,39 @@
+{
+  "milestones": [
+    {
+      "row_key": "MS-001",
+      "milestone": "API Integration Confirmed",
+      "target": "2026-07-01",
+      "description": "Core ledger API event streaming confirmed live and tested in the development environment.",
+      "phase_ref": "PH-001",
+      "cb_milestone_ref": "ms_001"
+    },
+    {
+      "row_key": "MS-002",
+      "milestone": "UAT Sign-Off",
+      "target": "2026-08-31",
+      "description": "User acceptance testing completed with operations team sign-off on all must-have acceptance criteria.",
+      "phase_ref": "PH-001",
+      "cb_milestone_ref": "ms_002"
+    },
+    {
+      "row_key": "MS-003",
+      "milestone": "Phase 1 Go-Live",
+      "target": "2026-09-30",
+      "description": "Production deployment of the MVP reconciliation engine. Parallel run with legacy process for 4 weeks.",
+      "phase_ref": "PH-001",
+      "cb_milestone_ref": "ms_003"
+    },
+    {
+      "row_key": "MS-004",
+      "milestone": "Legacy Process Decommission",
+      "target": "2026-10-31",
+      "description": "Spreadsheet-based reconciliation process formally decommissioned; all analysts fully on new system.",
+      "phase_ref": "PH-002",
+      "cb_milestone_ref": null
+    }
+  ],
+  "open_questions": [],
+  "completeness": 85,
+  "confidence": "medium"
+}

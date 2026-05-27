@@ -1,6 +1,11 @@
 import type {
   ArtifactDetail,
   ArtifactSource,
+  BrdBundleReadiness,
+  BrdCoverageReport,
+  BrdDetail,
+  BrdFinding,
+  BrdFindings,
   CbRow,
   DiscoverEnhanceBriefResult,
   DiscoverQuestion,
@@ -385,6 +390,51 @@ export const api = {
         `/api/projects/${projectId}/artifacts/${type}/discover/complete`,
         { method: 'POST' },
       ),
+  },
+
+  brd: {
+    get: (projectId: string) =>
+      apiFetch<BrdDetail>(`/api/projects/${projectId}/artifacts/brd`),
+    readiness: (projectId: string) =>
+      apiFetch<BrdBundleReadiness>(`/api/projects/${projectId}/artifacts/brd/readiness`, { method: 'POST' }),
+    generate: (projectId: string, body?: { context?: string }) =>
+      apiFetch<BrdDetail>(`/api/projects/${projectId}/artifacts/brd/generate`, {
+        method: 'POST', body: JSON.stringify(body ?? {}),
+      }),
+    answer: (projectId: string, body: { answer: string; seq?: number }) =>
+      apiFetch<BrdDetail>(`/api/projects/${projectId}/artifacts/brd/answer`, {
+        method: 'POST', body: JSON.stringify(body),
+      }),
+    validate: (projectId: string) =>
+      apiFetch<BrdFindings>(`/api/projects/${projectId}/artifacts/brd/validate`, { method: 'POST' }),
+    findings: (projectId: string) =>
+      apiFetch<BrdFindings>(`/api/projects/${projectId}/artifacts/brd/findings`),
+    coverage: (projectId: string) =>
+      apiFetch<BrdCoverageReport>(`/api/projects/${projectId}/artifacts/brd/coverage`),
+    export: (projectId: string) =>
+      authedFetch(`/api/projects/${projectId}/artifacts/brd/export`),
+    editRow: (projectId: string, table: string, rowId: string, fields: Record<string, unknown>, lock?: boolean) =>
+      apiFetch<unknown>(`/api/projects/${projectId}/artifacts/brd/${table}/${rowId}/edit`, {
+        method: 'POST', body: JSON.stringify({ fields, lock }),
+      }),
+    rowHistory: (projectId: string, table: string, rowId: string) =>
+      apiFetch<unknown[]>(`/api/projects/${projectId}/artifacts/brd/${table}/${rowId}/history`),
+    deleteRow: (projectId: string, table: string, rowId: string) =>
+      apiFetch<{ deleted: boolean; row_key: string }>(`/api/projects/${projectId}/artifacts/brd/${table}/${rowId}/delete`, { method: 'POST' }),
+    regenerateUnit: (projectId: string, unitKey: string) =>
+      apiFetch<unknown>(`/api/projects/${projectId}/artifacts/brd/units/${unitKey}/regenerate`, { method: 'POST' }),
+    resetGenerating: (projectId: string) =>
+      apiFetch<{ status: string }>(`/api/projects/${projectId}/artifacts/brd/reset-generating`, { method: 'POST' }),
+    discoverAnalyze: (projectId: string) =>
+      apiFetch<{ questions: DiscoverQuestion[] }>(`/api/projects/${projectId}/artifacts/brd/discover/analyze`, { method: 'POST' }),
+    discoverAnswer: (projectId: string, qKey: string, body: { answer: string }) =>
+      apiFetch<DiscoverQuestion>(`/api/projects/${projectId}/artifacts/brd/discover/${qKey}/answer`, {
+        method: 'POST', body: JSON.stringify(body),
+      }),
+    discoverEnhance: (projectId: string, body: { question_key: string; draft: string }) =>
+      apiFetch<{ enhanced: string }>(`/api/projects/${projectId}/artifacts/brd/discover/enhance`, {
+        method: 'POST', body: JSON.stringify(body),
+      }),
   },
 
   apps: {

@@ -1,0 +1,52 @@
+{
+  "steps": [
+    {
+      "row_key": "TOBE-001",
+      "step_type": "tobe",
+      "step_number": 1,
+      "actor": "Core Ledger System",
+      "action": "Publishes transaction events in real time via API event stream with a unified transaction ID.",
+      "pain_point": null,
+      "improvement": "Eliminates batch CSV exports and manual file transfers; enables same-day matching."
+    },
+    {
+      "row_key": "TOBE-002",
+      "step_type": "tobe",
+      "step_number": 2,
+      "actor": "Reconciliation Engine",
+      "action": "Automatically ingests ledger events and payments gateway confirmations; runs matching algorithm using unified transaction ID.",
+      "pain_point": null,
+      "improvement": "Replaces manual VLOOKUP; matching completes in seconds; full audit log generated automatically."
+    },
+    {
+      "row_key": "TOBE-003",
+      "step_type": "tobe",
+      "step_number": 3,
+      "actor": "Reconciliation Engine",
+      "action": "Automatically routes unmatched transactions to the exception queue with enriched context.",
+      "pain_point": null,
+      "improvement": "Eliminates manual email triage; exceptions are visible in real time with 4-hour SLA."
+    },
+    {
+      "row_key": "TOBE-004",
+      "step_type": "tobe",
+      "step_number": 4,
+      "actor": "Operations Analyst",
+      "action": "Reviews exception queue in the reconciliation dashboard; resolves or escalates with one-click workflow.",
+      "pain_point": null,
+      "improvement": "Context-rich exception cards replace email threads; all decisions are logged with timestamp and analyst ID."
+    },
+    {
+      "row_key": "TOBE-005",
+      "step_type": "tobe",
+      "step_number": 5,
+      "actor": "Reporting Warehouse",
+      "action": "Automatically receives reconciled settlement data; populates regulatory and management reports.",
+      "pain_point": null,
+      "improvement": "Eliminates manual data entry into the warehouse; reports reflect T+0 settlement status."
+    }
+  ],
+  "open_questions": [],
+  "completeness": 90,
+  "confidence": "high"
+}

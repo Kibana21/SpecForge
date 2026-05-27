@@ -1,0 +1,6 @@
+{
+  "business_context": "Mock BRD business context: The organisation operates within a highly regulated financial services environment, subject to central bank oversight and evolving data governance frameworks. The initiative is driven by strategic imperatives to modernise core transaction processing capabilities, reduce manual reconciliation overhead, and improve audit traceability across settlement workflows. The owning business unit — Operations & Finance — sits at the intersection of front-office trading desks and back-office compliance, making it a critical node in the value chain. In-scope applications include the core ledger system (Tier-1), the payments gateway (Tier-1), and the reporting warehouse (Tier-2), all of which will be impacted by the proposed changes.",
+  "open_questions": [],
+  "completeness": 90,
+  "confidence": "high"
+}

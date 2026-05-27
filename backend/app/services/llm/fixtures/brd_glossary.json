@@ -1,0 +1,37 @@
+{
+  "glossary": [
+    {
+      "row_key": "GLO-001",
+      "term": "Settlement Reconciliation",
+      "definition": "The process of matching and confirming that financial transactions recorded in the core ledger correspond exactly to payment confirmations received from the payments gateway, ensuring no discrepancies remain unresolved.",
+      "source_ref": "Operations process documentation"
+    },
+    {
+      "row_key": "GLO-002",
+      "term": "Unified Transaction ID",
+      "definition": "A single, system-agnostic identifier assigned to a financial transaction at origination and propagated across all downstream systems (ledger, gateway, reporting warehouse) to enable automated matching without manual cross-referencing.",
+      "source_ref": "IT Architecture ADR-2024-017"
+    },
+    {
+      "row_key": "GLO-003",
+      "term": "Exception Queue",
+      "definition": "A prioritised list of unmatched or unresolved settlement transactions surfaced to operations analysts for manual investigation. Each item carries contextual enrichment (age, SLA status, counterparty, amounts) to accelerate resolution.",
+      "source_ref": "BR-002 — Exception Queue with Automated Routing"
+    },
+    {
+      "row_key": "GLO-004",
+      "term": "MoSCoW",
+      "definition": "A prioritisation framework using four categories: Must Have, Should Have, Could Have, and Won't Have. Applied in this BRD to classify business requirements by delivery criticality.",
+      "source_ref": "Programme governance charter"
+    },
+    {
+      "row_key": "GLO-005",
+      "term": "T+0",
+      "definition": "Same-day settlement — the target state in which reconciliation is confirmed on the day the transaction occurs, as opposed to the current T+5 average.",
+      "source_ref": "KPI-001 — Settlement Reconciliation Cycle Time"
+    }
+  ],
+  "open_questions": [],
+  "completeness": 85,
+  "confidence": "medium"
+}

@@ -1,0 +1,31 @@
+{
+  "constraints": [
+    {
+      "row_key": "CON-001",
+      "constraint_text": "All audit trail data must be retained for a minimum of 7 years in immutable storage, per central bank data retention regulation.",
+      "constraint_type": "regulatory",
+      "source_ref": "Central Bank Data Governance Framework v3.2, §8.4"
+    },
+    {
+      "row_key": "CON-002",
+      "constraint_text": "The solution must integrate with the existing core ledger API without requiring a version upgrade of the ledger platform (current: v14.2).",
+      "constraint_type": "technical",
+      "source_ref": "IT Architecture decision record ADR-2024-017"
+    },
+    {
+      "row_key": "CON-003",
+      "constraint_text": "Go-live must occur before the Q3 regulatory reporting deadline (30 September 2026).",
+      "constraint_type": "timeline",
+      "source_ref": "Programme governance charter, milestone M-004"
+    },
+    {
+      "row_key": "CON-004",
+      "constraint_text": "Total programme budget is capped at the approved envelope; no supplemental budget request is available for this financial year.",
+      "constraint_type": "budget",
+      "source_ref": "Finance sign-off, FY2026 capital allocation"
+    }
+  ],
+  "open_questions": [],
+  "completeness": 85,
+  "confidence": "medium"
+}

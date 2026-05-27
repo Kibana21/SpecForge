@@ -1,0 +1,47 @@
+{
+  "stakeholders": [
+    {
+      "row_key": "STK-001",
+      "name": "Head of Operations",
+      "stakeholder_type": "sponsor",
+      "role": "Executive sponsor; accountable for OBJ-001 and OBJ-002 delivery.",
+      "interest": "Reduce manual workload and operational risk in settlement processing.",
+      "influence": "high"
+    },
+    {
+      "row_key": "STK-002",
+      "name": "Chief Compliance Officer",
+      "stakeholder_type": "compliance",
+      "role": "Sign-off authority for audit traceability requirements.",
+      "interest": "Ensure regulatory examination readiness and complete audit trails.",
+      "influence": "high"
+    },
+    {
+      "row_key": "STK-003",
+      "name": "Operations Team",
+      "stakeholder_type": "user",
+      "role": "Primary users of the reconciliation workflow; daily operators.",
+      "interest": "Reduced manual steps, clear exception queues, faster resolution.",
+      "influence": "medium"
+    },
+    {
+      "row_key": "STK-004",
+      "name": "Front-Office Trading Desk",
+      "stakeholder_type": "owner",
+      "role": "Consumers of real-time settlement status data.",
+      "interest": "Accurate, timely settlement confirmation to manage exposure.",
+      "influence": "medium"
+    },
+    {
+      "row_key": "STK-005",
+      "name": "IT Architecture",
+      "stakeholder_type": "technical",
+      "role": "Integration design and system connectivity approvals.",
+      "interest": "Clean integration patterns, minimal technical debt introduced.",
+      "influence": "medium"
+    }
+  ],
+  "open_questions": [],
+  "completeness": 90,
+  "confidence": "high"
+}

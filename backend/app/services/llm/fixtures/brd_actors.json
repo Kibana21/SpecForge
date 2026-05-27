@@ -1,0 +1,42 @@
+{
+  "actors": [
+    {
+      "row_key": "ACT-001",
+      "name": "Operations Analyst",
+      "actor_type": "human",
+      "description": "Primary user who reviews exception queues, resolves discrepancies, and approves reconciled batches.",
+      "interactions": "Initiates manual overrides; receives exception alerts; approves batch closures."
+    },
+    {
+      "row_key": "ACT-002",
+      "name": "Core Ledger System",
+      "actor_type": "system",
+      "description": "Tier-1 system of record for all financial transactions. Source of truth for debit/credit postings.",
+      "interactions": "Publishes transaction events; receives settlement confirmation callbacks."
+    },
+    {
+      "row_key": "ACT-003",
+      "name": "Payments Gateway",
+      "actor_type": "system",
+      "description": "Tier-1 system that routes outgoing and incoming payment instructions to external networks.",
+      "interactions": "Provides payment execution status; receives reconciliation match results."
+    },
+    {
+      "row_key": "ACT-004",
+      "name": "Reporting Warehouse",
+      "actor_type": "system",
+      "description": "Tier-2 data warehouse used for management reporting and regulatory submissions.",
+      "interactions": "Consumes reconciliation output; provides historical settlement data for audit."
+    },
+    {
+      "row_key": "ACT-005",
+      "name": "Compliance Officer",
+      "actor_type": "human",
+      "description": "Reviews audit logs and exception reports for regulatory examination preparation.",
+      "interactions": "Reads audit trail reports; approves regulatory submission packages."
+    }
+  ],
+  "open_questions": [],
+  "completeness": 90,
+  "confidence": "high"
+}

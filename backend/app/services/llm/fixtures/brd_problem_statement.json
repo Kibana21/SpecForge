@@ -1,0 +1,12 @@
+{
+  "problem_statement": "Mock BRD problem statement: The current settlement reconciliation process relies on manual matching of transaction records across three disparate systems, resulting in an average 5-day resolution cycle for discrepancies. This creates significant operational risk, regulatory exposure, and customer dissatisfaction when payment delays cascade into downstream obligations.",
+  "root_causes": [
+    "Lack of a unified transaction identifier across the core ledger, payments gateway, and reporting warehouse.",
+    "Manual export-import workflows between systems with no automated exception flagging.",
+    "Absence of real-time event streaming means discrepancies are only detected in end-of-day batch runs.",
+    "No single source of truth for settlement status, leading to duplicated effort across operations teams."
+  ],
+  "open_questions": [],
+  "completeness": 90,
+  "confidence": "high"
+}

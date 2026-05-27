@@ -1,0 +1,28 @@
+{
+  "assumptions": [
+    {
+      "row_key": "ASM-001",
+      "assumption": "The core ledger system API will be available for real-time event streaming by project kick-off (Q3 2026).",
+      "impact_if_wrong": "The reconciliation engine cannot operate in real time; the initiative falls back to batch processing, partially negating OBJ-001.",
+      "owner": "IT Architecture",
+      "cb_scope_ref": "assumption_001"
+    },
+    {
+      "row_key": "ASM-002",
+      "assumption": "Operations team headcount remains stable during the transition — no planned reorganisation that would change analyst responsibilities.",
+      "impact_if_wrong": "Training and change management effort increases significantly; go-live date may slip by 4–6 weeks.",
+      "owner": "Head of Operations",
+      "cb_scope_ref": "assumption_002"
+    },
+    {
+      "row_key": "ASM-003",
+      "assumption": "The payments gateway will adopt the unified transaction ID schema agreed by IT Architecture without requiring a major gateway upgrade.",
+      "impact_if_wrong": "A gateway upgrade adds 3–4 months to the timeline and requires a separate business case.",
+      "owner": "Payments Gateway Team Lead",
+      "cb_scope_ref": null
+    }
+  ],
+  "open_questions": [],
+  "completeness": 90,
+  "confidence": "high"
+}
