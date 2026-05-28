@@ -53,6 +53,40 @@
   /* Radius */
   --radius-sm: 6px; --radius-md: 8px; --radius-lg: 12px; --radius-xl: 16px;
   --radius: 0.625rem; /* shadcn/ui base radius (≈10px) */
+
+  /* ── FRS (E4c) — Layer accents ─────────────────────────────────────────── */
+  --frs-layer-foundation:        #B45309;   /* amber-700 — Layer 0 cross-cutting standards */
+  --frs-layer-foundation-bg:     #FEF3C7;
+  --frs-layer-foundation-border: #FCD34D;
+
+  --frs-layer-vertical:          var(--accent);
+  --frs-layer-vertical-bg:       var(--accent-subtle);
+  --frs-layer-vertical-border:   var(--accent-subtle);
+
+  --frs-layer-cross-cutting:     #2C5A7A;
+  --frs-layer-cross-cutting-bg:  #E0F2FE;
+  --frs-layer-cross-cutting-border: #BAE6FD;
+
+  /* FRS Priority pill colours (P0–P3) */
+  --frs-priority-p0:        #DC2626;
+  --frs-priority-p0-bg:     #FEE2E2;
+  --frs-priority-p1:        #D97706;
+  --frs-priority-p1-bg:     #FEF3C7;
+  --frs-priority-p2:        #2563EB;
+  --frs-priority-p2-bg:     #DBEAFE;
+  --frs-priority-p3:        #6B7280;
+  --frs-priority-p3-bg:     #F3F4F6;
+
+  /* FRS module rail */
+  --frs-rail-active-bg:     var(--accent-subtle);
+  --frs-rail-active-border: var(--accent);
+  --frs-rail-hover-bg:      var(--bg-elevated);
+
+  /* Construction-site theater */
+  --frs-theater-bg:           #FAFAF9;
+  --frs-theater-step-done:    var(--accent);
+  --frs-theater-step-current: #2563EB;
+  --frs-theater-step-queue:   #D6D3D1;
 }
 
 * {

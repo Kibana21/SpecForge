@@ -35,6 +35,9 @@ import type {
   DocumentSection,
   ExtractedRequirement,
   FactsFilter,
+  FrsBundleReadiness,
+  FrsDetail,
+  FrsFindingsResponse,
   GapQuestion,
   ProjectCreateWizard,
   ProjectDetail,
@@ -433,6 +436,74 @@ export const api = {
       }),
     discoverEnhance: (projectId: string, body: { question_key: string; draft: string }) =>
       apiFetch<{ enhanced: string }>(`/api/projects/${projectId}/artifacts/brd/discover/enhance`, {
+        method: 'POST', body: JSON.stringify(body),
+      }),
+  },
+
+  frs: {
+    get: (projectId: string) =>
+      apiFetch<FrsDetail>(`/api/projects/${projectId}/artifacts/frs`),
+    readiness: (projectId: string) =>
+      apiFetch<FrsBundleReadiness>(`/api/projects/${projectId}/artifacts/frs/readiness`, { method: 'POST' }),
+    generate: (projectId: string, body?: { brief?: string }) =>
+      apiFetch<FrsDetail>(`/api/projects/${projectId}/artifacts/frs/generate`, {
+        method: 'POST', body: JSON.stringify(body ?? {}),
+      }),
+    modularize: (projectId: string) =>
+      apiFetch<FrsDetail>(`/api/projects/${projectId}/artifacts/frs/modularize`, { method: 'POST' }),
+    resetGenerating: (projectId: string) =>
+      apiFetch<{ status: string }>(`/api/projects/${projectId}/artifacts/frs/reset-generating`, { method: 'POST' }),
+    answer: (projectId: string, body: { answer: string; seq?: number }) =>
+      apiFetch<FrsDetail>(`/api/projects/${projectId}/artifacts/frs/answer`, {
+        method: 'POST', body: JSON.stringify(body),
+      }),
+    validate: (projectId: string) =>
+      apiFetch<FrsFindingsResponse>(`/api/projects/${projectId}/artifacts/frs/validate`, { method: 'POST' }),
+    findings: (projectId: string) =>
+      apiFetch<FrsFindingsResponse>(`/api/projects/${projectId}/artifacts/frs/findings`),
+    resolveDecision: (
+      projectId: string,
+      decisionRowId: string,
+      body: { chosen_index: number; status: 'accepted_ai' | 'overridden' | 'dismissed' },
+    ) =>
+      apiFetch<{ row_key: string; resolution_status: string }>(
+        `/api/projects/${projectId}/artifacts/frs/decisions/${decisionRowId}/resolve`,
+        { method: 'POST', body: JSON.stringify(body) },
+      ),
+    editRow: (
+      projectId: string,
+      table: string,
+      rowId: string,
+      fields: Record<string, unknown>,
+      opts?: { lock?: boolean; expected_version?: number },
+    ) =>
+      apiFetch<{ id: string; row_key: string; version: number }>(
+        `/api/projects/${projectId}/artifacts/frs/${table}/${rowId}/edit`,
+        { method: 'POST', body: JSON.stringify({ fields, ...opts }) },
+      ),
+    deleteRow: (projectId: string, table: string, rowId: string) =>
+      apiFetch<{ deleted: boolean }>(`/api/projects/${projectId}/artifacts/frs/${table}/${rowId}/delete`, { method: 'POST' }),
+    unlockRow: (projectId: string, table: string, rowId: string) =>
+      apiFetch<{ unlocked: boolean }>(`/api/projects/${projectId}/artifacts/frs/${table}/${rowId}/unlock`, { method: 'POST' }),
+    restoreRow: (projectId: string, table: string, rowId: string) =>
+      apiFetch<{ id: string; row_key: string; version: number }>(
+        `/api/projects/${projectId}/artifacts/frs/${table}/${rowId}/restore`,
+        { method: 'POST' },
+      ),
+    rowHistory: (projectId: string, table: string, rowId: string) =>
+      apiFetch<unknown[]>(`/api/projects/${projectId}/artifacts/frs/${table}/${rowId}/history`),
+    discoverAnalyze: (projectId: string) =>
+      apiFetch<{ categories: unknown[]; questions: unknown[] }>(
+        `/api/projects/${projectId}/artifacts/frs/discover/analyze`,
+        { method: 'POST' },
+      ),
+    discoverAnswer: (projectId: string, qKey: string, body: { answer: string }) =>
+      apiFetch<{ q_key: string; answered: boolean }>(
+        `/api/projects/${projectId}/artifacts/frs/discover/${qKey}/answer`,
+        { method: 'POST', body: JSON.stringify(body) },
+      ),
+    discoverEnhance: (projectId: string, body: { brief: string }) =>
+      apiFetch<{ enhanced: string }>(`/api/projects/${projectId}/artifacts/frs/discover/enhance`, {
         method: 'POST', body: JSON.stringify(body),
       }),
   },

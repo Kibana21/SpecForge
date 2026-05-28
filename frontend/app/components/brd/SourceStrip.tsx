@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { ChevronDown, ChevronUp, CheckCircle2, Clock, AlertTriangle, Brain, FileText, Sparkles } from 'lucide-react'
+import { ChevronDown, ChevronUp, CheckCircle2, Clock, AlertTriangle, Brain, FileText, Sparkles, BookOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { BrdBundleReadiness } from '@/lib/types'
 
@@ -8,6 +8,15 @@ interface Props {
   projectId: string
   readiness: BrdBundleReadiness
   cbStatus?: string
+  /** When provided, renders a 4th BRD layer row below CB (used by FRS Builder). */
+  brdStatus?: string
+  brdCounts?: {
+    brs?: number
+    objectives?: number
+    risks?: number
+    kpis?: number
+    stakeholders?: number
+  }
   onManageSources?: () => void
 }
 
@@ -73,7 +82,7 @@ function SourceRow({ label, description, status, accentColor, icon, expandedCont
   )
 }
 
-export function SourceStrip({ readiness, cbStatus, onManageSources }: Props) {
+export function SourceStrip({ readiness, cbStatus, brdStatus, brdCounts, onManageSources }: Props) {
   const totalDocs = readiness.docs?.length ?? 0
   const readyDocs = readiness.docs?.filter((d) => d.indexing_status === 'done').length ?? 0
   const hasPendingDocs = readiness.pending_doc_count > 0
@@ -166,6 +175,39 @@ export function SourceStrip({ readiness, cbStatus, onManageSources }: Props) {
         accentColor="border-l-green-500"
         icon={<Sparkles size={13} />}
       />
+
+      {/* BRD (optional 4th layer — only shown when brdStatus is provided, e.g. FRS Builder) */}
+      {brdStatus && (
+        <SourceRow
+          label="BRD"
+          description={
+            brdStatus === 'validated' && brdCounts
+              ? `${brdCounts.brs ?? 0} BRs · ${brdCounts.objectives ?? 0} objectives · ${brdCounts.risks ?? 0} risks · ${brdCounts.kpis ?? 0} KPIs`
+              : brdStatus === 'generating'
+              ? 'Generating…'
+              : brdStatus === 'validated'
+              ? 'Validated ✓'
+              : 'Draft — not validated'
+          }
+          status={
+            !brdStatus ? 'missing' :
+            brdStatus === 'validated' ? 'ready' :
+            brdStatus === 'generating' ? 'pending' : 'stale'
+          }
+          accentColor="border-l-pink-500"
+          icon={<BookOpen size={13} />}
+          expandedContent={
+            brdStatus === 'validated' && brdCounts ? (
+              <div className="space-y-1 text-xs text-[var(--text-secondary)]">
+                <p>This FRS will be grounded on every BRD row.</p>
+                <p className="text-[var(--text-tertiary)]">
+                  Stakeholders: {brdCounts.stakeholders ?? 0}
+                </p>
+              </div>
+            ) : undefined
+          }
+        />
+      )}
     </div>
   )
 }

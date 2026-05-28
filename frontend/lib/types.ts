@@ -825,3 +825,189 @@ export interface BrdDetail {
     filename: string; parse_status: string; included: boolean
   }>
 }
+
+// ── FRS (E4c · Stage A) ───────────────────────────────────────────────────────
+
+export type FrsLayer = 'foundation' | 'vertical' | 'cross_cutting'
+export type FrsPriority = 'P0' | 'P1' | 'P2' | 'P3'
+export type FrsInterfaceKind = 'ui_surface' | 'api' | 'event'
+export type FrsInterfaceDirection = 'inbound' | 'outbound' | null
+export type FrsActorRelationship = 'primary_user' | 'dependency' | 'external_system' | 'downstream_consumer'
+export type FrsDecisionStatus = 'open' | 'accepted_ai' | 'overridden' | 'dismissed'
+export type FrsTraceKind =
+  | 'brd_business_requirement' | 'brd_objective' | 'brd_kpi' | 'brd_risk' | 'brd_text_block'
+  | 'nfr_driver' | 'app_fact' | 'doc_section' | 'discover_qa' | 'within_frs'
+
+// All FRS rows share these fields (versioned row mixin)
+interface FrsRowBase {
+  id: string
+  document_id: string
+  row_key: string
+  version: number
+  is_current: boolean
+  is_locked: boolean
+  status: 'active' | 'removed'
+  source: 'ai' | 'human' | 'regeneration'
+  created_by: string | null
+  created_at: string
+}
+
+export interface FrsModuleActorRow extends FrsRowBase {
+  module_row_key: string
+  actor_name: string
+  relationship: FrsActorRelationship
+  notes: string
+}
+
+export interface FrsModuleResponsibilityRow extends FrsRowBase {
+  module_row_key: string
+  responsibility: string
+  frs_refs: string[]
+}
+
+export interface FrsModuleInterfaceRow extends FrsRowBase {
+  module_row_key: string
+  interface_kind: FrsInterfaceKind
+  direction: FrsInterfaceDirection
+  transport: string | null
+  name: string
+  counterpart: string | null
+  user_role: string | null
+  purpose: string
+  frs_ref: string | null
+}
+
+export interface FrsModuleDataEntityRow extends FrsRowBase {
+  module_row_key: string
+  entity_name: string
+  business_purpose: string
+  source_of_truth: string
+}
+
+export interface FrsSpecRow extends FrsRowBase {
+  module_row_key: string
+  title: string
+  priority: FrsPriority
+  layer: FrsLayer
+  br_refs: string[]
+  nfr_refs: string[]
+  depends_on: string[]
+  narrative: string
+  independent_test: string
+  data_and_validation: string
+  errors_and_edge_cases: string
+  observability: string
+  implementation_tasks: Array<{ task: string; done: boolean }>
+  completeness: number
+  confidence: 'high' | 'medium' | 'low'
+}
+
+export interface FrsSpecDecisionRow extends FrsRowBase {
+  spec_row_key: string | null
+  module_row_key: string | null
+  question: string
+  options: Array<{ label: string; description: string; implications: string }>
+  recommended_index: number
+  recommended_rationale: string
+  user_chosen_index: number | null
+  resolution_status: FrsDecisionStatus
+}
+
+export interface FrsModuleRow extends FrsRowBase {
+  name: string
+  slug: string
+  layer: FrsLayer
+  scope_in: string
+  scope_out: string
+  summary: string
+  figma_root_link: string | null
+  completeness: number
+  confidence: 'high' | 'medium' | 'low'
+}
+
+// Hydrated module returned by GET /artifacts/frs — module + children inline
+export interface FrsModuleHydrated extends FrsModuleRow {
+  actors: FrsModuleActorRow[]
+  responsibilities: FrsModuleResponsibilityRow[]
+  interfaces: FrsModuleInterfaceRow[]
+  data_entities: FrsModuleDataEntityRow[]
+  backlog: FrsSpecRow[]
+  decisions: FrsSpecDecisionRow[]
+}
+
+export interface FrsDocument {
+  id: string
+  project_id: string
+  artifact_type: 'frs'
+  status: 'in_interview' | 'generating' | 'validated'
+  unit_status: Record<string, { completeness?: number; confidence?: string } | string | boolean | null> | null
+  validated_at: string | null
+  validated_by: string | null
+  validated_snapshot_key: string | null
+  created_at: string
+  updated_at: string | null
+}
+
+export interface FrsMessage {
+  id: string
+  seq: number
+  role: string
+  content: string
+  citations: unknown[]
+  meta: Record<string, unknown>
+  created_at: string
+}
+
+export interface FrsDetail {
+  document: FrsDocument | null
+  modules: FrsModuleHydrated[]
+  messages: FrsMessage[]
+  sources: Array<{ id: string; source_document_id: string | null; included: boolean }>
+  decisions: FrsSpecDecisionRow[]
+}
+
+export interface FrsFinding {
+  check_id: string
+  description: string
+  group: 'critical' | 'major' | 'minor' | 'coverage' | 'warnings'
+  row_key: string | null
+  suggested_fix: string
+  target_ref: string | null
+}
+
+export interface FrsFindingsSummary {
+  total: number
+  critical: number
+  major: number
+  minor: number
+  coverage: number
+  warnings: number
+  blocking: number
+}
+
+export interface FrsFindingsResponse {
+  ok?: boolean
+  summary: FrsFindingsSummary
+  findings: FrsFinding[]
+}
+
+export interface FrsBundleReadiness {
+  can_generate: boolean
+  blocking_reason: string | null
+  docs_all_ready: boolean
+  docs_ready_count: number
+  docs_total_count: number
+  docs_pending_names: string[]
+  docs_failed_names: string[]
+  cb_ready: boolean
+  cb_status: string | null
+  brd_ready: boolean
+  brd_status: string | null
+  brd_summary: {
+    br_count: number
+    objective_count: number
+    risk_count: number
+    kpi_count: number
+    stakeholder_count: number
+  } | null
+}

@@ -35,6 +35,14 @@ from app.models.brd import (
     BrdOpenQuestion, BrdPhase, BrdProcessStep, BrdReference, BrdReportRequirement,
     BrdRisk, BrdScopeItem, BrdStakeholder, BrdTextBlock, BrdTraceability,
 )
+from app.models.frs import (
+    FrsModule, FrsModuleActor, FrsModuleResponsibility,
+    FrsModuleInterface, FrsModuleDataEntity,
+    FrsSpec, FrsSpecDecision,
+    FrsScreen, FrsUiComponent, FrsEndpoint, FrsDataEntity,
+    FrsBusinessRule, FrsAcceptanceScenario, FrsFunctionalRequirement,
+    FrsTraceability,
+)
 
 __all__ = [
     "ArtifactDocument",
@@ -103,4 +111,19 @@ __all__ = [
     "BrdStakeholder",
     "BrdTextBlock",
     "BrdTraceability",
+    "FrsModule",
+    "FrsModuleActor",
+    "FrsModuleResponsibility",
+    "FrsModuleInterface",
+    "FrsModuleDataEntity",
+    "FrsSpec",
+    "FrsSpecDecision",
+    "FrsScreen",
+    "FrsUiComponent",
+    "FrsEndpoint",
+    "FrsDataEntity",
+    "FrsBusinessRule",
+    "FrsAcceptanceScenario",
+    "FrsFunctionalRequirement",
+    "FrsTraceability",
 ]

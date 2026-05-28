@@ -1247,6 +1247,45 @@ async def _incorporate_brd_answer_bg(project_id: str, question_seq: int | None) 
         raise
 
 
+# ── FRS generation ────────────────────────────────────────────────────────────
+
+@celery_app.task(name="workers.tasks.generate_frs", bind=True, max_retries=2, default_retry_delay=10)
+def generate_frs(self, project_id: str, brief: str | None = None) -> dict:
+    return _run_async(_generate_frs(project_id, brief))
+
+
+async def _generate_frs(project_id: str, brief: str | None) -> dict:
+    from uuid import UUID as _UUID
+    from sqlalchemy import select as _select
+    from app.db import AsyncSessionLocal
+    from app.models.artifact import ArtifactDocument
+    from app.models.project import Project
+    from app.services.artifacts.frs_orchestrator import generate_frs_all
+
+    async with AsyncSessionLocal() as db:
+        project = await db.get(Project, _UUID(project_id))
+        if project is None:
+            log.error("generate_frs project_id=%s not found", project_id)
+            return {"ok": False, "error": "project_not_found"}
+        try:
+            await generate_frs_all(project, db, brief=brief)
+            return {"ok": True}
+        except Exception:
+            log.exception("generate_frs failed project_id=%s", project_id)
+            # Reset stuck status so the user isn't trapped in 'generating'
+            async with AsyncSessionLocal() as db2:
+                doc = (await db2.execute(
+                    _select(ArtifactDocument).where(
+                        ArtifactDocument.project_id == _UUID(project_id),
+                        ArtifactDocument.artifact_type == "frs",
+                    )
+                )).scalar_one_or_none()
+                if doc and doc.status == "generating":
+                    doc.status = "in_interview"
+                    await db2.commit()
+            raise
+
+
 async def _generate_ru(task, project_id: str) -> dict:
     try:
         UUID(project_id)

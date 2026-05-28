@@ -151,10 +151,81 @@ BRD_UNIT_DISCOVER_MAP: dict[str, list[str]] = {
 BRD_QUESTION_KEYS: list[str] = [q["key"] for q in BRD_DISCOVER_QUESTIONS]
 BRD_QUESTION_BY_KEY: dict[str, dict] = {q["key"]: q for q in BRD_DISCOVER_QUESTIONS}
 
+# ── FRS Discover catalog (12 questions, 9 categories) ─────────────────────────
+
+FRS_DISCOVER_CATEGORIES: list[dict] = [
+    {"key": "scope",        "emoji": "🎯", "label": "Scope",        "color": "emerald"},
+    {"key": "personas",     "emoji": "👥", "label": "Personas",     "color": "sky"},
+    {"key": "integrations", "emoji": "🔄", "label": "Integrations", "color": "violet"},
+    {"key": "data",         "emoji": "📊", "label": "Data",         "color": "amber"},
+    {"key": "nfrs",         "emoji": "⚡", "label": "NFRs",         "color": "yellow"},
+    {"key": "security",     "emoji": "🛡", "label": "Security",     "color": "rose"},
+    {"key": "errors",       "emoji": "⚠",  "label": "Errors",       "color": "orange"},
+    {"key": "ui",           "emoji": "🎨", "label": "UI",           "color": "pink"},
+    {"key": "delivery",     "emoji": "🚀", "label": "Delivery",     "color": "blue"},
+]
+
+FRS_DISCOVER_QUESTIONS: list[dict] = [
+    # 🎯 Scope (2)
+    {"key": "frs_1a", "category": "scope",
+     "text": "What user workflows are P0 in this FRS bundle?"},
+    {"key": "frs_1b", "category": "scope",
+     "text": "Any modules you'd like to be pre-defined? (locks high-confidence boundaries the AI shouldn't override)"},
+    # 👥 Personas (1)
+    {"key": "frs_2a", "category": "personas",
+     "text": "Who are the primary roles? (e.g. Customer, Operator, Auditor, System)"},
+    # 🔄 Integrations (2)
+    {"key": "frs_3a", "category": "integrations",
+     "text": "Which external systems will the modules call? (Email service, CRM, payment gateway, KYC provider, …)"},
+    {"key": "frs_3b", "category": "integrations",
+     "text": "Sync API or async events for cross-module communication?"},
+    # 📊 Data (1)
+    {"key": "frs_4a", "category": "data",
+     "text": "Source of truth for the main entities? Read vs write patterns?"},
+    # ⚡ NFRs (1)
+    {"key": "frs_5a", "category": "nfrs",
+     "text": "Latency / availability / scalability targets you care about?"},
+    # 🛡 Security (2)
+    {"key": "frs_6a", "category": "security",
+     "text": "Auth/RBAC model? Data sensitivity per entity?"},
+    {"key": "frs_6b", "category": "security",
+     "text": "Audit / compliance requirements that drive design?"},
+    # ⚠ Errors (1)
+    {"key": "frs_7a", "category": "errors",
+     "text": "Failure-handling strategy — retry, queue, fail-fast?"},
+    # 🎨 UI (1)
+    {"key": "frs_8a", "category": "ui",
+     "text": "Will Figma designs be provided? Where? (Stage 2 will gate UI specs on these)"},
+    # 🚀 Delivery (1)
+    {"key": "frs_9a", "category": "delivery",
+     "text": "Phasing — which modules must ship first?"},
+]
+
+FRS_PROJECT_PREFILL: dict[str, "Callable[[Project], str]"] = {  # type: ignore[name-defined]
+    # No direct prefills for FRS — all questions go through LLM analysis
+}
+
+FRS_LLM_ANALYSIS_KEYS: list[str] = [
+    q["key"] for q in FRS_DISCOVER_QUESTIONS if q["key"] not in FRS_PROJECT_PREFILL
+]
+
+# Maps each FRS DSPy unit to the question keys that feed it
+FRS_UNIT_DISCOVER_MAP: dict[str, list[str]] = {
+    # Stage A: modularize uses scope/personas/integrations/data/delivery
+    "modularize":     ["frs_1a", "frs_1b", "frs_2a", "frs_3a", "frs_3b", "frs_4a", "frs_9a"],
+    # Stage B: design_module uses NFRs/security/errors/UI + reuses data
+    "design_module":  ["frs_4a", "frs_5a", "frs_6a", "frs_6b", "frs_7a", "frs_8a"],
+}
+
+FRS_QUESTION_KEYS: list[str] = [q["key"] for q in FRS_DISCOVER_QUESTIONS]
+FRS_QUESTION_BY_KEY: dict[str, dict] = {q["key"]: q for q in FRS_DISCOVER_QUESTIONS}
+
 # ── Routing helper ─────────────────────────────────────────────────────────────
 
 def get_catalog_for_artifact(artifact_type: str) -> tuple[list[dict], dict, list[str]]:
     """Return (questions, prefill_map, llm_analysis_keys) for the given artifact type."""
     if artifact_type == "brd":
         return BRD_DISCOVER_QUESTIONS, BRD_PROJECT_PREFILL, BRD_LLM_ANALYSIS_KEYS
+    if artifact_type == "frs":
+        return FRS_DISCOVER_QUESTIONS, FRS_PROJECT_PREFILL, FRS_LLM_ANALYSIS_KEYS
     return DISCOVER_QUESTIONS, PROJECT_PREFILL, LLM_ANALYSIS_KEYS

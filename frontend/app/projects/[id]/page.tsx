@@ -27,11 +27,12 @@ import { ArtifactBuilderPanel } from '@/app/components/ArtifactBuilderPanel'
 import { InterviewPanel } from '@/app/components/InterviewPanel'
 import { DocumentViewer } from '@/app/components/DocumentViewer'
 import { BrdBuilderView } from '@/app/components/brd/BrdBuilderView'
+import { FrsBuilderView } from '@/app/components/frs/FrsBuilderView'
 import type { DocumentRead } from '@/lib/types'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type View = 'interview' | 'concept-brief' | 'brd' | null
+type View = 'interview' | 'concept-brief' | 'brd' | 'frs' | null
 
 // ── NavItem helper ────────────────────────────────────────────────────────────
 
@@ -144,7 +145,7 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
   const [editing, setEditing] = useState(false)
   const [view, setView] = useState<View>(() => {
     const v = searchParams.get('view')
-    return (v === 'interview' || v === 'concept-brief' || v === 'brd') ? v : null
+    return (v === 'interview' || v === 'concept-brief' || v === 'brd' || v === 'frs') ? v : null
   })
   const [selectedDoc, setSelectedDoc] = useState<DocumentRead | null>(null)
   const [staleBannerDismissed, setStaleBannerDismissed] = useState<boolean>(() => {
@@ -158,6 +159,19 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
     `brd-detail-${projectId}`,
     () => api.brd.get(projectId),
     { revalidateOnFocus: false },
+  )
+  const { data: frsDetail } = useSWR(
+    `frs-detail-${projectId}`,
+    () => api.frs.get(projectId),
+    {
+      revalidateOnFocus: false,
+      refreshInterval: (data) => {
+        const status = data?.document?.status
+        if (status === 'generating') return 2000
+        if (data?.document?.unit_status?.['_current_unit']) return 2000
+        return 0
+      },
+    },
   )
   const { openVersionPanel } = useProjectContext()
 
@@ -281,6 +295,25 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
     : brdStatus === 'validated' ? 'Validated'
     : 'Draft · in progress'
 
+  const brdValidated = brdStatus === 'validated'
+  const frsStatus = frsDetail?.document?.status ?? null
+  const frsStageAApproved = Boolean(frsDetail?.document?.unit_status?.['_stage_a_approved'])
+
+  function frsStatusBadge() {
+    if (!frsStatus) return null
+    if (frsStatus === 'generating') return <span className="text-[9px] rounded px-1.5 py-0.5 bg-blue-100 text-blue-700 font-semibold animate-pulse">Generating…</span>
+    if (frsStatus === 'validated') return <span className="text-[9px] rounded px-1.5 py-0.5 bg-emerald-100 text-emerald-700 font-semibold">Validated ✓</span>
+    if (frsStageAApproved) return <span className="text-[9px] rounded px-1.5 py-0.5 bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200">Stage 1 ✓</span>
+    if (frsStatus === 'in_interview') return <span className="text-[9px] rounded px-1.5 py-0.5 bg-amber-100 text-amber-700 font-semibold">Draft</span>
+    return null
+  }
+  const frsSublabel = !frsStatus
+    ? (brdValidated ? 'Functional Specifications' : 'Unlocks after BRD')
+    : frsStatus === 'generating' ? 'Modularizing…'
+    : frsStatus === 'validated' ? 'Validated'
+    : frsStageAApproved ? 'Stage 1 approved · Stage 2 ready'
+    : 'Draft · in progress'
+
   // 'in_discover' | 'generating' | 'in_interview' (=generated, chatting) | 'validated' | null (not started)
   function cbStatusBadge() {
     if (!cbStatus) return null
@@ -338,16 +371,18 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
         {/* 4. FRS */}
         <NavItem
           label="FRS"
-          sublabel="Coming soon"
+          sublabel={frsSublabel}
           icon={<Layers size={14} />}
-          comingSoon
-          locked
+          active={view === 'frs'}
+          locked={!brdValidated}
+          badge={frsStatusBadge()}
+          onClick={brdValidated ? () => setView('frs') : undefined}
         />
 
-        {/* 5. Test Cases */}
+        {/* 5. Test Cases — unlocks after FRS validated (Stage B complete) */}
         <NavItem
           label="Test Cases"
-          sublabel="Coming soon"
+          sublabel={frsStatus === 'validated' ? 'Coming soon — FRS validated ✓' : 'Coming soon'}
           icon={<CheckSquare size={14} />}
           comingSoon
           locked
@@ -432,6 +467,15 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
     if (view === 'brd') {
       return (
         <BrdBuilderView
+          projectId={projectId}
+          onBack={() => setView(null)}
+        />
+      )
+    }
+
+    if (view === 'frs') {
+      return (
+        <FrsBuilderView
           projectId={projectId}
           onBack={() => setView(null)}
         />

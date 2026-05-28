@@ -1,0 +1,240 @@
+{
+  "modules": [
+    {
+      "row_key": "MOD-001",
+      "name": "Claim Intake",
+      "slug": "claim-intake",
+      "layer": "vertical",
+      "scope_in": "- Digital claim submission via chatbot conversation\n- Capture of claim type, incident details, and supporting documents\n- Initial structural validation of submitted data\n- Hand-off of validated claim payload to triage",
+      "scope_out": "- Identity verification (owned by MOD-002 Customer Identity)\n- Document intelligent validation (owned by MOD-003 Document Processing)\n- Claim adjudication (owned by Claims Operations, out of v1 scope)",
+      "summary": "Captures new insurance claims initiated by authenticated customers through the chatbot, validates the structural completeness of the submission, and hands off the claim payload to downstream triage.",
+      "actors": [
+        {"actor_name": "Customer", "relationship": "primary_user", "notes": "Initiates claim submission through chatbot conversation"},
+        {"actor_name": "Customer Identity", "relationship": "dependency", "notes": "Validates that customer is authenticated before intake"},
+        {"actor_name": "Document Processing", "relationship": "downstream_consumer", "notes": "Receives uploaded documents for OCR + validation"},
+        {"actor_name": "Claims Triage", "relationship": "downstream_consumer", "notes": "Receives validated claim payload"}
+      ],
+      "responsibilities": [
+        {"responsibility": "Accept claim submission from chatbot UI", "frs_refs": ["M001-FRS001"]},
+        {"responsibility": "Validate structural completeness of claim fields", "frs_refs": ["M001-FRS001"]},
+        {"responsibility": "Persist in-progress claim drafts", "frs_refs": ["M001-FRS002"]},
+        {"responsibility": "Emit claim_submitted event when intake completes", "frs_refs": ["M001-FRS003"]}
+      ],
+      "interfaces": [
+        {"interface_kind": "ui_surface", "direction": null, "transport": null, "name": "Claim Submission Conversation", "counterpart": null, "user_role": "Customer", "purpose": "Step-by-step chatbot dialog to capture incident details", "frs_ref": "M001-FRS001"},
+        {"interface_kind": "api", "direction": "outbound", "transport": "rest", "name": "verifyIdentity", "counterpart": "Customer Identity", "user_role": null, "purpose": "Confirm authenticated session before accepting intake", "frs_ref": "M001-FRS001"},
+        {"interface_kind": "event", "direction": "outbound", "transport": "event_bus", "name": "claim_submitted", "counterpart": "Claims Triage", "user_role": null, "purpose": "Hand off validated claim payload", "frs_ref": "M001-FRS003"},
+        {"interface_kind": "event", "direction": "outbound", "transport": "event_bus", "name": "documents_uploaded", "counterpart": "Document Processing", "user_role": null, "purpose": "Trigger OCR + validation pipeline", "frs_ref": "M001-FRS002"}
+      ],
+      "data_entities": [
+        {"entity_name": "claim_draft", "business_purpose": "Stores in-progress claim during intake conversation", "source_of_truth": "Claim Intake"}
+      ],
+      "frs_backlog": [
+        {"row_key": "M001-FRS001", "title": "Digital Claim Submission Flow", "priority": "P0", "br_refs": ["BR-001"], "description": "Step-by-step chatbot dialog that captures claim type, incident details, and submitter context; validates structural completeness before persisting the draft."},
+        {"row_key": "M001-FRS002", "title": "Supporting Document Upload", "priority": "P0", "br_refs": ["BR-002"], "description": "Customer attaches supporting documents to a claim draft; triggers asynchronous OCR + intelligent validation via Document Processing."},
+        {"row_key": "M001-FRS003", "title": "Claim Hand-off to Triage", "priority": "P0", "br_refs": ["BR-001", "BR-006"], "description": "On successful structural validation, emit claim_submitted event with the validated payload for downstream triage."}
+      ]
+    },
+    {
+      "row_key": "MOD-002",
+      "name": "Customer Identity",
+      "slug": "customer-identity",
+      "layer": "vertical",
+      "scope_in": "- Authentication of customers using policy number + DOB or SSO\n- Session management for the chatbot conversation\n- Authorization checks for claim actions",
+      "scope_out": "- Operator authentication (out of v1 scope)\n- Identity-document verification (owned by Document Processing for OCR-based ID checks)",
+      "summary": "Verifies customer identity at the start of every chatbot conversation and manages the session lifecycle so downstream modules can trust the caller.",
+      "actors": [
+        {"actor_name": "Customer", "relationship": "primary_user", "notes": "Provides credentials"},
+        {"actor_name": "Claim Intake", "relationship": "downstream_consumer", "notes": "Calls verifyIdentity"},
+        {"actor_name": "Claims Triage", "relationship": "downstream_consumer", "notes": "Reads validated identity context"}
+      ],
+      "responsibilities": [
+        {"responsibility": "Validate policy number + customer DOB or SSO assertion", "frs_refs": ["M002-FRS001"]},
+        {"responsibility": "Issue, refresh, and expire chatbot session tokens", "frs_refs": ["M002-FRS002"]},
+        {"responsibility": "Provide authorization context to downstream modules", "frs_refs": ["M002-FRS001"]}
+      ],
+      "interfaces": [
+        {"interface_kind": "api", "direction": "inbound", "transport": "rest", "name": "verifyIdentity", "counterpart": "Claim Intake", "user_role": null, "purpose": "Identity check before claim intake begins", "frs_ref": "M002-FRS001"},
+        {"interface_kind": "ui_surface", "direction": null, "transport": null, "name": "Authentication Dialog", "counterpart": null, "user_role": "Customer", "purpose": "Collect identity credentials at start of conversation", "frs_ref": "M002-FRS001"}
+      ],
+      "data_entities": [
+        {"entity_name": "session_token", "business_purpose": "Tracks active authenticated chatbot conversation", "source_of_truth": "Customer Identity"}
+      ],
+      "frs_backlog": [
+        {"row_key": "M002-FRS001", "title": "Customer Identity Verification", "priority": "P0", "br_refs": ["BR-008"], "description": "Verify customer identity using policy + DOB or SSO; issue session token on success."},
+        {"row_key": "M002-FRS002", "title": "Chatbot Session Lifecycle", "priority": "P1", "br_refs": ["BR-008"], "description": "Issue, refresh, and expire session tokens; revoke on logout or inactivity."}
+      ]
+    },
+    {
+      "row_key": "MOD-003",
+      "name": "Document Processing",
+      "slug": "document-processing",
+      "layer": "vertical",
+      "scope_in": "- Asynchronous OCR and structured extraction from uploaded documents\n- Intelligent validation against expected document templates\n- Storage of processed documents and extraction results",
+      "scope_out": "- Document upload UI (owned by Claim Intake)\n- Long-term archival (handled by enterprise storage policy)",
+      "summary": "Processes documents attached to a claim asynchronously: OCR, structured extraction, validation, and persistence of results so triage can consume them.",
+      "actors": [
+        {"actor_name": "Claim Intake", "relationship": "dependency", "notes": "Produces documents_uploaded events"},
+        {"actor_name": "Claims Triage", "relationship": "downstream_consumer", "notes": "Reads extracted document fields"},
+        {"actor_name": "OCR Provider", "relationship": "external_system", "notes": "External SaaS for OCR + classification"}
+      ],
+      "responsibilities": [
+        {"responsibility": "Trigger OCR for each uploaded document", "frs_refs": ["M003-FRS001"]},
+        {"responsibility": "Validate extracted fields against expected templates", "frs_refs": ["M003-FRS002"]},
+        {"responsibility": "Persist extraction results for downstream consumers", "frs_refs": ["M003-FRS001"]}
+      ],
+      "interfaces": [
+        {"interface_kind": "event", "direction": "inbound", "transport": "event_bus", "name": "documents_uploaded", "counterpart": "Claim Intake", "user_role": null, "purpose": "Trigger processing pipeline", "frs_ref": "M003-FRS001"},
+        {"interface_kind": "api", "direction": "outbound", "transport": "rest", "name": "ocrExtract", "counterpart": "OCR Provider", "user_role": null, "purpose": "Send document for OCR + classification", "frs_ref": "M003-FRS001"},
+        {"interface_kind": "event", "direction": "outbound", "transport": "event_bus", "name": "documents_processed", "counterpart": "Claims Triage", "user_role": null, "purpose": "Notify triage that documents are ready", "frs_ref": "M003-FRS002"}
+      ],
+      "data_entities": [
+        {"entity_name": "processed_document", "business_purpose": "Stores OCR results + validation outcome per document", "source_of_truth": "Document Processing"}
+      ],
+      "frs_backlog": [
+        {"row_key": "M003-FRS001", "title": "Document OCR Pipeline", "priority": "P0", "br_refs": ["BR-002"], "description": "Receive documents_uploaded event, call OCR provider, persist extraction results."},
+        {"row_key": "M003-FRS002", "title": "Extraction Validation", "priority": "P0", "br_refs": ["BR-002"], "description": "Validate extracted fields against expected templates; flag inconsistencies for triage."}
+      ]
+    },
+    {
+      "row_key": "MOD-004",
+      "name": "Conversational Assistance",
+      "slug": "conversational-assistance",
+      "layer": "vertical",
+      "scope_in": "- Natural language understanding of customer queries\n- Self-service information guidance for FAQs and policy questions\n- Escalation to human agent when bot confidence is low",
+      "scope_out": "- Underlying NLU model training (handled by Platform/AI Engineering)\n- Operator desktop (out of v1 scope)",
+      "summary": "Handles free-form customer queries during the conversation, provides self-service answers from policy + claims knowledge bases, and escalates to a human agent when confidence drops below threshold.",
+      "actors": [
+        {"actor_name": "Customer", "relationship": "primary_user", "notes": "Asks questions in natural language"},
+        {"actor_name": "Customer Identity", "relationship": "dependency", "notes": "Requires authenticated session"},
+        {"actor_name": "Human Agent", "relationship": "downstream_consumer", "notes": "Receives escalated conversations"},
+        {"actor_name": "Knowledge Base", "relationship": "external_system", "notes": "Source of FAQ and policy content"}
+      ],
+      "responsibilities": [
+        {"responsibility": "Interpret customer intent from natural language input", "frs_refs": ["M004-FRS001"]},
+        {"responsibility": "Provide self-service answers from knowledge base", "frs_refs": ["M004-FRS002"]},
+        {"responsibility": "Escalate to human agent on low confidence or explicit request", "frs_refs": ["M004-FRS003"]}
+      ],
+      "interfaces": [
+        {"interface_kind": "ui_surface", "direction": null, "transport": null, "name": "Free-form Chat Dialog", "counterpart": null, "user_role": "Customer", "purpose": "Open-ended conversational interface", "frs_ref": "M004-FRS001"},
+        {"interface_kind": "api", "direction": "outbound", "transport": "rest", "name": "searchKnowledge", "counterpart": "Knowledge Base", "user_role": null, "purpose": "Look up FAQs and policy content", "frs_ref": "M004-FRS002"},
+        {"interface_kind": "event", "direction": "outbound", "transport": "event_bus", "name": "escalation_requested", "counterpart": "Human Agent", "user_role": null, "purpose": "Hand off conversation to human agent", "frs_ref": "M004-FRS003"}
+      ],
+      "data_entities": [
+        {"entity_name": "conversation_turn", "business_purpose": "Stores each customer utterance and bot response with confidence score", "source_of_truth": "Conversational Assistance"}
+      ],
+      "frs_backlog": [
+        {"row_key": "M004-FRS001", "title": "Natural Language Understanding", "priority": "P0", "br_refs": ["BR-007"], "description": "Interpret customer utterances, classify intent, and extract relevant entities."},
+        {"row_key": "M004-FRS002", "title": "Self-Service Knowledge Lookup", "priority": "P0", "br_refs": ["BR-004"], "description": "Query knowledge base for FAQ / policy content matching the customer's intent."},
+        {"row_key": "M004-FRS003", "title": "Human Agent Escalation", "priority": "P0", "br_refs": ["BR-005"], "description": "Detect low-confidence or explicit-request scenarios; hand off the live conversation to a human agent with full context."}
+      ]
+    },
+    {
+      "row_key": "MOD-005",
+      "name": "Claims Notifications",
+      "slug": "claims-notifications",
+      "layer": "vertical",
+      "scope_in": "- Real-time claim status updates pushed to customers\n- Proactive notifications when status changes or actions are needed",
+      "scope_out": "- Marketing communications (out of scope)\n- Notification template authoring (handled by content team)",
+      "summary": "Delivers timely status updates and proactive notifications to customers about their claims, via in-chatbot messages and external channels.",
+      "actors": [
+        {"actor_name": "Customer", "relationship": "primary_user", "notes": "Receives notifications"},
+        {"actor_name": "Claims Triage", "relationship": "dependency", "notes": "Emits status_changed events"},
+        {"actor_name": "Document Processing", "relationship": "dependency", "notes": "Emits documents_processed events"},
+        {"actor_name": "Notification Channel", "relationship": "external_system", "notes": "Email + SMS + push providers"}
+      ],
+      "responsibilities": [
+        {"responsibility": "Listen to claim status events and decide notification eligibility", "frs_refs": ["M005-FRS001"]},
+        {"responsibility": "Render notification content from templates", "frs_refs": ["M005-FRS001"]},
+        {"responsibility": "Deliver via the customer's preferred channel", "frs_refs": ["M005-FRS002"]}
+      ],
+      "interfaces": [
+        {"interface_kind": "event", "direction": "inbound", "transport": "event_bus", "name": "claim_status_changed", "counterpart": "Claims Triage", "user_role": null, "purpose": "Trigger status notification", "frs_ref": "M005-FRS001"},
+        {"interface_kind": "event", "direction": "inbound", "transport": "event_bus", "name": "documents_processed", "counterpart": "Document Processing", "user_role": null, "purpose": "Trigger document-ready notification", "frs_ref": "M005-FRS001"},
+        {"interface_kind": "api", "direction": "outbound", "transport": "rest", "name": "sendNotification", "counterpart": "Notification Channel", "user_role": null, "purpose": "Deliver notification via email/SMS/push", "frs_ref": "M005-FRS002"}
+      ],
+      "data_entities": [
+        {"entity_name": "notification_record", "business_purpose": "Audit trail of every notification sent, including channel and delivery status", "source_of_truth": "Claims Notifications"}
+      ],
+      "frs_backlog": [
+        {"row_key": "M005-FRS001", "title": "Status Change Notification", "priority": "P0", "br_refs": ["BR-003"], "description": "Subscribe to claim status events and dispatch notifications when status materially changes."},
+        {"row_key": "M005-FRS002", "title": "Multi-channel Delivery", "priority": "P1", "br_refs": ["BR-003"], "description": "Deliver notifications via the customer's preferred channel (in-chat, email, SMS, push)."}
+      ]
+    },
+    {
+      "row_key": "MOD-000",
+      "name": "Cross-cutting Standards",
+      "slug": "cross-cutting-standards",
+      "layer": "foundation",
+      "scope_in": "- Common error response envelope used by every backend service\n- Audit logging convention applied to all material actions\n- RBAC base policies referenced by every feature module\n- Shared reference data (claim types, severity tiers, status codes)",
+      "scope_out": "- Module-specific business rules (handled per module)\n- Infrastructure setup (architecture concern)",
+      "summary": "Foundation FRSes shared by every feature module: error envelope, audit logging, RBAC base, and reference data. Feature FRS reference these via depends_on rather than duplicating rules.",
+      "actors": [
+        {"actor_name": "Claim Intake", "relationship": "downstream_consumer", "notes": "References these standards via depends_on"},
+        {"actor_name": "Customer Identity", "relationship": "downstream_consumer", "notes": "References these standards via depends_on"},
+        {"actor_name": "Document Processing", "relationship": "downstream_consumer", "notes": "References these standards via depends_on"},
+        {"actor_name": "Conversational Assistance", "relationship": "downstream_consumer", "notes": "References these standards via depends_on"},
+        {"actor_name": "Claims Notifications", "relationship": "downstream_consumer", "notes": "References these standards via depends_on"}
+      ],
+      "responsibilities": [
+        {"responsibility": "Define common error response envelope", "frs_refs": ["M000-FRS001"]},
+        {"responsibility": "Define audit logging standard", "frs_refs": ["M000-FRS002"]},
+        {"responsibility": "Define RBAC base policies", "frs_refs": ["M000-FRS003"]}
+      ],
+      "interfaces": [],
+      "data_entities": [
+        {"entity_name": "audit_log_entry", "business_purpose": "Standardized audit trail row format used by all feature modules", "source_of_truth": "Cross-cutting Standards"}
+      ],
+      "frs_backlog": [
+        {"row_key": "M000-FRS001", "title": "Common Error Response Envelope", "priority": "P0", "br_refs": ["BR-006"], "description": "Standardize error response shape across all backend services (status code, business code, message, correlation id, hints)."},
+        {"row_key": "M000-FRS002", "title": "Audit Logging Standard", "priority": "P0", "br_refs": ["BR-006"], "description": "Define the audit event schema and retention policy referenced by all feature modules."},
+        {"row_key": "M000-FRS003", "title": "RBAC Base Policies", "priority": "P0", "br_refs": ["BR-008"], "description": "Base RBAC roles + permissions referenced by every feature module's security spec."}
+      ]
+    }
+  ],
+  "spec_decisions": [
+    {
+      "row_key": "MOD-002-DEC-1",
+      "module_row_key": "MOD-002",
+      "spec_row_key": null,
+      "question": "Should chatbot session tokens be stored server-side (Redis) or client-side (signed JWT)?",
+      "options": [
+        {
+          "label": "Server-side (Redis)",
+          "description": "Opaque session ID held by client; full session data in Redis with TTL.",
+          "implications": "Easier revocation; adds Redis dependency; supports immediate session invalidation."
+        },
+        {
+          "label": "Client-side (signed JWT)",
+          "description": "Stateless JWT signed with rotating key; client holds full payload.",
+          "implications": "No Redis dependency; harder to revoke mid-session; requires careful key rotation."
+        }
+      ],
+      "recommended_index": 0,
+      "recommended_rationale": "Consistency with existing platform — Redis is already in use; easier revocation supports the audit requirements in MOD-000."
+    },
+    {
+      "row_key": "MOD-003-DEC-1",
+      "module_row_key": "MOD-003",
+      "spec_row_key": null,
+      "question": "Should document OCR run synchronously (block intake) or asynchronously (event-driven)?",
+      "options": [
+        {
+          "label": "Asynchronous (event-driven)",
+          "description": "Intake emits documents_uploaded event; Document Processing consumes asynchronously and emits documents_processed when complete.",
+          "implications": "Lower latency for intake; requires event bus; customer sees progressive status updates."
+        },
+        {
+          "label": "Synchronous (blocking)",
+          "description": "Intake calls OCR pipeline directly and waits for result before completing.",
+          "implications": "Simpler flow; intake latency can be 10-30s depending on document complexity; risk of timeout."
+        }
+      ],
+      "recommended_index": 0,
+      "recommended_rationale": "Asynchronous keeps the intake conversation responsive; aligns with the rest of the architecture's event-driven hand-offs (claim_submitted, status_changed)."
+    }
+  ],
+  "open_questions": [],
+  "completeness": 92,
+  "confidence": "high"
+}

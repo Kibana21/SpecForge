@@ -7,6 +7,7 @@ and the validated Concept Brief — assembled once, projected per-unit.
 from app.services.context.project_context import (
     AppFactEntry,
     AppLayer,
+    BrdLayer,
     BundleReadiness,
     CbLayer,
     DocInventoryEntry,
@@ -24,6 +25,7 @@ from app.services.context.coverage import (
 __all__ = [
     "AppFactEntry",
     "AppLayer",
+    "BrdLayer",
     "BundleReadiness",
     "CbLayer",
     "DocInventoryEntry",

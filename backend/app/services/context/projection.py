@@ -12,6 +12,7 @@ class UnitContext:
     app_brain: str
     doc_sections: str           # from depth_search() — caller provides this
     cb_context: str
+    brd_context: str            # populated for artifact_type='frs'
     discover_qa: str
     combined: str               # convenience: all layers concatenated
 
@@ -54,9 +55,14 @@ def project_for_unit(
 
     doc_sections should be passed in from a preceding depth_search() call.
     """
+    brd_context = ""
     if artifact_type == "brd":
         elements = _UNIT_CB_ELEMENTS.get(unit_key, ["text_blocks", "discover_qa"])
         cb_context = _project_cb(bundle.cb, elements)
+    elif artifact_type == "frs":
+        # FRS modularize grounds on the entire CB + entire BRD (full corpus rule).
+        cb_context = bundle.cb.formatted_context
+        brd_context = bundle.brd.formatted_context if bundle.brd else "(no BRD)"
     else:
         # For unknown artifact types, pass the full CB context
         cb_context = bundle.cb.formatted_context
@@ -66,12 +72,15 @@ def project_for_unit(
         "=== Project Documents ===\n" + (doc_sections or bundle.docs.outline_text),
         cb_context,
     ]
+    if brd_context:
+        combined_parts.append(brd_context)
     combined = "\n\n".join(p for p in combined_parts if p.strip())
 
     return UnitContext(
         app_brain=bundle.apps.formatted_context,
         doc_sections=doc_sections or bundle.docs.outline_text,
         cb_context=cb_context,
+        brd_context=brd_context,
         discover_qa=bundle.cb.discover_qa,
         combined=combined,
     )
