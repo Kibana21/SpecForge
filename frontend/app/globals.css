@@ -87,6 +87,26 @@
   --frs-theater-step-done:    var(--accent);
   --frs-theater-step-current: #2563EB;
   --frs-theater-step-queue:   #D6D3D1;
+
+  /* HTTP method palette (FrsEndpointCard) */
+  --frs-method-get:    #16A34A;
+  --frs-method-post:   #2563EB;
+  --frs-method-put:    #D97706;
+  --frs-method-patch:  #7C3AED;
+  --frs-method-delete: #DC2626;
+
+  /* Coverage galaxy */
+  --frs-coverage-covered:        var(--accent);
+  --frs-coverage-uncovered:      #DC2626;
+  --frs-coverage-uncovered-glow: rgba(220, 38, 38, 0.40);
+
+  /* Two-phase generation theater */
+  --frs-phase-a-bg:    var(--accent-subtle);
+  --frs-phase-a-bar:   var(--accent);
+  --frs-phase-b-bg:    #DBEAFE;
+  --frs-phase-b-bar:   #2563EB;
+  --frs-phase-b-done:  var(--accent);
+  --frs-phase-queue:   #E5E7EB;
 }
 
 * {

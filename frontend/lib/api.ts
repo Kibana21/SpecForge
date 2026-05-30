@@ -36,7 +36,9 @@ import type {
   ExtractedRequirement,
   FactsFilter,
   FrsBundleReadiness,
+  FrsCoverage,
   FrsDetail,
+  FrsFigmaLinkResponse,
   FrsFindingsResponse,
   GapQuestion,
   ProjectCreateWizard,
@@ -506,6 +508,31 @@ export const api = {
       apiFetch<{ enhanced: string }>(`/api/projects/${projectId}/artifacts/frs/discover/enhance`, {
         method: 'POST', body: JSON.stringify(body),
       }),
+    // ── Stage B ────────────────────────────────────────────────────────────
+    designModule: (projectId: string, moduleRowKey: string) =>
+      apiFetch<FrsDetail>(
+        `/api/projects/${projectId}/artifacts/frs/modules/${moduleRowKey}/design`,
+        { method: 'POST' },
+      ),
+    regenerateSpec: (
+      projectId: string, specRowKey: string,
+      scope: 'full' | 'ui_only' = 'full',
+    ) =>
+      apiFetch<FrsDetail>(
+        `/api/projects/${projectId}/artifacts/frs/specs/${specRowKey}/regenerate`,
+        { method: 'POST', body: JSON.stringify({ scope }) },
+      ),
+    setFigmaLink: (
+      projectId: string, specRowKey: string, body: { link: string },
+    ) =>
+      apiFetch<FrsFigmaLinkResponse>(
+        `/api/projects/${projectId}/artifacts/frs/specs/${specRowKey}/figma-link`,
+        { method: 'POST', body: JSON.stringify(body) },
+      ),
+    coverage: (projectId: string) =>
+      apiFetch<FrsCoverage>(`/api/projects/${projectId}/artifacts/frs/coverage`),
+    exportBundle: (projectId: string) =>
+      authedFetch(`/api/projects/${projectId}/artifacts/frs/export`).then(r => r.blob()),
   },
 
   apps: {

@@ -128,13 +128,94 @@ FRS_STAGE_B_UNIT = FrsUnitSpec(
     ],
     depends_on=["modularize"],
     unit_instruction=(
-        # Stage B's full instruction lives in dspy_frs.py and the E4c-2 plan.
-        "(Stage B — defined in E4c-frs-functional-design plan.)"
+        "You are a senior Solution Architect performing FRS Authoring per the "
+        "Functional Design guideline. For each FRS backlog stub in this module, "
+        "produce a development-ready FRS spec following the 12-section template:\n"
+        "  Intent · §1 UI Spec · §2 Backend Spec · §3 Data Spec · §4 Cross-Cutting · "
+        "Independent Test · Acceptance Scenarios · Functional Requirements · "
+        "Data & Validation · Errors & Edge Cases · Observability · "
+        "Implementation Tasks · Traceability.\n\n"
+
+        "HARD RULES (non-negotiable):\n"
+        "1. Every FRS spec MUST have ≥1 traceability row to a BR row_key (target_kind="
+        "   'brd_business_requirement'). If a backlog stub has empty br_refs, this is a "
+        "   Stage-A defect — emit an open_question rather than fabricating a trace.\n"
+        "2. Every FRS spec MUST have ≥6 acceptance_scenarios with ≥2 negative "
+        "   (is_negative=True). Negative scenarios cover failure / error / rejection paths.\n"
+        "3. Every FRS spec MUST have ≥1 functional_requirement. Each functional_requirement "
+        "   MUST reference ≥1 acceptance_scenario row_key via scenario_refs, AND each "
+        "   acceptance_scenario MUST reference ≥1 functional_requirement row_key via "
+        "   fr_refs (bidirectional coverage).\n"
+        "4. Use row_keys from current_specs JSON to preserve continuity; never invent new "
+        "   row_keys for existing specs. Locked specs (in locked_specs JSON) must be "
+        "   reproduced verbatim — do not modify their fields.\n\n"
+
+        "FIGMA-LINK BLOCKING GATE:\n"
+        "Check the module's interfaces (module_context.interfaces). If any have "
+        "interface_kind='ui_surface' AND no screen in current_specs for the target spec has "
+        "a figma_link (or the link is the sentinel '__none__'), OMIT the screens[] and "
+        "ui_components[] arrays for that spec. Instead, set ui_blocked_reason='figma_link_required' "
+        "and write a one-line note in narrative: '§1 UI Specification omitted pending Figma link.' "
+        "Do NOT fabricate figma_link URLs. Do NOT author UI spec content without a real link.\n\n"
+
+        "[SPEC-DECISION] AMBIGUITY:\n"
+        "If multiple valid implementations exist (e.g., 'strip or reject special chars', "
+        "'retry or fail-fast on timeout', 'eager or lazy load', 'hard-fail or soft-warn'), "
+        "emit a spec_decisions row with 2–4 MCQ options. Pick recommended_index (typically "
+        "the simpler/safer option) and author the FRS using that choice — the spec MUST be "
+        "internally consistent with the chosen option. The user will confirm/override later. "
+        "Open decisions are warnings, not majors — proceed.\n\n"
+
+        "DEPENDS_ON:\n"
+        "If this spec depends on a Cross-cutting Standards FRS (e.g., for error envelope, "
+        "audit pattern, RBAC base), list that FRS row_key in depends_on. Reference the "
+        "dependency in the appropriate section (e.g., 'Error handling follows the common "
+        "envelope defined in M000-FRS001 — see Depends on.').\n\n"
+
+        "TRACEABILITY (emit rows for):\n"
+        "  • Spec → ≥1 BR (target_kind='brd_business_requirement')\n"
+        "  • Spec → ≥1 BRD objective (target_kind='brd_objective', when applicable)\n"
+        "  • Each FR → ≥1 BR or scenario (target_kind='brd_business_requirement' or "
+        "    'within_frs')\n"
+        "  • Each scenario → ≥1 FR (target_kind='within_frs')\n"
+        "  • Optionally: spec → app_fact, doc_section, discover_qa, nfr_driver\n\n"
+
+        "SECTION-OMISSION RULE:\n"
+        "Omit only sections that are genuinely not relevant. Justify omission in narrative "
+        "with a one-line note. Examples:\n"
+        "  • Pure backend FRS (no ui_surface in module_interfaces) → omit screens, "
+        "    ui_components\n"
+        "  • Pure UI aggregation FRS → omit endpoints, data_entities\n"
+        "  • Stateless FRS → omit data_entities\n"
+        "Never omit acceptance_scenarios, functional_requirements, traceability — "
+        "those are mandatory.\n\n"
+
+        "ARCHITECTURE EXCLUSION:\n"
+        "Never author FRS sections for deployment, CI/CD, infrastructure provisioning, "
+        "runtime packaging, or environment setup. If a backlog stub appears to require "
+        "such content, set its completeness=0 and emit an open_question pointing the user "
+        "at the project's Architecture Design doc.\n\n"
+
+        "ROW_KEY CONVENTIONS:\n"
+        "  • Screens:          {spec_row_key}-SCR-1, -SCR-2, …\n"
+        "  • UI Components:    {spec_row_key}-CMP-1, -CMP-2, …\n"
+        "  • Endpoints:        {spec_row_key}-EP-1, -EP-2, …\n"
+        "  • Data entities:    {spec_row_key}-DE-1, -DE-2, …\n"
+        "  • Business rules:   {spec_row_key}-BR-1, -BR-2, … (local BR-1; not BRD BR)\n"
+        "  • Scenarios:        {spec_row_key}-AS-1, -AS-2, …\n"
+        "  • FRs:              {spec_row_key}-FR-1, -FR-2, …\n"
+        "  • Spec decisions:   {spec_row_key}-DEC-1, -DEC-2, …\n\n"
+
+        "COMPONENT TYPE GUIDANCE (UI):\n"
+        "Use CONCEPTUAL component types only — never library-specific. Acceptable values: "
+        "'input', 'textarea', 'dropdown', 'multi_select', 'checkbox', 'radio', 'button', "
+        "'link', 'table', 'card', 'tab', 'modal', 'accordion', 'date_picker', 'file_upload'.\n"
+        "Component library mapping is the downstream coding agent's job."
     ),
     discover_question_keys=[
         "frs_4a", "frs_5a", "frs_6a", "frs_6b", "frs_7a", "frs_8a",
     ],
-    timeout_seconds=120,
+    timeout_seconds=360,   # 6 min — gemini-2.5-flash CoT on a full FRS spec needs 3-5 min
 )
 
 

@@ -131,6 +131,18 @@ export const FRS_DECISION_STATUS_LABELS = {
 
 // ── Finding groups ────────────────────────────────────────────────────────────
 
+// ── HTTP method palette (FrsEndpointCard) ─────────────────────────────────────
+
+export const FRS_HTTP_METHOD_STYLES = {
+  GET:    { color: 'text-green-700',  bg: 'bg-green-50',  border: 'border-green-200',  dot: 'bg-green-500'  },
+  POST:   { color: 'text-blue-700',   bg: 'bg-blue-50',   border: 'border-blue-200',   dot: 'bg-blue-500'   },
+  PUT:    { color: 'text-amber-700',  bg: 'bg-amber-50',  border: 'border-amber-200',  dot: 'bg-amber-500'  },
+  PATCH:  { color: 'text-violet-700', bg: 'bg-violet-50', border: 'border-violet-200', dot: 'bg-violet-500' },
+  DELETE: { color: 'text-red-700',    bg: 'bg-red-50',    border: 'border-red-200',    dot: 'bg-red-500'    },
+} as const
+
+// ── Finding groups ────────────────────────────────────────────────────────────
+
 export const FRS_FINDING_GROUPS = [
   { key: 'critical', label: 'Critical', cls: 'text-red-700 bg-red-50 border-red-200' },
   { key: 'major',    label: 'Major',    cls: 'text-amber-700 bg-amber-50 border-amber-200' },

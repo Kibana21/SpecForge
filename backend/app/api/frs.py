@@ -280,12 +280,63 @@ async def validate_frs_endpoint(
         })
 
     # Clean — mark stage_a_approved (used by Stage B to know when to start)
-    doc.unit_status = {**(doc.unit_status or {}), "_stage_a_approved": True}
+    new_unit_status = {**(doc.unit_status or {}), "_stage_a_approved": True}
+
+    # If Stage B has produced any designed specs, this validate commits the
+    # full FRS: status='validated' + lock all current rows (verbatim per regen).
+    from app.models.frs import FrsSpec
+    has_designed_spec = (
+        await db.scalar(
+            select(FrsSpec.id).where(
+                FrsSpec.document_id == doc.id,
+                FrsSpec.is_current.is_(True),
+                FrsSpec.status == "active",
+                FrsSpec.completeness > 0,
+            ).limit(1)
+        )
+    ) is not None
+
+    committed = False
+    locked_count = 0
+    if has_designed_spec:
+        from sqlalchemy import update as sa_update
+        from app.models.frs import (
+            FrsModule, FrsModuleActor, FrsModuleResponsibility,
+            FrsModuleInterface, FrsModuleDataEntity,
+            FrsScreen, FrsUiComponent, FrsEndpoint, FrsDataEntity,
+            FrsBusinessRule, FrsAcceptanceScenario, FrsFunctionalRequirement,
+            FrsSpecDecision,
+        )
+        for model in (
+            FrsModule, FrsModuleActor, FrsModuleResponsibility,
+            FrsModuleInterface, FrsModuleDataEntity, FrsSpec,
+            FrsScreen, FrsUiComponent, FrsEndpoint, FrsDataEntity,
+            FrsBusinessRule, FrsAcceptanceScenario, FrsFunctionalRequirement,
+            FrsSpecDecision,
+        ):
+            r = await db.execute(
+                sa_update(model)
+                .where(
+                    model.document_id == doc.id,
+                    model.is_current.is_(True),
+                    model.status == "active",
+                    model.is_locked.is_(False),
+                )
+                .values(is_locked=True)
+            )
+            locked_count += r.rowcount or 0
+        doc.status = "validated"
+        committed = True
+
+    doc.unit_status = new_unit_status
     await db.commit()
     return ok({
         "ok": True,
         "summary": summary,
         "findings": findings,
+        "stage_a_approved": True,
+        "stage_b_validated": committed,
+        "locked_row_count": locked_count,
     })
 
 
@@ -586,3 +637,316 @@ async def frs_discover_enhance(
         return ok({"enhanced": enhanced})
     # Real LLM path TBD: route through dspy_frs.run_enhance_brief
     return ok({"enhanced": body.brief})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Stage B routes
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class _FigmaLinkIn(BaseModel):
+    link: str
+
+
+class _RegenerateSpecIn(BaseModel):
+    scope: str = "full"   # "full" | "ui_only"
+
+
+@router.post("/projects/{project_id}/artifacts/frs/modules/{module_row_key}/design")
+async def design_frs_module_endpoint(
+    project_id: UUID,
+    module_row_key: str,
+    project: Project = Depends(get_project_or_404),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Run (or re-run) Stage B design_module for a single module.
+
+    Mock mode: runs in-process.
+    Production: dispatches to Celery and returns immediately.
+    """
+    from app.config import get_settings
+    from app.services.artifacts.frs_orchestrator import (
+        generate_frs_design_module,
+    )
+    from app.services.context.project_context import gather_project_context
+
+    doc = await _ensure_frs_document(project_id, db)
+    bundle = await gather_project_context(
+        project_id, db, artifact_document_id=doc.id, artifact_type="frs",
+    )
+    if not bundle.readiness.can_generate:
+        err("frs_not_ready", bundle.readiness.blocking_reason or "Not ready", 409)
+
+    settings = get_settings()
+    if settings.llm_provider == "mock":
+        result = await generate_frs_design_module(
+            project, module_row_key, doc, bundle, db,
+        )
+        await db.commit()
+        return ok(await get_frs_detail(project_id, db))
+
+    # Production: dispatch and return immediately
+    doc.status = "generating"
+    await db.commit()
+    from workers.dispatch import dispatch
+    from workers.tasks import regenerate_frs_module
+    dispatch(regenerate_frs_module, str(project_id), module_row_key)
+    return ok(await get_frs_detail(project_id, db))
+
+
+@router.post("/projects/{project_id}/artifacts/frs/specs/{spec_row_key}/regenerate")
+async def regenerate_frs_spec_endpoint(
+    project_id: UUID,
+    spec_row_key: str,
+    body: _RegenerateSpecIn = Body(default_factory=_RegenerateSpecIn),
+    project: Project = Depends(get_project_or_404),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Re-run design_module narrowed to a single spec.
+
+    Body: {scope: 'full' | 'ui_only'}.
+    """
+    from app.config import get_settings
+    from app.services.artifacts.frs_orchestrator import regenerate_frs_spec
+    from app.services.context.project_context import gather_project_context
+
+    if body.scope not in ("full", "ui_only"):
+        err("invalid_scope", "scope must be 'full' or 'ui_only'", 400)
+
+    doc = await _ensure_frs_document(project_id, db)
+    bundle = await gather_project_context(
+        project_id, db, artifact_document_id=doc.id, artifact_type="frs",
+    )
+
+    settings = get_settings()
+    if settings.llm_provider == "mock":
+        try:
+            await regenerate_frs_spec(
+                project, spec_row_key, db, scope=body.scope, bundle=bundle,
+            )
+        except ValueError as e:
+            err("spec_not_found", str(e), 404)
+        await db.commit()
+        return ok(await get_frs_detail(project_id, db))
+
+    # Production: dispatch and return immediately
+    doc.status = "generating"
+    await db.commit()
+    from workers.dispatch import dispatch
+    from workers.tasks import regenerate_frs_spec as regenerate_frs_spec_task
+    dispatch(regenerate_frs_spec_task, str(project_id), spec_row_key, body.scope)
+    return ok(await get_frs_detail(project_id, db))
+
+
+@router.post("/projects/{project_id}/artifacts/frs/specs/{spec_row_key}/figma-link")
+async def set_frs_figma_link_endpoint(
+    project_id: UUID,
+    spec_row_key: str,
+    body: _FigmaLinkIn,
+    project: Project = Depends(get_project_or_404),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Set figma_link on every screen of a spec. Use '__none__' as link to skip.
+
+    For a real URL: triggers UI-only regen (mock mode in-process, production via
+    Celery).
+    """
+    from app.config import get_settings
+    from app.services.artifacts.frs_orchestrator import (
+        FIGMA_SKIP_SENTINEL, set_figma_link,
+    )
+    from app.services.context.project_context import gather_project_context
+
+    link = (body.link or "").strip()
+    if not link:
+        err("invalid_link", "link is required (use '__none__' to skip)", 400)
+
+    settings = get_settings()
+
+    # Skip path or mock mode: do it in-process
+    if link == FIGMA_SKIP_SENTINEL or settings.llm_provider == "mock":
+        doc = await _ensure_frs_document(project_id, db)
+        bundle = await gather_project_context(
+            project_id, db, artifact_document_id=doc.id, artifact_type="frs",
+        )
+        try:
+            result = await set_figma_link(
+                project, spec_row_key, link, db,
+                user_id=current_user.id, bundle=bundle,
+            )
+        except ValueError as e:
+            err("spec_not_found", str(e), 404)
+        await db.commit()
+        return ok({**result, "detail": await get_frs_detail(project_id, db)})
+
+    # Production with real link: persist link inline, dispatch UI-only regen
+    doc = await _ensure_frs_document(project_id, db)
+    from app.services.artifacts.frs_orchestrator import (
+        _current_screens_for_spec, _load_spec_row, upsert_frs_rows,
+    )
+    spec = await _load_spec_row(doc.id, spec_row_key, db)
+    if spec is None:
+        err("spec_not_found", f"spec {spec_row_key} not found", 404)
+    screens = await _current_screens_for_spec(doc.id, spec_row_key, db)
+    if not screens:
+        await upsert_frs_rows("frs_screens", doc.id, [{
+            "row_key": f"{spec_row_key}-SCR-1",
+            "spec_row_key": spec_row_key,
+            "screen_name": "Primary Screen",
+            "figma_link": link,
+            "purpose": "", "user_roles": [], "layout": "",
+            "navigation": "", "interactive_behavior": "",
+        }], "human", db, user_id=current_user.id)
+    else:
+        for s in screens:
+            if s.is_locked:
+                continue
+            await edit_frs_row(
+                doc.id, "frs_screens", s.id,
+                {"figma_link": link}, db, user_id=current_user.id,
+            )
+    await db.commit()
+
+    from workers.dispatch import dispatch
+    from workers.tasks import regenerate_frs_spec as regenerate_frs_spec_task
+    dispatch(regenerate_frs_spec_task, str(project_id), spec_row_key, "ui_only")
+    return ok({
+        "status": "regenerating",
+        "spec_row_key": spec_row_key,
+        "link": link,
+        "regenerated": True,
+        "screen_count": len(screens) or 1,
+        "detail": await get_frs_detail(project_id, db),
+    })
+
+
+@router.get("/projects/{project_id}/artifacts/frs/coverage")
+async def get_frs_coverage(
+    project_id: UUID,
+    project: Project = Depends(get_project_or_404),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return BR ↔ FRS coverage map for the FrsCoverageGalaxy modal."""
+    from app.models.brd import BrdBusinessRequirement
+    from app.models.frs import FrsSpec, FrsTraceability
+
+    doc = (
+        await db.execute(
+            select(ArtifactDocument).where(
+                ArtifactDocument.project_id == project_id,
+                ArtifactDocument.artifact_type == "frs",
+            )
+        )
+    ).scalar_one_or_none()
+    if doc is None:
+        return ok({"brs": [], "specs": [], "total_brs": 0, "covered_brs": 0, "must_uncovered": 0})
+
+    # Specs (any layer, current+active)
+    specs = (
+        await db.execute(
+            select(FrsSpec).where(
+                FrsSpec.document_id == doc.id,
+                FrsSpec.is_current.is_(True),
+                FrsSpec.status == "active",
+            )
+        )
+    ).scalars().all()
+    specs_payload = [
+        {"row_key": s.row_key, "title": s.title, "module_row_key": s.module_row_key}
+        for s in specs
+    ]
+
+    # BR rows from the validated BRD
+    brd_doc = (
+        await db.execute(
+            select(ArtifactDocument).where(
+                ArtifactDocument.project_id == project_id,
+                ArtifactDocument.artifact_type == "brd",
+            )
+        )
+    ).scalar_one_or_none()
+    brs_payload: list[dict] = []
+    must_uncovered = 0
+    covered_count = 0
+    if brd_doc is not None:
+        br_rows = (
+            await db.execute(
+                select(BrdBusinessRequirement).where(
+                    BrdBusinessRequirement.document_id == brd_doc.id,
+                    BrdBusinessRequirement.is_current.is_(True),
+                    BrdBusinessRequirement.status == "active",
+                )
+            )
+        ).scalars().all()
+
+        # Index of (br_row_key → covering spec row_keys) from traceability
+        trace_rows = (
+            await db.execute(
+                select(FrsTraceability).where(
+                    FrsTraceability.document_id == doc.id,
+                    FrsTraceability.source_table == "frs_specs",
+                    FrsTraceability.target_kind == "brd_business_requirement",
+                )
+            )
+        ).scalars().all()
+        covers: dict[str, list[str]] = {}
+        for t in trace_rows:
+            covers.setdefault(t.target_ref, []).append(t.source_row_key)
+
+        for br in br_rows:
+            covered_by = covers.get(br.row_key, [])
+            if covered_by:
+                covered_count += 1
+            elif br.priority == "must":
+                must_uncovered += 1
+            brs_payload.append({
+                "br_row_key": br.row_key,
+                "br_priority": br.priority,
+                "br_title": br.title,
+                "covered_by": covered_by,
+            })
+
+    return ok({
+        "brs": brs_payload,
+        "specs": specs_payload,
+        "total_brs": len(brs_payload),
+        "covered_brs": covered_count,
+        "must_uncovered": must_uncovered,
+    })
+
+
+@router.get("/projects/{project_id}/artifacts/frs/export")
+async def export_frs(
+    project_id: UUID,
+    project: Project = Depends(get_project_or_404),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Download the FRS markdown bundle as a zip."""
+    from datetime import datetime
+    from fastapi.responses import Response
+    from app.services.artifacts.exporters.frs import build_frs_export_zip
+
+    doc = (
+        await db.execute(
+            select(ArtifactDocument).where(
+                ArtifactDocument.project_id == project_id,
+                ArtifactDocument.artifact_type == "frs",
+            )
+        )
+    ).scalar_one_or_none()
+    if doc is None:
+        err("frs_not_found", "No FRS artifact exists for this project.", 404)
+
+    zip_bytes = await build_frs_export_zip(project_id, doc, db)
+    ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    filename = f"frs-export-{project.name.replace(' ', '_')}-{ts}.zip"
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

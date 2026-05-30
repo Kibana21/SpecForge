@@ -925,14 +925,34 @@ export interface FrsModuleRow extends FrsRowBase {
   confidence: 'high' | 'medium' | 'low'
 }
 
-// Hydrated module returned by GET /artifacts/frs — module + children inline
+// Hydrated module returned by GET /artifacts/frs — module + children inline.
+// Note: `backlog` carries Stage A stubs OR Stage B-designed specs interchangeably;
+// after Stage B runs each spec is hydrated with its sub-rows (typed via
+// FrsSpecHydrated, declared below — TS sees the union via narrowing on
+// `completeness > 0`).
 export interface FrsModuleHydrated extends FrsModuleRow {
   actors: FrsModuleActorRow[]
   responsibilities: FrsModuleResponsibilityRow[]
   interfaces: FrsModuleInterfaceRow[]
   data_entities: FrsModuleDataEntityRow[]
-  backlog: FrsSpecRow[]
+  backlog: FrsSpecRowOrHydrated[]
   decisions: FrsSpecDecisionRow[]
+}
+
+// Either a stub (Stage A) or a hydrated spec (Stage B). The Stage B sub-row
+// arrays are always present (possibly empty) so callers can read them safely.
+// Concrete types are declared further down in this same file; TS resolves the
+// forward refs at type-check time.
+export type FrsSpecRowOrHydrated = FrsSpecRow & {
+  screens?: FrsScreenRow[]
+  ui_components?: FrsUiComponentRow[]
+  endpoints?: FrsEndpointRow[]
+  data_entities?: FrsDataEntityRow[]
+  business_rules?: FrsBusinessRuleRow[]
+  scenarios?: FrsAcceptanceScenarioRow[]
+  functional_requirements?: FrsFunctionalRequirementRow[]
+  decisions?: FrsSpecDecisionRow[]
+  traceability?: FrsTraceabilityRow[]
 }
 
 export interface FrsDocument {
@@ -1010,4 +1030,157 @@ export interface FrsBundleReadiness {
     kpi_count: number
     stakeholder_count: number
   } | null
+}
+
+// ── Stage B row types ────────────────────────────────────────────────────────
+
+export interface FrsScreenRow extends FrsRowBase {
+  spec_row_key: string
+  screen_name: string
+  figma_link: string | null
+  purpose: string
+  user_roles: string[]
+  layout: string
+  navigation: string
+  interactive_behavior: string
+}
+
+export interface FrsUiComponentRow extends FrsRowBase {
+  spec_row_key: string
+  screen_row_key: string
+  component_name: string
+  component_type: string
+  definition: Record<string, unknown>
+  behavior: Record<string, unknown>
+  validation: Record<string, unknown>
+  actions: Array<Record<string, unknown>>
+  data_mapping: Record<string, unknown>
+}
+
+export type FrsHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+
+export interface FrsEndpointRow extends FrsRowBase {
+  spec_row_key: string
+  service_name: string
+  endpoint_name: string
+  url: string
+  protocol: string
+  method: FrsHttpMethod
+  sync_async: string
+  idempotent: boolean
+  request_spec: Record<string, unknown>
+  response_spec: Record<string, unknown>
+  error_handling: Record<string, unknown>
+  security: Record<string, unknown>
+  operational: Record<string, unknown>
+  integration_target: string | null
+}
+
+export interface FrsDataEntityRow extends FrsRowBase {
+  spec_row_key: string
+  entity_name: string
+  data_store_type: string
+  description: string
+  expected_volume: string
+  columns: Array<Record<string, unknown>>
+  keys_constraints: Record<string, unknown>
+  indexes: Array<Record<string, unknown>>
+  relationships: Array<Record<string, unknown>>
+  access_logic: string
+  cache_spec: Record<string, unknown> | null
+  retention_policy: string
+}
+
+export interface FrsBusinessRuleRow extends FrsRowBase {
+  spec_row_key: string
+  rule_id: string
+  description: string
+  applies_to: string
+  logic_decision: string
+}
+
+export interface FrsAcceptanceScenarioRow extends FrsRowBase {
+  spec_row_key: string
+  scenario_index: number
+  given: string
+  when: string
+  then: string
+  is_negative: boolean
+  fr_refs: string[]
+}
+
+export interface FrsFunctionalRequirementRow extends FrsRowBase {
+  spec_row_key: string
+  fr_id: string
+  requirement_text: string
+  scenario_refs: string[]
+}
+
+export interface FrsTraceabilityRow {
+  id: string
+  document_id: string
+  source_table: string
+  source_row_key: string
+  target_kind:
+    | 'brd_business_requirement'
+    | 'brd_objective'
+    | 'brd_kpi'
+    | 'brd_risk'
+    | 'brd_text_block'
+    | 'nfr_driver'
+    | 'app_fact'
+    | 'doc_section'
+    | 'discover_qa'
+    | 'within_frs'
+  target_ref: string
+  target_label: string
+  confidence: 'high' | 'medium' | 'low'
+}
+
+// Hydrated spec returned by GET /artifacts/frs once Stage B has run
+export interface FrsSpecHydrated extends FrsSpecRow {
+  screens: FrsScreenRow[]
+  ui_components: FrsUiComponentRow[]
+  endpoints: FrsEndpointRow[]
+  data_entities: FrsDataEntityRow[]
+  business_rules: FrsBusinessRuleRow[]
+  scenarios: FrsAcceptanceScenarioRow[]
+  functional_requirements: FrsFunctionalRequirementRow[]
+  decisions: FrsSpecDecisionRow[]
+  traceability: FrsTraceabilityRow[]
+}
+
+// ── Stage B response shapes ──────────────────────────────────────────────────
+
+export interface FrsCoveragePoint {
+  br_row_key: string
+  br_priority: 'must' | 'should' | 'could' | 'wont'
+  br_title: string
+  covered_by: string[]   // FRS row_keys tracing to this BR
+}
+
+export interface FrsCoverage {
+  brs: FrsCoveragePoint[]
+  specs: Array<{ row_key: string; title: string; module_row_key: string }>
+  total_brs: number
+  covered_brs: number
+  must_uncovered: number
+}
+
+export interface FrsValidateResponse {
+  ok: boolean
+  summary: FrsFindingsSummary
+  findings: FrsFinding[]
+  stage_a_approved?: boolean
+  stage_b_validated?: boolean
+  locked_row_count?: number
+}
+
+export interface FrsFigmaLinkResponse {
+  status: 'skipped' | 'regenerated' | 'regenerating'
+  spec_row_key: string
+  link: string
+  regenerated: boolean
+  screen_count: number
+  detail?: FrsDetail
 }

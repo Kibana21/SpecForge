@@ -1286,6 +1286,136 @@ async def _generate_frs(project_id: str, brief: str | None) -> dict:
             raise
 
 
+# ── Stage B Celery tasks ─────────────────────────────────────────────────────
+
+
+@celery_app.task(name="workers.tasks.regenerate_frs_module", bind=True, max_retries=2,
+                 default_retry_delay=30, time_limit=480, soft_time_limit=420)
+def regenerate_frs_module(self, project_id: str, module_row_key: str) -> dict:
+    return _run_async(_regenerate_frs_module(project_id, module_row_key))
+
+
+async def _regenerate_frs_module(project_id: str, module_row_key: str) -> dict:
+    from uuid import UUID as _UUID
+    from sqlalchemy import select as _select
+    from app.db import AsyncSessionLocal
+    from app.models.artifact import ArtifactDocument
+    from app.models.project import Project
+    from app.services.artifacts.frs_orchestrator import generate_frs_design_module
+    from app.services.context.project_context import gather_project_context
+
+    async with AsyncSessionLocal() as db:
+        project = await db.get(Project, _UUID(project_id))
+        if project is None:
+            log.error("regenerate_frs_module project_id=%s not found", project_id)
+            return {"ok": False, "error": "project_not_found"}
+        doc = (await db.execute(
+            _select(ArtifactDocument).where(
+                ArtifactDocument.project_id == _UUID(project_id),
+                ArtifactDocument.artifact_type == "frs",
+            )
+        )).scalar_one_or_none()
+        if doc is None:
+            return {"ok": False, "error": "frs_doc_not_found"}
+        try:
+            bundle = await gather_project_context(
+                project.id, db,
+                artifact_document_id=doc.id, artifact_type="frs",
+            )
+            await generate_frs_design_module(
+                project, module_row_key, doc, bundle, db,
+            )
+            await db.commit()
+            return {"ok": True, "module_row_key": module_row_key}
+        except Exception:
+            log.exception("regenerate_frs_module failed project_id=%s module=%s",
+                          project_id, module_row_key)
+            # Reset stuck status so the user isn't trapped
+            async with AsyncSessionLocal() as db2:
+                rd = (await db2.execute(
+                    _select(ArtifactDocument).where(
+                        ArtifactDocument.project_id == _UUID(project_id),
+                        ArtifactDocument.artifact_type == "frs",
+                    )
+                )).scalar_one_or_none()
+                if rd and rd.status == "generating":
+                    rd.status = "in_interview"
+                    await db2.commit()
+            raise
+
+
+@celery_app.task(name="workers.tasks.regenerate_frs_spec", bind=True, max_retries=2,
+                 default_retry_delay=30, time_limit=480, soft_time_limit=420)
+def regenerate_frs_spec(self, project_id: str, spec_row_key: str, scope: str = "full") -> dict:
+    return _run_async(_regenerate_frs_spec(project_id, spec_row_key, scope))
+
+
+async def _regenerate_frs_spec(project_id: str, spec_row_key: str, scope: str) -> dict:
+    from uuid import UUID as _UUID
+    from sqlalchemy import select as _select
+    from app.db import AsyncSessionLocal
+    from app.models.artifact import ArtifactDocument
+    from app.models.project import Project
+    from app.services.artifacts.frs_orchestrator import (
+        regenerate_frs_spec as orch_regen,
+    )
+    from app.services.context.project_context import gather_project_context
+
+    async with AsyncSessionLocal() as db:
+        project = await db.get(Project, _UUID(project_id))
+        if project is None:
+            return {"ok": False, "error": "project_not_found"}
+        doc = (await db.execute(
+            _select(ArtifactDocument).where(
+                ArtifactDocument.project_id == _UUID(project_id),
+                ArtifactDocument.artifact_type == "frs",
+            )
+        )).scalar_one_or_none()
+        if doc is None:
+            return {"ok": False, "error": "frs_doc_not_found"}
+        try:
+            bundle = await gather_project_context(
+                project.id, db,
+                artifact_document_id=doc.id, artifact_type="frs",
+            )
+            await orch_regen(project, spec_row_key, db, scope=scope, bundle=bundle)
+            await db.commit()
+            return {"ok": True, "spec_row_key": spec_row_key, "scope": scope}
+        except Exception:
+            log.exception(
+                "regenerate_frs_spec failed project_id=%s spec=%s scope=%s",
+                project_id, spec_row_key, scope,
+            )
+            async with AsyncSessionLocal() as db2:
+                rd = (await db2.execute(
+                    _select(ArtifactDocument).where(
+                        ArtifactDocument.project_id == _UUID(project_id),
+                        ArtifactDocument.artifact_type == "frs",
+                    )
+                )).scalar_one_or_none()
+                if rd and rd.status == "generating":
+                    rd.status = "in_interview"
+                    await db2.commit()
+            raise
+
+
+@celery_app.task(name="workers.tasks.incorporate_frs_answer", bind=True, max_retries=2, default_retry_delay=10)
+def incorporate_frs_answer(self, project_id: str, target_spec_row_key: str | None = None) -> dict:
+    return _run_async(_incorporate_frs_answer(project_id, target_spec_row_key))
+
+
+async def _incorporate_frs_answer(project_id: str, target_spec_row_key: str | None) -> dict:
+    """User answered a free-text refinement question; re-run the affected spec(s).
+
+    If target_spec_row_key is provided, regen that one spec. Otherwise we currently
+    no-op (broader re-modularization is reserved for future work).
+    """
+    if target_spec_row_key is None:
+        log.info("incorporate_frs_answer no target_spec_row_key — skipping regen")
+        return {"ok": True, "noop": True}
+    return await _regenerate_frs_spec(project_id, target_spec_row_key, "full")
+
+
 async def _generate_ru(task, project_id: str) -> dict:
     try:
         UUID(project_id)

@@ -30,9 +30,9 @@ class Settings(BaseSettings):
     llm_provider: str = "mock"
     gemini_api_key: str = ""
     google_service_account_path: str = ""  # path to service account JSON key (e.g. video-key.json)
-    gemini_model: str = "gemini-2.0-flash-001"
+    gemini_model: str = "gemini-3.5-flash"
     gemini_project_id: str = ""
-    gemini_location: str = "us-central1"
+    gemini_location: str = "global"  # Gemini 3.x text models are served only from `global`
 
     # Embedding (kept for project/app similarity only)
     embedding_model: str = "text-embedding-004"
@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     # Corpus index engine (PageIndex — reasoning tree). "auto" = mock when llm_provider==mock,
     # else pageindex. Override with "mock" or "pageindex".
     corpus_index_provider: str = "auto"
-    pageindex_model: str = "vertex_ai/gemini-2.5-flash"  # LiteLLM Vertex model id for PageIndex
+    pageindex_model: str = "vertex_ai/gemini-3.5-flash"  # LiteLLM Vertex model id for PageIndex
     tree_search_top_k: int = 8
     # Hybrid App Brain: also build + retrieve a PageIndex reasoning tree alongside
     # the pgvector chunks for /ask. Set false to fall back to pure vector RAG.

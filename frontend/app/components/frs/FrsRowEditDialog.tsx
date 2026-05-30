@@ -21,6 +21,8 @@ export type FrsRowField =
   | { name: string; label: string; type: 'textarea'; placeholder?: string; rows?: number }
   | { name: string; label: string; type: 'enum'; options: { value: string; label: string }[] }
   | { name: string; label: string; type: 'tags'; placeholder?: string }
+  | { name: string; label: string; type: 'bool'; description?: string }
+  | { name: string; label: string; type: 'json'; placeholder?: string; rows?: number; description?: string }
 
 interface Props {
   open: boolean
@@ -51,6 +53,22 @@ export function FrsRowEditDialog({
       const raw = initialValues[f.name]
       if (f.type === 'tags') {
         next[f.name] = Array.isArray(raw) ? raw.join(', ') : (raw ?? '')
+      } else if (f.type === 'bool') {
+        next[f.name] = Boolean(raw)
+      } else if (f.type === 'json') {
+        // Pretty-print JSON for editing; empty/null becomes "" so the textarea is blank
+        if (raw === null || raw === undefined || raw === '') {
+          next[f.name] = ''
+        } else if (typeof raw === 'string') {
+          // Try to parse + re-stringify to pretty-print; fall back to raw if it's not JSON
+          try {
+            next[f.name] = JSON.stringify(JSON.parse(raw), null, 2)
+          } catch {
+            next[f.name] = raw
+          }
+        } else {
+          next[f.name] = JSON.stringify(raw, null, 2)
+        }
       } else {
         next[f.name] = raw ?? ''
       }
@@ -72,6 +90,20 @@ export function FrsRowEditDialog({
       if (f.type === 'tags') {
         const s = typeof v === 'string' ? v : ''
         payload[f.name] = s.split(',').map((t) => t.trim()).filter(Boolean)
+      } else if (f.type === 'bool') {
+        payload[f.name] = Boolean(v)
+      } else if (f.type === 'json') {
+        const s = typeof v === 'string' ? v.trim() : ''
+        if (!s) {
+          payload[f.name] = null
+        } else {
+          try {
+            payload[f.name] = JSON.parse(s)
+          } catch (e) {
+            toast.error(`Field "${f.label}" is not valid JSON: ${e instanceof Error ? e.message : 'parse error'}`)
+            return
+          }
+        }
       } else {
         payload[f.name] = v
       }
@@ -247,6 +279,44 @@ function FieldInput({
           />
           <p className="mt-1 text-[10px] text-[var(--text-tertiary)]">
             Separate values with commas.
+          </p>
+        </div>
+      )
+    case 'bool':
+      return (
+        <div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={Boolean(value)}
+              onChange={(e) => onChange(e.target.checked)}
+              className="rounded border-[var(--border-default)]"
+            />
+            <span className="text-sm font-semibold text-[var(--text-secondary)]">{field.label}</span>
+          </label>
+          {field.description && (
+            <p className="mt-1 ml-6 text-[10px] text-[var(--text-tertiary)]">
+              {field.description}
+            </p>
+          )}
+        </div>
+      )
+    case 'json':
+      return (
+        <div>
+          <label className="block text-xs font-semibold text-[var(--text-secondary)] mb-1">
+            {field.label}
+          </label>
+          <textarea
+            value={v}
+            placeholder={field.placeholder ?? '{ }'}
+            rows={field.rows ?? 6}
+            onChange={(e) => onChange(e.target.value)}
+            spellCheck={false}
+            className="w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-surface)] px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30 resize-y leading-snug"
+          />
+          <p className="mt-1 text-[10px] text-[var(--text-tertiary)]">
+            {field.description ?? 'JSON — empty or null clears the field.'}
           </p>
         </div>
       )

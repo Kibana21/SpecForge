@@ -33,7 +33,7 @@ from app.services.context.project_context import (
     ProjectContextBundle, gather_project_context,
 )
 from app.services.context.projection import project_for_unit
-from app.services.skills.dspy_frs import run_modularize
+from app.services.skills.dspy_frs import run_design_spec, run_modularize
 
 log = logging.getLogger(__name__)
 
@@ -114,10 +114,14 @@ async def upsert_frs_rows(
                 ))
                 new_versions += 1
 
-    # Soft-delete rows in scope but absent from output
+    # Soft-delete rows in scope but absent from output.
+    # Locked rows are preserved verbatim — they survive regen even when the LLM
+    # forgets to include them in its output.
     for row_key, current in existing_by_key.items():
         in_scope = scope_keys is None or row_key in scope_keys
-        if in_scope and row_key not in output_keys and current.status != "removed":
+        if (in_scope and row_key not in output_keys
+                and current.status != "removed"
+                and not current.is_locked):
             current.status = "removed"
 
     return new_versions
@@ -716,7 +720,949 @@ async def _emit_modularize_messages(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Full pipeline (Stage A only for now; Stage B added when shipped)
+# Stage B — design_module helpers + persistence
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+async def _serialize_module_with_children(
+    document_id: uuid.UUID, module_row_key: str, db: AsyncSession,
+) -> dict:
+    """JSON-serializable snapshot of one module + all its child rows.
+
+    Used as `module_context` input to the design_module LLM call.
+    """
+    snapshots = await _serialize_current_modules_with_children(document_id, db)
+    for s in snapshots:
+        if s["row_key"] == module_row_key:
+            return s
+    raise ValueError(f"module {module_row_key} not found in document {document_id}")
+
+
+async def _summarize_other_modules(
+    document_id: uuid.UUID, exclude_module_row_key: str, db: AsyncSession,
+) -> list[dict]:
+    """Compact summary of sibling modules — used so each design_module call has
+    cross-module awareness (for depends_on + interface counterparts).
+    """
+    from app.models.frs import FrsModule, FrsModuleInterface
+
+    modules = (
+        await db.execute(
+            select(FrsModule).where(
+                FrsModule.document_id == document_id,
+                FrsModule.is_current.is_(True),
+                FrsModule.status == "active",
+                FrsModule.row_key != exclude_module_row_key,
+            )
+        )
+    ).scalars().all()
+
+    out: list[dict] = []
+    for m in modules:
+        ifaces = (
+            await db.execute(
+                select(FrsModuleInterface).where(
+                    FrsModuleInterface.document_id == document_id,
+                    FrsModuleInterface.module_row_key == m.row_key,
+                    FrsModuleInterface.is_current.is_(True),
+                    FrsModuleInterface.status == "active",
+                )
+            )
+        ).scalars().all()
+        out.append({
+            "row_key": m.row_key,
+            "name": m.name,
+            "layer": m.layer,
+            "summary": m.summary,
+            "interfaces": [{
+                "kind": i.interface_kind,
+                "direction": i.direction,
+                "transport": i.transport,
+                "name": i.name,
+                "counterpart": i.counterpart,
+                "purpose": i.purpose,
+            } for i in ifaces],
+        })
+    return out
+
+
+async def _serialize_module_specs(
+    document_id: uuid.UUID, module_row_key: str, db: AsyncSession,
+) -> list[dict]:
+    """All current specs in a module + their sub-rows. Used as `current_specs`
+    input to the design_module LLM call for idempotent regeneration."""
+    from app.models.frs import (
+        FrsSpec, FrsScreen, FrsUiComponent, FrsEndpoint,
+        FrsDataEntity, FrsBusinessRule,
+        FrsAcceptanceScenario, FrsFunctionalRequirement,
+    )
+
+    specs = (
+        await db.execute(
+            select(FrsSpec).where(
+                FrsSpec.document_id == document_id,
+                FrsSpec.module_row_key == module_row_key,
+                FrsSpec.is_current.is_(True),
+                FrsSpec.status == "active",
+            )
+        )
+    ).scalars().all()
+
+    async def _spec_children(model, spec_row_key, cols):
+        rows = (
+            await db.execute(
+                select(model).where(
+                    model.document_id == document_id,
+                    model.spec_row_key == spec_row_key,
+                    model.is_current.is_(True),
+                    model.status == "active",
+                )
+            )
+        ).scalars().all()
+        return [{**{c: getattr(r, c) for c in cols},
+                 "row_key": r.row_key, "_is_locked": r.is_locked} for r in rows]
+
+    out: list[dict] = []
+    for s in specs:
+        out.append({
+            "row_key": s.row_key,
+            "module_row_key": s.module_row_key,
+            "title": s.title,
+            "priority": s.priority,
+            "layer": s.layer,
+            "br_refs": s.br_refs or [],
+            "nfr_refs": s.nfr_refs or [],
+            "depends_on": s.depends_on or [],
+            "narrative": s.narrative or "",
+            "completeness": s.completeness,
+            "confidence": s.confidence,
+            "_is_locked": s.is_locked,
+            "screens": await _spec_children(FrsScreen, s.row_key, FRS_TYPED_COLS["frs_screens"]),
+            "ui_components": await _spec_children(FrsUiComponent, s.row_key, FRS_TYPED_COLS["frs_ui_components"]),
+            "endpoints": await _spec_children(FrsEndpoint, s.row_key, FRS_TYPED_COLS["frs_endpoints"]),
+            "data_entities": await _spec_children(FrsDataEntity, s.row_key, FRS_TYPED_COLS["frs_data_entities"]),
+            "business_rules": await _spec_children(FrsBusinessRule, s.row_key, FRS_TYPED_COLS["frs_business_rules"]),
+            "scenarios": await _spec_children(FrsAcceptanceScenario, s.row_key, FRS_TYPED_COLS["frs_acceptance_scenarios"]),
+            "functional_requirements": await _spec_children(FrsFunctionalRequirement, s.row_key, FRS_TYPED_COLS["frs_functional_requirements"]),
+        })
+    return out
+
+
+async def _serialize_resolved_decisions(
+    document_id: uuid.UUID, module_row_key: str, db: AsyncSession,
+) -> list[dict]:
+    """Decisions where the user has chosen an option (accepted_ai or overridden).
+    The LLM uses these to author the spec against the user's choice.
+    """
+    from app.models.frs import FrsSpecDecision
+
+    rows = (
+        await db.execute(
+            select(FrsSpecDecision).where(
+                FrsSpecDecision.document_id == document_id,
+                FrsSpecDecision.is_current.is_(True),
+                FrsSpecDecision.status == "active",
+                FrsSpecDecision.resolution_status.in_(("accepted_ai", "overridden")),
+            )
+        )
+    ).scalars().all()
+    out: list[dict] = []
+    for d in rows:
+        # Only carry decisions scoped to this module or its specs
+        if d.module_row_key == module_row_key:
+            scope = "module"
+        elif d.spec_row_key and d.spec_row_key.startswith(_spec_prefix_for_module(module_row_key)):
+            scope = "spec"
+        else:
+            continue
+        chosen = d.user_chosen_index if d.user_chosen_index is not None else d.recommended_index
+        out.append({
+            "row_key": d.row_key,
+            "scope": scope,
+            "module_row_key": d.module_row_key,
+            "spec_row_key": d.spec_row_key,
+            "question": d.question,
+            "chosen_index": chosen,
+            "chosen_option": (d.options or [{}])[chosen] if chosen < len(d.options or []) else None,
+            "resolution_status": d.resolution_status,
+        })
+    return out
+
+
+def _spec_prefix_for_module(module_row_key: str) -> str:
+    """MOD-001 → M001-  ;  MOD-014 → M014-  ;  MOD-000 → M000-."""
+    if module_row_key.startswith("MOD-"):
+        return "M" + module_row_key[len("MOD-"):] + "-"
+    return module_row_key + "-"
+
+
+async def _upsert_frs_traceability(
+    document_id: uuid.UUID,
+    source_table: str,
+    source_row_key: str,
+    rows: list[dict[str, Any]],
+    db: AsyncSession,
+) -> int:
+    """Replace-all traceability for (source_table, source_row_key).
+
+    Deletes existing rows for the source then bulk-inserts. Atomic via
+    db.begin_nested(). Skips entries with empty target_ref.
+
+    Returns the number of rows actually inserted.
+    """
+    from app.models.frs import FrsTraceability
+
+    inserted = 0
+    async with db.begin_nested():
+        await db.execute(sa_text(
+            "DELETE FROM frs_traceability "
+            "WHERE document_id = :doc AND source_table = :st AND source_row_key = :sk"
+        ), {"doc": str(document_id), "st": source_table, "sk": source_row_key})
+        for r in rows:
+            target_ref = (r.get("target_ref") or "").strip()
+            target_kind = r.get("target_kind")
+            if not target_ref or not target_kind:
+                continue
+            db.add(FrsTraceability(
+                id=uuid.uuid4(),
+                document_id=document_id,
+                source_table=source_table,
+                source_row_key=source_row_key,
+                target_kind=target_kind,
+                target_ref=target_ref,
+                target_label=r.get("target_label", ""),
+                confidence=r.get("confidence", "medium"),
+            ))
+            inserted += 1
+    return inserted
+
+
+async def _persist_design_module_result(
+    document_id: uuid.UUID, specs: list[dict], db: AsyncSession,
+    *, actor_user_id: uuid.UUID | None = None,
+    fallback_module_row_key: str | None = None,
+) -> dict[str, int]:
+    """Route each spec's content to the 9 spec-level tables.
+
+    For each spec:
+      1. upsert_frs_rows('frs_specs', ...)         # promote stub → full
+      2. screens + ui_components (if not ui_blocked)
+      3. endpoints
+      4. data_entities
+      5. business_rules
+      6. acceptance_scenarios
+      7. functional_requirements
+      8. spec_decisions (spec-scoped)
+      9. _upsert_frs_traceability(...)             # replace-all per source row
+
+    Returns counts per table for observability.
+    """
+    counts: dict[str, int] = {
+        "frs_specs": 0, "frs_screens": 0, "frs_ui_components": 0,
+        "frs_endpoints": 0, "frs_data_entities": 0, "frs_business_rules": 0,
+        "frs_acceptance_scenarios": 0, "frs_functional_requirements": 0,
+        "frs_spec_decisions": 0, "frs_traceability": 0,
+    }
+
+    for spec in specs:
+        spec_row_key = spec["row_key"]
+        ui_blocked = bool(spec.get("ui_blocked_reason"))
+
+        # 1. frs_specs — update the stub row to full
+        # NOTE: module_row_key is set in Stage A; we DON'T touch it here.
+        spec_payload = {
+            "row_key": spec_row_key,
+            "title": spec["title"],
+            "priority": spec["priority"],
+            "layer": spec["layer"],
+            "br_refs": spec.get("br_refs", []),
+            "nfr_refs": spec.get("nfr_refs", []),
+            "depends_on": spec.get("depends_on", []),
+            "narrative": spec.get("narrative", ""),
+            "independent_test": spec.get("independent_test", ""),
+            "data_and_validation": spec.get("data_and_validation", ""),
+            "errors_and_edge_cases": spec.get("errors_and_edge_cases", ""),
+            "observability": spec.get("observability", ""),
+            "implementation_tasks": spec.get("implementation_tasks", []),
+            "completeness": int(spec.get("completeness", 0) or 0),
+            "confidence": spec.get("confidence", "low"),
+        }
+        # carry module_row_key from the existing stub row (don't override)
+        from app.models.frs import FrsSpec as _FrsSpec
+        existing = (
+            await db.execute(
+                select(_FrsSpec).where(
+                    _FrsSpec.document_id == document_id,
+                    _FrsSpec.row_key == spec_row_key,
+                    _FrsSpec.is_current.is_(True),
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            # If the existing spec belongs to a different module than the one
+            # being designed, skip — design_module only writes to its own module.
+            if (fallback_module_row_key is not None
+                    and existing.module_row_key != fallback_module_row_key):
+                log.debug(
+                    "frs.design_module.skip_cross_module_spec",
+                    extra={
+                        "spec_row_key": spec_row_key,
+                        "existing_module": existing.module_row_key,
+                        "target_module": fallback_module_row_key,
+                    },
+                )
+                continue
+            spec_payload["module_row_key"] = existing.module_row_key
+        elif fallback_module_row_key is not None:
+            spec_payload["module_row_key"] = fallback_module_row_key
+        else:
+            # Last-resort: derive MOD-XXX from M-prefixed spec row_key
+            if spec_row_key.startswith("M") and "-FRS" in spec_row_key:
+                spec_payload["module_row_key"] = "MOD-" + spec_row_key[1:4]
+            else:
+                log.warning(
+                    "frs.design_module.missing_module_row_key",
+                    extra={"spec_row_key": spec_row_key},
+                )
+                continue  # skip the row rather than insert a NULL FK
+        # Scope soft-delete to ONLY this row_key — without scoping, every other
+        # spec in the document would be wiped by the per-spec iteration.
+        counts["frs_specs"] += await upsert_frs_rows(
+            "frs_specs", document_id, [spec_payload], "ai", db,
+            scope_keys={spec_row_key},
+            user_id=actor_user_id,
+        )
+
+        # 2. screens + ui_components — only when UI is not blocked
+        if not ui_blocked:
+            screen_rows = [{
+                **{c: s.get(c) for c in FRS_TYPED_COLS["frs_screens"]},
+                "row_key": s["row_key"],
+                "spec_row_key": spec_row_key,
+            } for s in spec.get("screens", [])]
+            counts["frs_screens"] += await upsert_frs_rows(
+                "frs_screens", document_id, screen_rows, "ai", db,
+                scope_keys=await _spec_child_keys("frs_screens", document_id, spec_row_key, db),
+                user_id=actor_user_id,
+            )
+
+            uic_rows = [{
+                **{c: c_.get(c) for c in FRS_TYPED_COLS["frs_ui_components"]},
+                "row_key": c_["row_key"],
+                "spec_row_key": spec_row_key,
+            } for c_ in spec.get("ui_components", [])]
+            counts["frs_ui_components"] += await upsert_frs_rows(
+                "frs_ui_components", document_id, uic_rows, "ai", db,
+                scope_keys=await _spec_child_keys("frs_ui_components", document_id, spec_row_key, db),
+                user_id=actor_user_id,
+            )
+
+        # 3. endpoints
+        ep_rows = [{
+            **{c: e.get(c) for c in FRS_TYPED_COLS["frs_endpoints"]},
+            "row_key": e["row_key"],
+            "spec_row_key": spec_row_key,
+        } for e in spec.get("endpoints", [])]
+        counts["frs_endpoints"] += await upsert_frs_rows(
+            "frs_endpoints", document_id, ep_rows, "ai", db,
+            scope_keys=await _spec_child_keys("frs_endpoints", document_id, spec_row_key, db),
+            user_id=actor_user_id,
+        )
+
+        # 4. data entities
+        de_rows = [{
+            **{c: e.get(c) for c in FRS_TYPED_COLS["frs_data_entities"]},
+            "row_key": e["row_key"],
+            "spec_row_key": spec_row_key,
+        } for e in spec.get("data_entities", [])]
+        counts["frs_data_entities"] += await upsert_frs_rows(
+            "frs_data_entities", document_id, de_rows, "ai", db,
+            scope_keys=await _spec_child_keys("frs_data_entities", document_id, spec_row_key, db),
+            user_id=actor_user_id,
+        )
+
+        # 5. business rules
+        br_rows = [{
+            **{c: r.get(c) for c in FRS_TYPED_COLS["frs_business_rules"]},
+            "row_key": r["row_key"],
+            "spec_row_key": spec_row_key,
+        } for r in spec.get("business_rules", [])]
+        counts["frs_business_rules"] += await upsert_frs_rows(
+            "frs_business_rules", document_id, br_rows, "ai", db,
+            scope_keys=await _spec_child_keys("frs_business_rules", document_id, spec_row_key, db),
+            user_id=actor_user_id,
+        )
+
+        # 6. acceptance scenarios
+        sc_rows = [{
+            **{c: s.get(c) for c in FRS_TYPED_COLS["frs_acceptance_scenarios"]},
+            "row_key": s["row_key"],
+            "spec_row_key": spec_row_key,
+        } for s in spec.get("acceptance_scenarios", [])]
+        counts["frs_acceptance_scenarios"] += await upsert_frs_rows(
+            "frs_acceptance_scenarios", document_id, sc_rows, "ai", db,
+            scope_keys=await _spec_child_keys("frs_acceptance_scenarios", document_id, spec_row_key, db),
+            user_id=actor_user_id,
+        )
+
+        # 7. functional requirements
+        fr_rows = [{
+            **{c: f.get(c) for c in FRS_TYPED_COLS["frs_functional_requirements"]},
+            "row_key": f["row_key"],
+            "spec_row_key": spec_row_key,
+        } for f in spec.get("functional_requirements", [])]
+        counts["frs_functional_requirements"] += await upsert_frs_rows(
+            "frs_functional_requirements", document_id, fr_rows, "ai", db,
+            scope_keys=await _spec_child_keys("frs_functional_requirements", document_id, spec_row_key, db),
+            user_id=actor_user_id,
+        )
+
+        # 8. spec decisions (spec-scoped)
+        dec_rows = []
+        for i, d in enumerate(spec.get("spec_decisions", []), 1):
+            row_key = d.get("row_key") or f"{spec_row_key}-DEC-{i}"
+            dec_rows.append({
+                "row_key": row_key,
+                "spec_row_key": spec_row_key,
+                "module_row_key": None,
+                "question": d["question"],
+                "options": d.get("options", []),
+                "recommended_index": int(d.get("recommended_index", 0) or 0),
+                "recommended_rationale": d.get("recommended_rationale", ""),
+                "user_chosen_index": None,
+                "resolution_status": "open",
+            })
+        counts["frs_spec_decisions"] += await upsert_frs_rows(
+            "frs_spec_decisions", document_id, dec_rows, "ai", db,
+            user_id=actor_user_id,
+        )
+
+        # 9. traceability — replace-all per source row
+        # Group emitted trace rows by (source_table, source_row_key) and replace each group
+        traces = spec.get("traceability", [])
+        by_source: dict[tuple[str, str], list[dict]] = {}
+        for t in traces:
+            key = (t.get("source_table", "frs_specs"), t.get("source_row_key", spec_row_key))
+            by_source.setdefault(key, []).append(t)
+        for (src_table, src_key), src_rows in by_source.items():
+            counts["frs_traceability"] += await _upsert_frs_traceability(
+                document_id, src_table, src_key, src_rows, db,
+            )
+
+    return counts
+
+
+async def _persist_ui_only_result(
+    document_id: uuid.UUID, specs: list[dict], db: AsyncSession,
+    *, actor_user_id: uuid.UUID | None = None,
+) -> dict[str, int]:
+    """Used by the figma-link handler: only touch screens + ui_components for the
+    target spec(s). Leaves endpoints/entities/scenarios/etc. untouched.
+    """
+    counts: dict[str, int] = {"frs_screens": 0, "frs_ui_components": 0}
+    for spec in specs:
+        spec_row_key = spec["row_key"]
+        if spec.get("ui_blocked_reason"):
+            continue
+        screen_rows = [{
+            **{c: s.get(c) for c in FRS_TYPED_COLS["frs_screens"]},
+            "row_key": s["row_key"],
+            "spec_row_key": spec_row_key,
+        } for s in spec.get("screens", [])]
+        counts["frs_screens"] += await upsert_frs_rows(
+            "frs_screens", document_id, screen_rows, "ai", db,
+            scope_keys=await _spec_child_keys("frs_screens", document_id, spec_row_key, db),
+            user_id=actor_user_id,
+        )
+        uic_rows = [{
+            **{c: c_.get(c) for c in FRS_TYPED_COLS["frs_ui_components"]},
+            "row_key": c_["row_key"],
+            "spec_row_key": spec_row_key,
+        } for c_ in spec.get("ui_components", [])]
+        counts["frs_ui_components"] += await upsert_frs_rows(
+            "frs_ui_components", document_id, uic_rows, "ai", db,
+            scope_keys=await _spec_child_keys("frs_ui_components", document_id, spec_row_key, db),
+            user_id=actor_user_id,
+        )
+    return counts
+
+
+async def _spec_child_keys(
+    table_name: str, document_id: uuid.UUID, spec_row_key: str, db: AsyncSession,
+) -> set[str]:
+    """Set of current-active row_keys for a child table belonging to a spec.
+
+    Used as `scope_keys` so soft-delete is scoped to THIS spec's rows only.
+    """
+    model = FRS_TABLE_MAP[table_name]
+    rows = (
+        await db.execute(
+            select(model.row_key).where(
+                model.document_id == document_id,
+                model.spec_row_key == spec_row_key,  # type: ignore[attr-defined]
+                model.is_current.is_(True),
+                model.status == "active",
+            )
+        )
+    ).scalars().all()
+    return set(rows)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Stage B — generate_frs_design_module
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+async def generate_frs_design_module(
+    project: Project,
+    module_row_key: str,
+    doc: ArtifactDocument,
+    bundle: ProjectContextBundle,
+    db: AsyncSession,
+    *,
+    target_spec_row_key: str | None = None,
+    ui_only: bool = False,
+) -> dict:
+    """Design one module's worth of FRS specs.
+
+    target_spec_row_key: if set, only persist that one spec (single-spec regen).
+    ui_only: if True, only update screens + ui_components for the target spec(s).
+
+    Returns the LLM output dict (after filtering to target spec if applicable).
+    """
+    unit_spec = FRS_MANIFEST_BY_KEY["design_module"]
+
+    # 1. mark _current_unit
+    await _set_current_unit(doc.id, f"design_mod_{module_row_key}", db)
+
+    # 2. gather context
+    module_context = await _serialize_module_with_children(doc.id, module_row_key, db)
+    other_modules = await _summarize_other_modules(doc.id, module_row_key, db)
+    current_specs = await _serialize_module_specs(doc.id, module_row_key, db)
+    locked_specs = [s for s in current_specs if s.get("_is_locked")]
+    resolved_decisions = await _serialize_resolved_decisions(doc.id, module_row_key, db)
+
+    # 3. project per-unit context (CB + BRD + apps + docs)
+    unit_ctx = project_for_unit(bundle, "frs", "design_module")
+    qa_pairs = await _gather_frs_unit_qa(doc.id, "design_module", db)
+
+    log.info(
+        "frs.design_module.start",
+        extra={
+            "project_id": str(project.id), "doc_id": str(doc.id),
+            "module_row_key": module_row_key,
+            "spec_count_before": len(current_specs),
+            "locked_spec_count": len(locked_specs),
+            "target_spec_row_key": target_spec_row_key,
+            "ui_only": ui_only,
+        },
+    )
+
+    # 4. Decide which stubs to design.
+    #    target_spec_row_key → just that one (single-spec regen);
+    #    otherwise every stub in the module (whole-module design).
+    specs_by_key = {s["row_key"]: s for s in current_specs}
+    locked_keys = {s["row_key"] for s in locked_specs}
+    if target_spec_row_key:
+        stub_keys = [target_spec_row_key]
+    else:
+        stub_keys = [s["row_key"] for s in current_specs]
+
+    # Compact sibling summary (row_key + title) so each per-spec call stays aware
+    # of its peers for depends_on / non-overlap — full grounding, just compact.
+    sibling_summary = [
+        {"row_key": s["row_key"], "title": s.get("title", "")}
+        for s in current_specs
+    ]
+
+    # Shared grounding handed to EVERY per-spec call. No context is dropped:
+    # the full BRD, Concept Brief, App Brain, module context, sibling specs,
+    # other modules, project docs and discover Q&A go into each call. Only the
+    # OUTPUT shrinks to a single spec — which is what keeps the call fast and
+    # reliable (a whole-module output truncates / times out on gemini-2.5-flash).
+    shared_ctx = dict(
+        project_name=project.name,
+        business_unit=project.business_unit or "—",
+        module_row_key=module_row_key,
+        module_context=json.dumps(module_context, default=str),
+        sibling_specs_summary=json.dumps(sibling_summary, default=str),
+        other_modules_summary=json.dumps(other_modules, default=str),
+        brd_context=bundle.brd.formatted_context if bundle.brd else "(no BRD)",
+        cb_context=bundle.cb.formatted_context,
+        app_brain=bundle.apps.formatted_context,
+        source_sections=unit_ctx.doc_sections,
+        qa_pairs=qa_pairs,
+        resolved_decisions=json.dumps(resolved_decisions, default=str),
+    )
+
+    # 5. Generate ONE spec per LLM call, persisting each as it completes so that
+    #    a later timeout never loses already-finished specs.
+    designed_specs: list[dict] = []
+    open_questions: list[dict] = []
+    completeness_vals: list[int] = []
+
+    for sk in stub_keys:
+        if sk in locked_keys:
+            continue  # locked spec → preserve verbatim, never regenerate
+        stub = specs_by_key.get(sk, {"row_key": sk})
+        try:
+            one = await asyncio.wait_for(
+                run_design_spec(
+                    **shared_ctx,
+                    target_spec_row_key=sk,
+                    target_spec_stub=json.dumps(stub, default=str),
+                    current_spec=json.dumps(stub, default=str),
+                ),
+                timeout=unit_spec.timeout_seconds,
+            )
+        except asyncio.TimeoutError:
+            log.error(
+                "frs.design_spec.timeout",
+                extra={"doc_id": str(doc.id), "module_row_key": module_row_key,
+                       "spec_row_key": sk},
+            )
+            continue  # skip this spec; keep designing the rest
+
+        spec_out = one.get("spec")
+        if not spec_out:
+            continue
+        spec_out["row_key"] = sk  # defensive: pin to the stub key
+        designed_specs.append(spec_out)
+        completeness_vals.append(int(spec_out.get("completeness", 0) or 0))
+        open_questions.extend(one.get("open_questions", []) or [])
+
+        # 6. Persist THIS spec immediately + commit so the rail updates live and
+        #    partial progress survives a subsequent failure.
+        if ui_only:
+            await _persist_ui_only_result(doc.id, [spec_out], db)
+        else:
+            await _persist_design_module_result(
+                doc.id, [spec_out], db, fallback_module_row_key=module_row_key,
+            )
+        await db.commit()
+
+    avg_completeness = (
+        int(sum(completeness_vals) / len(completeness_vals)) if completeness_vals else 0
+    )
+    overall_confidence = (
+        "high" if avg_completeness >= 90
+        else "medium" if avg_completeness >= 70
+        else "low"
+    )
+    result = {
+        "specs": designed_specs,
+        "open_questions": open_questions,
+        "completeness": avg_completeness,
+        "confidence": overall_confidence,
+    }
+    specs_to_persist = designed_specs
+
+    log.info(
+        "frs.design_module.complete",
+        extra={
+            "doc_id": str(doc.id),
+            "module_row_key": module_row_key,
+            "spec_count": len(specs_to_persist),
+            "completeness": avg_completeness,
+            "confidence": overall_confidence,
+        },
+    )
+
+    # 7. atomic unit_status merge for this module
+    await db.execute(sa_text(
+        "UPDATE artifact_documents "
+        "SET unit_status = COALESCE(unit_status, '{}'::jsonb) || CAST(:patch AS jsonb), "
+        "    updated_at = NOW() "
+        "WHERE id = :doc_id"
+    ), {
+        "patch": json.dumps({
+            f"design_mod_{module_row_key}": {
+                "completeness": avg_completeness,
+                "confidence": overall_confidence,
+                "spec_count": len(specs_to_persist),
+            },
+            "_current_unit": None,
+        }),
+        "doc_id": str(doc.id),
+    })
+
+    # 8. emit messages for figma_link_required + open spec_decisions
+    await _emit_design_messages(doc, module_row_key, result, specs_to_persist, db)
+
+    return result
+
+
+async def _emit_design_messages(
+    doc: ArtifactDocument,
+    module_row_key: str,
+    result: dict,
+    specs_persisted: list[dict],
+    db: AsyncSession,
+) -> None:
+    """Emit synthesis + figma-link + open-decision messages into artifact_messages."""
+    seq = await _next_frs_seq(doc.id, db)
+
+    # Synthesis
+    spec_count = len(specs_persisted)
+    synthesis = (
+        f"Module {module_row_key} design complete: {spec_count} FRS "
+        f"spec{'s' if spec_count != 1 else ''}. "
+        f"Confidence: {result.get('confidence', 'low')}."
+    )
+    db.add(ArtifactMessage(
+        document_id=doc.id, project_id=doc.project_id,
+        role="synthesis", content=synthesis, citations=[],
+        meta={"unit_key": "design_module", "module_row_key": module_row_key}, seq=seq,
+    ))
+    seq += 1
+
+    # Figma-link blocked specs
+    for s in specs_persisted:
+        if s.get("ui_blocked_reason") == "figma_link_required":
+            body = (
+                f"[FIGMA-LINK-REQUIRED] FRS {s['row_key']} ({s.get('title','')}) "
+                f"has UI surfaces but no Figma link. Please provide a Figma URL "
+                f"or click 'Skip — UI design TBD'."
+            )
+            db.add(ArtifactMessage(
+                document_id=doc.id, project_id=doc.project_id,
+                role="question", content=body, citations=[],
+                meta={
+                    "unit_key": "design_module",
+                    "type": "figma_link_required",
+                    "spec_row_key": s["row_key"],
+                    "module_row_key": module_row_key,
+                },
+                seq=seq,
+            ))
+            seq += 1
+
+    # Open spec-scoped decisions
+    for s in specs_persisted:
+        for d in s.get("spec_decisions", []):
+            body = (
+                f"[SPEC-DECISION] {d['question']}\n"
+                f"AI recommends option {d.get('recommended_index', 0)}: "
+                f"{d.get('recommended_rationale', '(no rationale)')}"
+            )
+            db.add(ArtifactMessage(
+                document_id=doc.id, project_id=doc.project_id,
+                role="question", content=body, citations=[],
+                meta={
+                    "unit_key": "design_module",
+                    "type": "spec_decision_open",
+                    "decision_row_key": d.get("row_key"),
+                    "spec_row_key": s["row_key"],
+                    "module_row_key": module_row_key,
+                },
+                seq=seq,
+            ))
+            seq += 1
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Stage B — set_figma_link + regenerate_frs_spec
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+FIGMA_SKIP_SENTINEL = "__none__"
+
+
+async def _load_spec_row(
+    document_id: uuid.UUID, spec_row_key: str, db: AsyncSession,
+) -> Any:
+    """Return the current active FrsSpec row for a spec_row_key, or None."""
+    from app.models.frs import FrsSpec
+    return (
+        await db.execute(
+            select(FrsSpec).where(
+                FrsSpec.document_id == document_id,
+                FrsSpec.row_key == spec_row_key,
+                FrsSpec.is_current.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+
+
+async def _current_screens_for_spec(
+    document_id: uuid.UUID, spec_row_key: str, db: AsyncSession,
+) -> list[Any]:
+    from app.models.frs import FrsScreen
+    return (
+        await db.execute(
+            select(FrsScreen).where(
+                FrsScreen.document_id == document_id,
+                FrsScreen.spec_row_key == spec_row_key,
+                FrsScreen.is_current.is_(True),
+                FrsScreen.status == "active",
+            )
+        )
+    ).scalars().all()
+
+
+async def set_figma_link(
+    project: Project,
+    spec_row_key: str,
+    link: str,
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID | None = None,
+    bundle: ProjectContextBundle | None = None,
+) -> dict[str, Any]:
+    """Set figma_link on every screen of a spec (or sentinel '__none__' to skip).
+
+    Behaviour:
+      - link == '__none__' → write sentinel on each screen; do NOT regenerate
+      - no screens yet (UI was previously blocked) → create one placeholder
+        screen with the link, then trigger a UI-only design_module regeneration
+      - screens exist → update the link on each, then trigger UI-only regen
+
+    Returns a summary dict: {status, spec_row_key, link, regenerated, screen_count}.
+    """
+    doc = await _ensure_frs_document(project.id, db)
+    spec = await _load_spec_row(doc.id, spec_row_key, db)
+    if spec is None:
+        raise ValueError(f"spec {spec_row_key} not found in project {project.id}")
+
+    screens = await _current_screens_for_spec(doc.id, spec_row_key, db)
+
+    if link == FIGMA_SKIP_SENTINEL:
+        # User opted out → mark every screen with the sentinel, no regen
+        for s in screens:
+            if s.is_locked:
+                continue
+            await edit_frs_row(
+                doc.id, "frs_screens", s.id,
+                {"figma_link": FIGMA_SKIP_SENTINEL},
+                db, user_id=user_id,
+            )
+        log.info(
+            "frs.figma_link.set",
+            extra={
+                "doc_id": str(doc.id), "spec_row_key": spec_row_key,
+                "link_type": "skip", "screen_count": len(screens),
+            },
+        )
+        return {
+            "status": "skipped",
+            "spec_row_key": spec_row_key,
+            "link": FIGMA_SKIP_SENTINEL,
+            "regenerated": False,
+            "screen_count": len(screens),
+        }
+
+    # Real link → write it onto each screen (or create a placeholder)
+    if not screens:
+        await upsert_frs_rows("frs_screens", doc.id, [{
+            "row_key": f"{spec_row_key}-SCR-1",
+            "spec_row_key": spec_row_key,
+            "screen_name": "Primary Screen",
+            "figma_link": link,
+            "purpose": "",
+            "user_roles": [],
+            "layout": "",
+            "navigation": "",
+            "interactive_behavior": "",
+        }], "human", db, user_id=user_id)
+    else:
+        for s in screens:
+            if s.is_locked:
+                continue
+            await edit_frs_row(
+                doc.id, "frs_screens", s.id,
+                {"figma_link": link},
+                db, user_id=user_id,
+            )
+
+    await db.commit()
+
+    # Trigger UI-only regen for this spec
+    if bundle is None:
+        bundle = await gather_project_context(
+            project.id, db,
+            artifact_document_id=doc.id,
+            artifact_type="frs",
+        )
+
+    module_row_key = spec.module_row_key
+    if not module_row_key:
+        raise ValueError(f"spec {spec_row_key} has no module_row_key (data integrity issue)")
+
+    await generate_frs_design_module(
+        project, module_row_key, doc, bundle, db,
+        target_spec_row_key=spec_row_key, ui_only=True,
+    )
+
+    log.info(
+        "frs.figma_link.set",
+        extra={
+            "doc_id": str(doc.id), "spec_row_key": spec_row_key,
+            "link_type": "real", "screen_count": len(screens) or 1,
+            "regenerated": True,
+        },
+    )
+    return {
+        "status": "regenerated",
+        "spec_row_key": spec_row_key,
+        "link": link,
+        "regenerated": True,
+        "screen_count": len(screens) or 1,
+    }
+
+
+async def regenerate_frs_spec(
+    project: Project,
+    spec_row_key: str,
+    db: AsyncSession,
+    *,
+    scope: str = "full",
+    user_id: uuid.UUID | None = None,
+    bundle: ProjectContextBundle | None = None,
+) -> dict[str, Any]:
+    """Re-run design_module narrowed to a single spec.
+
+    scope='full'      → re-author every section of the spec
+    scope='ui_only'   → only update screens + ui_components (used by figma flow)
+
+    Returns the orchestrator result dict.
+    """
+    if scope not in ("full", "ui_only"):
+        raise ValueError(f"scope must be 'full' or 'ui_only'; got {scope!r}")
+
+    doc = await _ensure_frs_document(project.id, db)
+    spec = await _load_spec_row(doc.id, spec_row_key, db)
+    if spec is None:
+        raise ValueError(f"spec {spec_row_key} not found in project {project.id}")
+
+    if not spec.module_row_key:
+        raise ValueError(f"spec {spec_row_key} has no module_row_key (data integrity issue)")
+
+    if bundle is None:
+        bundle = await gather_project_context(
+            project.id, db,
+            artifact_document_id=doc.id,
+            artifact_type="frs",
+        )
+
+    log.info(
+        "frs.spec.regenerate",
+        extra={
+            "doc_id": str(doc.id),
+            "spec_row_key": spec_row_key,
+            "module_row_key": spec.module_row_key,
+            "scope": scope,
+        },
+    )
+
+    return await generate_frs_design_module(
+        project, spec.module_row_key, doc, bundle, db,
+        target_spec_row_key=spec_row_key,
+        ui_only=(scope == "ui_only"),
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Full pipeline (Stage A → Stage B, parallel per module)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
@@ -725,11 +1671,16 @@ async def generate_frs_all(
     db: AsyncSession,
     *,
     brief: str | None = None,
+    run_stage_b: bool = False,
+    max_parallel_modules: int = 3,
 ) -> dict:
-    """Stage-A pipeline: ensure doc → mark generating → modularize → in_interview.
+    """Full FRS pipeline: Stage A (modularize) → Stage B (per-module design).
 
-    Stage B (per-module FRS authoring) will be triggered next when shipped.
-    For v1-Stage-A-only mode, returns the FRS detail after modularize completes.
+    Stage B runs the per-module design in parallel, capped at `max_parallel_modules`
+    to avoid Vertex rate-spikes. Each module gets its own AsyncSessionLocal to
+    avoid event-loop binding.
+
+    Pass run_stage_b=False to run Stage A only (legacy behavior; useful for tests).
     """
     doc = await _ensure_frs_document(project.id, db)
 
@@ -766,6 +1717,44 @@ async def generate_frs_all(
     # Stage A
     await generate_frs_modularize(project, doc, bundle, db)
     await db.commit()
+
+    # Stage B — parallel per module, capped concurrency
+    if run_stage_b:
+        from app.models.frs import FrsModule
+
+        modules = (
+            await db.execute(
+                select(FrsModule).where(
+                    FrsModule.document_id == doc.id,
+                    FrsModule.is_current.is_(True),
+                    FrsModule.status == "active",
+                )
+            )
+        ).scalars().all()
+        module_keys = [m.row_key for m in modules]
+
+        sem = asyncio.Semaphore(max_parallel_modules)
+
+        async def _design_one(mod_row_key: str) -> None:
+            from app.db import AsyncSessionLocal
+            async with sem:
+                async with AsyncSessionLocal() as unit_db:
+                    unit_doc = await unit_db.get(ArtifactDocument, doc.id)
+                    if unit_doc is None:
+                        return
+                    try:
+                        await generate_frs_design_module(
+                            project, mod_row_key, unit_doc, bundle, unit_db,
+                        )
+                        await unit_db.commit()
+                    except Exception:
+                        log.exception(
+                            "frs.design_module.failed",
+                            extra={"doc_id": str(doc.id), "module_row_key": mod_row_key},
+                        )
+                        await unit_db.rollback()
+
+        await asyncio.gather(*[_design_one(mk) for mk in module_keys])
 
     # Finalize → in_interview
     await db.refresh(doc)
@@ -1068,6 +2057,33 @@ async def get_frs_detail(
     specs = await _current_frs_rows_for("frs_specs", doc.id, db)
     decisions = await _current_frs_rows_for("frs_spec_decisions", doc.id, db)
 
+    # Stage B sub-rows (hydrated onto each spec below)
+    screens = await _current_frs_rows_for("frs_screens", doc.id, db)
+    components = await _current_frs_rows_for("frs_ui_components", doc.id, db)
+    endpoints = await _current_frs_rows_for("frs_endpoints", doc.id, db)
+    data_entities = await _current_frs_rows_for("frs_data_entities", doc.id, db)
+    business_rules = await _current_frs_rows_for("frs_business_rules", doc.id, db)
+    scenarios = await _current_frs_rows_for("frs_acceptance_scenarios", doc.id, db)
+    functional_requirements = await _current_frs_rows_for("frs_functional_requirements", doc.id, db)
+
+    # Traceability (not versioned — replace-all)
+    from app.models.frs import FrsTraceability
+    trace_rows = (
+        await db.execute(
+            select(FrsTraceability).where(FrsTraceability.document_id == doc.id)
+        )
+    ).scalars().all()
+    traceability = [{
+        "id": str(t.id),
+        "document_id": str(t.document_id),
+        "source_table": t.source_table,
+        "source_row_key": t.source_row_key,
+        "target_kind": t.target_kind,
+        "target_ref": t.target_ref,
+        "target_label": t.target_label or "",
+        "confidence": t.confidence or "medium",
+    } for t in trace_rows]
+
     # Group children by module
     def _by_module(rows: list[dict]) -> dict[str, list[dict]]:
         out: dict[str, list[dict]] = {}
@@ -1079,7 +2095,50 @@ async def get_frs_detail(
     resps_by_mod = _by_module(resps)
     ifaces_by_mod = _by_module(ifaces)
     des_by_mod = _by_module(des)
-    specs_by_mod = _by_module(specs)
+
+    # Group Stage B sub-rows by spec_row_key
+    def _by_spec(rows: list[dict]) -> dict[str, list[dict]]:
+        out: dict[str, list[dict]] = {}
+        for r in rows:
+            k = r.get("spec_row_key")
+            if k:
+                out.setdefault(k, []).append(r)
+        return out
+
+    screens_by_spec = _by_spec(screens)
+    components_by_spec = _by_spec(components)
+    endpoints_by_spec = _by_spec(endpoints)
+    data_entities_by_spec = _by_spec(data_entities)
+    business_rules_by_spec = _by_spec(business_rules)
+    scenarios_by_spec = _by_spec(scenarios)
+    functional_requirements_by_spec = _by_spec(functional_requirements)
+    spec_decisions_by_spec: dict[str, list[dict]] = {}
+    for d in decisions:
+        if d.get("spec_row_key"):
+            spec_decisions_by_spec.setdefault(d["spec_row_key"], []).append(d)
+
+    # Traceability rows whose source is THIS spec
+    traceability_by_source: dict[str, list[dict]] = {}
+    for t in traceability:
+        traceability_by_source.setdefault(t["source_row_key"], []).append(t)
+
+    # Hydrate each spec with its Stage B sub-rows
+    specs_hydrated = []
+    for s in specs:
+        srk = s["row_key"]
+        specs_hydrated.append({
+            **s,
+            "screens": screens_by_spec.get(srk, []),
+            "ui_components": components_by_spec.get(srk, []),
+            "endpoints": endpoints_by_spec.get(srk, []),
+            "data_entities": data_entities_by_spec.get(srk, []),
+            "business_rules": business_rules_by_spec.get(srk, []),
+            "scenarios": scenarios_by_spec.get(srk, []),
+            "functional_requirements": functional_requirements_by_spec.get(srk, []),
+            "decisions": spec_decisions_by_spec.get(srk, []),
+            "traceability": traceability_by_source.get(srk, []),
+        })
+    specs_by_mod = _by_module(specs_hydrated)
 
     # Module decisions (module-scoped only)
     module_decisions_by_key: dict[str, list[dict]] = {}

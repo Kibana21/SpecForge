@@ -1,0 +1,271 @@
+{
+  "specs": [
+    {
+      "row_key": "M001-FRS001",
+      "title": "Customer Identity Validation",
+      "priority": "P0",
+      "layer": "vertical",
+      "br_refs": ["BR-001"],
+      "nfr_refs": [],
+      "depends_on": [],
+      "narrative": "Before any claim intake details are captured, the chatbot must verify that the customer is the policyholder of record. Identity validation checks the policy number and the customer's date of birth against the Customer Master record. On success, the conversation continues to claim detail capture; on failure, the customer is offered a single retry with a clear, non-leaky error message.",
+      "screens": [
+        {
+          "row_key": "M001-FRS001-SCR-1",
+          "screen_name": "Identity Verification Step",
+          "figma_link": "https://www.figma.com/file/example/claims-chatbot?node-id=12-345",
+          "purpose": "Collect policy number + DOB so the system can validate that the chatbot user is the policyholder before any claim data is captured.",
+          "user_roles": ["Customer"],
+          "layout": "- Single-column conversational layout (web + mobile)\n- Header: chatbot avatar + step indicator (1 of 4)\n- Body: two prompts in sequence (policy number, then DOB) with inline confirm\n- Accessible: WCAG 2.1 AA contrast; full keyboard navigation; screen-reader announces each prompt",
+          "navigation": "- 'Back' returns to chatbot welcome\n- 'Cancel' aborts the claim session (with confirm dialog)\n- On successful validation: forward to Claim Intake Form\n- On failed validation (after 1 retry): forward to Customer Support Handoff",
+          "interactive_behavior": "- Initial: policy-number prompt focused with placeholder 'e.g. POL-1234567'\n- Loading: spinner + 'Verifying…' (max 3s; longer triggers a timeout banner)\n- On error: inline message 'We couldn't verify your details. Please try again.' (no PII echoed)\n- Session expiry after 15 minutes idle → redirect with 'session expired' banner"
+        }
+      ],
+      "ui_components": [
+        {
+          "row_key": "M001-FRS001-CMP-1",
+          "screen_row_key": "M001-FRS001-SCR-1",
+          "component_name": "Policy Number Input",
+          "component_type": "input",
+          "definition": {"position": "top", "mandatory": true, "default": "", "placeholder": "e.g. POL-1234567", "tooltip": "10–12 character policy ID from your policy document"},
+          "behavior": {"change": "live trim whitespace", "blur": "validate format", "auto_populate": "from session if previously entered", "dependencies": [], "conditional_display": "always", "editable": true},
+          "validation": {"data_type": "string", "length": "10-12", "format": "alphanumeric_with_hyphen", "allowed_values": null, "regex": "^[A-Z]{3}-[A-Z0-9]{6,8}$", "mandatory": true, "cross_field": null, "uniqueness": "n/a", "server_side": true, "message": "Policy number format is invalid. It should look like POL-1234567."},
+          "actions": [{"button": "Continue", "enabled_when": "policy_number valid", "confirm_dialog": false, "on_success": "show DOB prompt", "on_failure": "show inline error"}],
+          "data_mapping": {"ui_field": "policy_number", "api_param": "policy_id", "display_value": "uppercase", "stored_value": "uppercase normalized"}
+        },
+        {
+          "row_key": "M001-FRS001-CMP-2",
+          "screen_row_key": "M001-FRS001-SCR-1",
+          "component_name": "Date of Birth Input",
+          "component_type": "date_picker",
+          "definition": {"position": "below policy_number", "mandatory": true, "default": "", "placeholder": "DD / MM / YYYY", "tooltip": "Date of birth as registered on your policy"},
+          "behavior": {"change": "format as user types", "blur": "validate age ≥18", "auto_populate": "from session if previously entered", "dependencies": ["policy_number"], "conditional_display": "after policy_number valid", "editable": true},
+          "validation": {"data_type": "date", "length": null, "format": "DD/MM/YYYY", "allowed_values": null, "regex": null, "mandatory": true, "cross_field": "must match policy.dob", "uniqueness": "n/a", "server_side": true, "message": "We couldn't verify your details. Please try again."},
+          "actions": [{"button": "Verify", "enabled_when": "policy_number and dob valid", "confirm_dialog": false, "on_success": "POST /validate-customer; on 200 → forward", "on_failure": "show inline error + retry count"}],
+          "data_mapping": {"ui_field": "dob", "api_param": "date_of_birth", "display_value": "DD/MM/YYYY", "stored_value": "ISO 8601 date"}
+        }
+      ],
+      "endpoints": [
+        {
+          "row_key": "M001-FRS001-EP-1",
+          "service_name": "Claim Intake Service",
+          "endpoint_name": "Validate Customer",
+          "url": "/api/v1/claims/validate-customer",
+          "protocol": "HTTPS",
+          "method": "POST",
+          "sync_async": "sync",
+          "idempotent": true,
+          "request_spec": {"headers": {"Authorization": "Bearer <session>", "Content-Type": "application/json"}, "query": {}, "path": {}, "body": {"policy_id": "string (mandatory)", "date_of_birth": "ISO 8601 date (mandatory)"}, "validation": "both fields mandatory; policy_id format; dob within last 150 years", "example": {"policy_id": "POL-1234567", "date_of_birth": "1985-06-12"}},
+          "response_spec": {"structure": "{ok: bool, customer_token: string?, customer_segment: string?}", "fields": {"ok": "true on match", "customer_token": "opaque 64-char session token; only on success", "customer_segment": "retail | corporate; only on success"}, "optional": ["customer_token", "customer_segment"], "example": {"ok": true, "customer_token": "abc123…xyz", "customer_segment": "retail"}, "pagination": "n/a", "sorting": "n/a"},
+          "error_handling": {"codes": [{"code": 400, "message": "INVALID_INPUT", "business_or_technical": "technical", "retryable": false}, {"code": 401, "message": "VALIDATION_FAILED", "business_or_technical": "business", "retryable": true}, {"code": 429, "message": "TOO_MANY_ATTEMPTS", "business_or_technical": "business", "retryable": false}, {"code": 503, "message": "UPSTREAM_UNAVAILABLE", "business_or_technical": "technical", "retryable": true}], "retry": "exponential backoff for 503", "fallback": "Customer Support Handoff on 429 or 503 after 2 retries", "timeout": "3s end-to-end"},
+          "security": {"auth_method": "Bearer session token (transient pre-auth)", "required_token": "anonymous-session", "roles": ["chatbot-user"], "action_permission_map": {"validate": "chatbot-user"}, "masking": "log policy_id last-4 only; never log dob", "audit": "audit row per attempt with outcome + ip + ua"},
+          "operational": {"rate_limit": "5 attempts per session per 15 minutes; 100/min per IP", "timeout": "3s", "max_payload": "1KB", "concurrency": "stateless; no per-customer lock", "transaction_boundary": "single read against Customer Master", "versioning": "URI versioned (/v1/)", "bc_rules": "v1 must remain available for 12 months after v2 launch"},
+          "integration_target": "Customer Master (read-only)"
+        }
+      ],
+      "data_entities": [
+        {
+          "row_key": "M001-FRS001-DE-1",
+          "entity_name": "customer_identity_attempt",
+          "data_store_type": "RDBMS",
+          "description": "Append-only log of every identity validation attempt — used for rate limiting + audit.",
+          "expected_volume": "~5k rows/day; ~2M total over 18 months retention",
+          "columns": [{"name": "id", "type": "uuid", "length": null, "nullable": false, "mandatory": true, "default": "gen_random_uuid()", "allowed_values": null, "generated": true, "sensitivity": "low", "encryption": "n/a"}, {"name": "session_id", "type": "varchar", "length": 64, "nullable": false, "mandatory": true, "default": null, "allowed_values": null, "generated": false, "sensitivity": "low", "encryption": "n/a"}, {"name": "policy_id_last4", "type": "varchar", "length": 4, "nullable": false, "mandatory": true, "default": null, "allowed_values": null, "generated": false, "sensitivity": "medium", "encryption": "at-rest"}, {"name": "outcome", "type": "varchar", "length": 16, "nullable": false, "mandatory": true, "default": null, "allowed_values": ["match", "mismatch", "blocked"], "generated": false, "sensitivity": "low", "encryption": "n/a"}, {"name": "attempted_at", "type": "timestamptz", "length": null, "nullable": false, "mandatory": true, "default": "now()", "allowed_values": null, "generated": true, "sensitivity": "low", "encryption": "n/a"}],
+          "keys_constraints": {"primary": ["id"], "foreign": [], "unique": []},
+          "indexes": [{"name": "ix_attempt_session", "columns": ["session_id", "attempted_at"], "unique": false, "purpose": "rate-limit lookup"}],
+          "relationships": [],
+          "access_logic": "Append-only writes per attempt. Reads scoped to a single session_id for rate-limit check. No joins to Customer Master — that lookup goes through the upstream service.",
+          "cache_spec": null,
+          "retention_policy": "18 months; purged via daily batch job"
+        }
+      ],
+      "business_rules": [
+        {"row_key": "M001-FRS001-BR-1", "rule_id": "BR-1", "description": "Maximum 5 validation attempts per session per 15-minute window.", "applies_to": "Validate Customer endpoint", "logic_decision": "if attempts_in_window >= 5 then return 429 TOO_MANY_ATTEMPTS"},
+        {"row_key": "M001-FRS001-BR-2", "rule_id": "BR-2", "description": "Identity error messages must be non-leaky (same message for invalid policy as for DOB mismatch).", "applies_to": "Validate Customer endpoint + UI", "logic_decision": "on any 401 / business failure → identical message 'We couldn't verify your details.'"}
+      ],
+      "acceptance_scenarios": [
+        {"row_key": "M001-FRS001-AS-1", "scenario_index": 1, "given": "a valid customer with policy POL-1234567 and DOB 1985-06-12", "when": "they submit identity verification via the chatbot", "then": "the system returns ok=true with a session token and routes them to the Claim Intake Form", "is_negative": false, "fr_refs": ["M001-FRS001-FR-1"]},
+        {"row_key": "M001-FRS001-AS-2", "scenario_index": 2, "given": "a customer enters policy POL-1234567 with the wrong DOB", "when": "they submit identity verification", "then": "the system returns 401 with message 'We couldn't verify your details.' and shows a single retry prompt", "is_negative": true, "fr_refs": ["M001-FRS001-FR-1", "M001-FRS001-FR-2"]},
+        {"row_key": "M001-FRS001-AS-3", "scenario_index": 3, "given": "a customer with no policy on file", "when": "they submit any identity values", "then": "the system returns 401 with the same non-leaky message and offers the support handoff after retry exhaustion", "is_negative": true, "fr_refs": ["M001-FRS001-FR-2"]},
+        {"row_key": "M001-FRS001-AS-4", "scenario_index": 4, "given": "a customer who has already attempted validation 5 times within 15 minutes", "when": "they submit a 6th identity attempt", "then": "the system returns 429 TOO_MANY_ATTEMPTS and routes them to Customer Support Handoff", "is_negative": true, "fr_refs": ["M001-FRS001-FR-3"]},
+        {"row_key": "M001-FRS001-AS-5", "scenario_index": 5, "given": "the upstream Customer Master is unavailable", "when": "the chatbot calls Validate Customer", "then": "the system returns 503 UPSTREAM_UNAVAILABLE, retries with exponential backoff, and offers the support handoff after 2 retries", "is_negative": true, "fr_refs": ["M001-FRS001-FR-4"]},
+        {"row_key": "M001-FRS001-AS-6", "scenario_index": 6, "given": "a successful identity validation", "when": "the audit row is written", "then": "policy_id is stored as last-4 only and the dob is never persisted", "is_negative": false, "fr_refs": ["M001-FRS001-FR-5"]}
+      ],
+      "functional_requirements": [
+        {"row_key": "M001-FRS001-FR-1", "fr_id": "FR-1", "requirement_text": "The system must validate the policy_id + date_of_birth pair against the Customer Master and return a session token on match.", "scenario_refs": ["M001-FRS001-AS-1", "M001-FRS001-AS-2"]},
+        {"row_key": "M001-FRS001-FR-2", "fr_id": "FR-2", "requirement_text": "The system must return a generic, non-leaky 401 message on any validation failure, regardless of whether the policy or the DOB is the root cause.", "scenario_refs": ["M001-FRS001-AS-2", "M001-FRS001-AS-3"]},
+        {"row_key": "M001-FRS001-FR-3", "fr_id": "FR-3", "requirement_text": "The system must enforce a rate limit of 5 attempts per session per 15-minute window and return 429 on the 6th attempt.", "scenario_refs": ["M001-FRS001-AS-4"]},
+        {"row_key": "M001-FRS001-FR-4", "fr_id": "FR-4", "requirement_text": "On upstream unavailability, the system must retry with exponential backoff and degrade gracefully to a Customer Support Handoff after 2 retries.", "scenario_refs": ["M001-FRS001-AS-5"]},
+        {"row_key": "M001-FRS001-FR-5", "fr_id": "FR-5", "requirement_text": "Identity attempts must be audited with policy_id last-4 only; the date of birth must never be persisted.", "scenario_refs": ["M001-FRS001-AS-6"]}
+      ],
+      "spec_decisions": [
+        {"row_key": "M001-FRS001-DEC-1", "spec_row_key": "M001-FRS001", "module_row_key": null, "question": "Should the chatbot use a session-bound rate limit (5/session) or an IP-based limit (100/IP/min)?", "options": [{"label": "Session-bound", "description": "Track attempts per chatbot session in Redis with a 15-min TTL.", "implications": "Tighter UX; bypass possible by starting a fresh session."}, {"label": "IP-based", "description": "Track attempts per IP across sessions.", "implications": "Harder to bypass; can affect shared-IP corporate customers."}], "recommended_index": 0, "recommended_rationale": "Session-bound is friendlier for legitimate retries and matches the existing claims chatbot session model in the App Brain."}
+      ],
+      "traceability": [
+        {"source_table": "frs_specs", "source_row_key": "M001-FRS001", "target_kind": "brd_business_requirement", "target_ref": "BR-001", "target_label": "Customer identity must be verified before any claim intake.", "confidence": "high"},
+        {"source_table": "frs_functional_requirements", "source_row_key": "M001-FRS001-FR-1", "target_kind": "brd_business_requirement", "target_ref": "BR-001", "target_label": "Customer identity must be verified before any claim intake.", "confidence": "high"},
+        {"source_table": "frs_functional_requirements", "source_row_key": "M001-FRS001-FR-2", "target_kind": "brd_business_requirement", "target_ref": "BR-001", "target_label": "Customer identity must be verified before any claim intake.", "confidence": "medium"},
+        {"source_table": "frs_acceptance_scenarios", "source_row_key": "M001-FRS001-AS-1", "target_kind": "within_frs", "target_ref": "M001-FRS001-FR-1", "target_label": "FR-1 happy path", "confidence": "high"},
+        {"source_table": "frs_acceptance_scenarios", "source_row_key": "M001-FRS001-AS-2", "target_kind": "within_frs", "target_ref": "M001-FRS001-FR-2", "target_label": "FR-2 negative", "confidence": "high"}
+      ],
+      "independent_test": "From a fresh chatbot session, attempt validation 6 times against a known policy with the wrong DOB. Observe: every attempt 1–5 returns the same non-leaky 401 message; attempt 6 returns 429 and routes to support. Then start a new session and attempt validation against the correct policy/DOB; observe a 200 OK with a session token.",
+      "data_and_validation": "Inputs: policy_id (10–12 alphanumeric with hyphen) and date_of_birth (ISO 8601). Both mandatory. Server-side validation enforces format AND consistency against Customer Master. No PII echoed on failure.",
+      "errors_and_edge_cases": "400 on malformed input. 401 on validation failure (generic message). 429 on rate-limit exhaustion. 503 with retry on upstream unavailability. After 2 retries on 503 or any 429, the user is routed to Customer Support Handoff with a session context handle so the agent has the attempt log.",
+      "observability": "Per-attempt audit row (entity above). Counter metric: claim_intake.validation.{outcome}. Distribution metric: claim_intake.validation.latency_ms. Trace correlation id propagated to Customer Master call.",
+      "implementation_tasks": [{"task": "Add Redis-backed rate limiter for session", "done": false}, {"task": "Wire 503 retry-with-backoff", "done": false}, {"task": "Verify PII redaction in audit log", "done": false}],
+      "completeness": 92,
+      "confidence": "high",
+      "ui_blocked_reason": null
+    },
+    {
+      "row_key": "M001-FRS002",
+      "title": "Claim Detail Capture Form",
+      "priority": "P0",
+      "layer": "vertical",
+      "br_refs": ["BR-002"],
+      "nfr_refs": [],
+      "depends_on": [],
+      "narrative": "After identity verification, the chatbot guides the customer through capturing core claim details (incident date, claim type, brief description, supporting documents). §1 UI Specification omitted pending Figma link. Backend + data + scenarios are designed against the conceptual UI defined by the BRD's stakeholder needs.",
+      "screens": [],
+      "ui_components": [],
+      "endpoints": [
+        {
+          "row_key": "M001-FRS002-EP-1",
+          "service_name": "Claim Intake Service",
+          "endpoint_name": "Submit Claim Detail",
+          "url": "/api/v1/claims/detail",
+          "protocol": "HTTPS",
+          "method": "POST",
+          "sync_async": "sync",
+          "idempotent": true,
+          "request_spec": {"headers": {"Authorization": "Bearer <customer_token>", "Idempotency-Key": "uuid (mandatory)"}, "query": {}, "path": {}, "body": {"incident_date": "ISO 8601 date", "claim_type": "enum: motor|health|property|travel|other", "description": "string ≤ 2000 chars", "document_refs": "array of upload IDs (≤10)"}, "validation": "incident_date within 6 months past + not future; claim_type allowed_values; description trimmed", "example": {"incident_date": "2026-05-15", "claim_type": "motor", "description": "Minor collision in parking lot.", "document_refs": ["UPL-12345"]}},
+          "response_spec": {"structure": "{claim_id: string, status: string}", "fields": {"claim_id": "CLM-prefixed 10-char id", "status": "captured | needs_more_info"}, "optional": [], "example": {"claim_id": "CLM-AB12CD34EF", "status": "captured"}, "pagination": "n/a", "sorting": "n/a"},
+          "error_handling": {"codes": [{"code": 400, "message": "INVALID_DETAIL", "business_or_technical": "business", "retryable": false}, {"code": 401, "message": "SESSION_EXPIRED", "business_or_technical": "business", "retryable": false}, {"code": 409, "message": "DUPLICATE_SUBMISSION", "business_or_technical": "business", "retryable": false}, {"code": 503, "message": "UPSTREAM_UNAVAILABLE", "business_or_technical": "technical", "retryable": true}], "retry": "client retries with same Idempotency-Key for transient 503", "fallback": "save draft for later if 503 persists", "timeout": "5s"},
+          "security": {"auth_method": "Bearer customer_token from M001-FRS001", "required_token": "customer_token", "roles": ["chatbot-user"], "action_permission_map": {"submit": "chatbot-user"}, "masking": "do not log description content", "audit": "audit row per submission with claim_id"},
+          "operational": {"rate_limit": "10 submissions per token per hour", "timeout": "5s", "max_payload": "200KB", "concurrency": "Idempotency-Key dedup within 24h window", "transaction_boundary": "single write to claim_draft + claim_event", "versioning": "URI versioned (/v1/)", "bc_rules": "Idempotency-Key contract permanent"},
+          "integration_target": null
+        }
+      ],
+      "data_entities": [
+        {
+          "row_key": "M001-FRS002-DE-1",
+          "entity_name": "claim_draft",
+          "data_store_type": "RDBMS",
+          "description": "Captured claim details awaiting downstream Claims Triage and adjudication.",
+          "expected_volume": "~2k rows/day; ~700k total over 12 months",
+          "columns": [{"name": "claim_id", "type": "varchar", "length": 14, "nullable": false, "mandatory": true, "default": null, "allowed_values": null, "generated": true, "sensitivity": "low", "encryption": "n/a"}, {"name": "customer_token_hash", "type": "varchar", "length": 64, "nullable": false, "mandatory": true, "default": null, "allowed_values": null, "generated": false, "sensitivity": "high", "encryption": "at-rest"}, {"name": "incident_date", "type": "date", "length": null, "nullable": false, "mandatory": true, "default": null, "allowed_values": null, "generated": false, "sensitivity": "low", "encryption": "n/a"}, {"name": "claim_type", "type": "varchar", "length": 16, "nullable": false, "mandatory": true, "default": null, "allowed_values": ["motor", "health", "property", "travel", "other"], "generated": false, "sensitivity": "low", "encryption": "n/a"}, {"name": "description", "type": "text", "length": null, "nullable": false, "mandatory": true, "default": null, "allowed_values": null, "generated": false, "sensitivity": "medium", "encryption": "at-rest"}, {"name": "created_at", "type": "timestamptz", "length": null, "nullable": false, "mandatory": true, "default": "now()", "allowed_values": null, "generated": true, "sensitivity": "low", "encryption": "n/a"}],
+          "keys_constraints": {"primary": ["claim_id"], "foreign": [], "unique": [["customer_token_hash", "incident_date", "claim_type"]]},
+          "indexes": [{"name": "ix_draft_created", "columns": ["created_at"], "unique": false, "purpose": "recent-claims listing"}],
+          "relationships": [],
+          "access_logic": "Insert-only from this FRS. Reads scoped by claim_id (single-row) or by customer_token_hash for history. Triage service reads separately.",
+          "cache_spec": null,
+          "retention_policy": "Retained for 7 years per claims compliance policy"
+        }
+      ],
+      "business_rules": [
+        {"row_key": "M001-FRS002-BR-1", "rule_id": "BR-1", "description": "Incident date must be within the last 6 months and not in the future.", "applies_to": "Submit Claim Detail endpoint", "logic_decision": "if incident_date > today or incident_date < today - 6 months then return 400 INVALID_DETAIL"},
+        {"row_key": "M001-FRS002-BR-2", "rule_id": "BR-2", "description": "Duplicate claims (same customer + incident_date + claim_type within 24 hours) must not be created.", "applies_to": "Submit Claim Detail endpoint", "logic_decision": "if matching customer_token_hash + incident_date + claim_type exists within 24h then return 409 DUPLICATE_SUBMISSION"}
+      ],
+      "acceptance_scenarios": [
+        {"row_key": "M001-FRS002-AS-1", "scenario_index": 1, "given": "an authenticated customer with a valid session token", "when": "they submit a claim detail with incident_date 2 weeks ago and claim_type 'motor'", "then": "the system returns 201 with a CLM- prefixed claim_id and status 'captured'", "is_negative": false, "fr_refs": ["M001-FRS002-FR-1"]},
+        {"row_key": "M001-FRS002-AS-2", "scenario_index": 2, "given": "an authenticated customer", "when": "they submit a claim with incident_date 8 months ago", "then": "the system returns 400 INVALID_DETAIL with a message pointing at the date field", "is_negative": true, "fr_refs": ["M001-FRS002-FR-2"]},
+        {"row_key": "M001-FRS002-AS-3", "scenario_index": 3, "given": "an authenticated customer who has just submitted a motor claim for 2026-05-15", "when": "they retry the same submission within 24 hours", "then": "the system returns 409 DUPLICATE_SUBMISSION with the original claim_id", "is_negative": true, "fr_refs": ["M001-FRS002-FR-3"]},
+        {"row_key": "M001-FRS002-AS-4", "scenario_index": 4, "given": "a customer whose session has expired", "when": "they submit any claim detail", "then": "the system returns 401 SESSION_EXPIRED and redirects to identity verification", "is_negative": true, "fr_refs": ["M001-FRS002-FR-4"]},
+        {"row_key": "M001-FRS002-AS-5", "scenario_index": 5, "given": "the same Idempotency-Key is used twice within 24h", "when": "the second request arrives", "then": "the system returns the original 201 response without re-creating the claim", "is_negative": false, "fr_refs": ["M001-FRS002-FR-5"]},
+        {"row_key": "M001-FRS002-AS-6", "scenario_index": 6, "given": "the upstream document store is unavailable", "when": "the customer submits a claim referencing UPL-12345", "then": "the system returns 503 UPSTREAM_UNAVAILABLE and the client retries with the same Idempotency-Key", "is_negative": true, "fr_refs": ["M001-FRS002-FR-6"]}
+      ],
+      "functional_requirements": [
+        {"row_key": "M001-FRS002-FR-1", "fr_id": "FR-1", "requirement_text": "The system must capture and persist claim_type, incident_date, description, and document_refs and return a CLM- prefixed claim_id.", "scenario_refs": ["M001-FRS002-AS-1"]},
+        {"row_key": "M001-FRS002-FR-2", "fr_id": "FR-2", "requirement_text": "Incident date must be within the past 6 months and not in the future; otherwise return 400.", "scenario_refs": ["M001-FRS002-AS-2"]},
+        {"row_key": "M001-FRS002-FR-3", "fr_id": "FR-3", "requirement_text": "Duplicate submissions (same customer + incident_date + claim_type) within 24 hours must return 409 with the original claim_id.", "scenario_refs": ["M001-FRS002-AS-3"]},
+        {"row_key": "M001-FRS002-FR-4", "fr_id": "FR-4", "requirement_text": "Expired sessions must return 401 SESSION_EXPIRED and trigger the identity-verification flow.", "scenario_refs": ["M001-FRS002-AS-4"]},
+        {"row_key": "M001-FRS002-FR-5", "fr_id": "FR-5", "requirement_text": "Requests with a repeated Idempotency-Key within 24 hours must return the original response without side-effects.", "scenario_refs": ["M001-FRS002-AS-5"]},
+        {"row_key": "M001-FRS002-FR-6", "fr_id": "FR-6", "requirement_text": "On 503 upstream errors, the system must permit safe client retry using the same Idempotency-Key.", "scenario_refs": ["M001-FRS002-AS-6"]}
+      ],
+      "spec_decisions": [],
+      "traceability": [
+        {"source_table": "frs_specs", "source_row_key": "M001-FRS002", "target_kind": "brd_business_requirement", "target_ref": "BR-002", "target_label": "Customer can submit a new claim through the chatbot.", "confidence": "high"},
+        {"source_table": "frs_functional_requirements", "source_row_key": "M001-FRS002-FR-1", "target_kind": "brd_business_requirement", "target_ref": "BR-002", "target_label": "Customer can submit a new claim through the chatbot.", "confidence": "high"},
+        {"source_table": "frs_acceptance_scenarios", "source_row_key": "M001-FRS002-AS-1", "target_kind": "within_frs", "target_ref": "M001-FRS002-FR-1", "target_label": "FR-1 happy path", "confidence": "high"}
+      ],
+      "independent_test": "Via the chatbot, complete identity verification, then submit a claim detail with valid fields. Observe a 201 with a CLM- claim_id. Repeat the same submission immediately — observe 409 with the same claim_id returned. Then submit with an Idempotency-Key already used in the 24h window — observe the original 201 response.",
+      "data_and_validation": "Inputs: incident_date (mandatory, within 6 months past, not future), claim_type (enum), description (≤2000 chars, trimmed), document_refs (≤10 IDs from the upload service). Idempotency-Key required.",
+      "errors_and_edge_cases": "400 for date out of window or claim_type not allowed. 401 for expired session. 409 for duplicate. 503 for upstream unavailability — client may retry safely with the same Idempotency-Key.",
+      "observability": "Audit row per submission. Counter: claim_intake.submission.{status}. Distribution: claim_intake.submission.latency_ms. Trace propagation to downstream Claims Triage.",
+      "implementation_tasks": [{"task": "Add Idempotency-Key dedup table", "done": false}, {"task": "Hook downstream Triage publisher", "done": false}],
+      "completeness": 88,
+      "confidence": "medium",
+      "ui_blocked_reason": "figma_link_required"
+    },
+    {
+      "row_key": "M001-FRS003",
+      "title": "Claim Triage Handoff",
+      "priority": "P0",
+      "layer": "vertical",
+      "br_refs": ["BR-001", "BR-006"],
+      "nfr_refs": [],
+      "depends_on": ["M000-FRS001"],
+      "narrative": "Once a claim_draft is created, it must be handed off to the Claims Triage module for severity classification and operator assignment. The handoff is an asynchronous event with at-least-once delivery and an outbox pattern. Error envelope and audit format follow the Cross-cutting Standards FRS (M000-FRS001).",
+      "screens": [],
+      "ui_components": [],
+      "endpoints": [
+        {
+          "row_key": "M001-FRS003-EP-1",
+          "service_name": "Claim Intake Service",
+          "endpoint_name": "Publish Claim Submitted Event",
+          "url": "events://claims.intake.claim_submitted/v1",
+          "protocol": "AMQP",
+          "method": "POST",
+          "sync_async": "async",
+          "idempotent": true,
+          "request_spec": {"headers": {"x-event-id": "uuid"}, "query": {}, "path": {}, "body": {"claim_id": "CLM-… (mandatory)", "customer_segment": "retail | corporate (mandatory)", "claim_type": "enum (mandatory)", "incident_date": "ISO 8601 (mandatory)"}, "validation": "claim_id format; all fields mandatory", "example": {"claim_id": "CLM-AB12CD34EF", "customer_segment": "retail", "claim_type": "motor", "incident_date": "2026-05-15"}},
+          "response_spec": {"structure": "Outbox row write only; no synchronous body", "fields": {}, "optional": [], "example": {}, "pagination": "n/a", "sorting": "n/a"},
+          "error_handling": {"codes": [{"code": 500, "message": "OUTBOX_WRITE_FAILED", "business_or_technical": "technical", "retryable": true}], "retry": "outbox-relay retries every 30s up to 24h; then dead-letter", "fallback": "alert on dead-letter row", "timeout": "n/a (async)"},
+          "security": {"auth_method": "mTLS between Claim Intake and event bus", "required_token": null, "roles": ["claim-intake-service"], "action_permission_map": {"publish": "claim-intake-service"}, "masking": "n/a", "audit": "outbox row + relay row form the audit trail"},
+          "operational": {"rate_limit": "n/a", "timeout": "n/a", "max_payload": "8KB", "concurrency": "single-writer per claim_id (uniq constraint)", "transaction_boundary": "claim_draft INSERT + outbox INSERT in one tx", "versioning": "schema versioned per topic suffix /v1/", "bc_rules": "old versions consumed for 6 months"},
+          "integration_target": "Claims Triage Module (consumer)"
+        }
+      ],
+      "data_entities": [],
+      "business_rules": [
+        {"row_key": "M001-FRS003-BR-1", "rule_id": "BR-1", "description": "The claim_submitted event must be persisted in the outbox in the same transaction as the claim_draft row.", "applies_to": "Submit Claim Detail endpoint + Publish event", "logic_decision": "BEGIN; INSERT claim_draft; INSERT outbox; COMMIT — if either fails, no event is emitted"},
+        {"row_key": "M001-FRS003-BR-2", "rule_id": "BR-2", "description": "Error envelope for any operational error on this handoff follows M000-FRS001 (Cross-cutting Standards).", "applies_to": "All emitted errors on this FRS", "logic_decision": "use {code, message, retryable, correlation_id} per M000-FRS001"}
+      ],
+      "acceptance_scenarios": [
+        {"row_key": "M001-FRS003-AS-1", "scenario_index": 1, "given": "a successful claim_draft INSERT", "when": "the outbox row is written in the same transaction", "then": "the Claims Triage module observes a claim_submitted event with the matching claim_id within 30 seconds", "is_negative": false, "fr_refs": ["M001-FRS003-FR-1"]},
+        {"row_key": "M001-FRS003-AS-2", "scenario_index": 2, "given": "the database connection drops mid-write", "when": "the claim_draft INSERT fails", "then": "no outbox row exists and no event is emitted (atomicity)", "is_negative": true, "fr_refs": ["M001-FRS003-FR-2"]},
+        {"row_key": "M001-FRS003-AS-3", "scenario_index": 3, "given": "the outbox-relay worker crashes after reading a row but before publishing", "when": "the worker restarts", "then": "the unprocessed outbox row is republished and the Triage module dedups by claim_id (at-least-once semantics)", "is_negative": false, "fr_refs": ["M001-FRS003-FR-3"]},
+        {"row_key": "M001-FRS003-AS-4", "scenario_index": 4, "given": "the event bus is unavailable for 30 minutes", "when": "outbox-relay attempts to publish", "then": "rows are retried with exponential backoff and alarms fire after 1 hour of failures", "is_negative": true, "fr_refs": ["M001-FRS003-FR-4"]},
+        {"row_key": "M001-FRS003-AS-5", "scenario_index": 5, "given": "an outbox row that has been retried for 24 hours", "when": "it has still not been published successfully", "then": "the row is moved to dead-letter and an operator alert is raised with the correlation_id", "is_negative": true, "fr_refs": ["M001-FRS003-FR-4"]},
+        {"row_key": "M001-FRS003-AS-6", "scenario_index": 6, "given": "the published event payload", "when": "the consumer parses it", "then": "the payload conforms to the v1 schema in this FRS and any extra fields are ignored", "is_negative": false, "fr_refs": ["M001-FRS003-FR-5"]}
+      ],
+      "functional_requirements": [
+        {"row_key": "M001-FRS003-FR-1", "fr_id": "FR-1", "requirement_text": "On successful claim_draft creation, the system must publish a claim_submitted event with claim_id, customer_segment, claim_type, and incident_date.", "scenario_refs": ["M001-FRS003-AS-1"]},
+        {"row_key": "M001-FRS003-FR-2", "fr_id": "FR-2", "requirement_text": "The claim_draft INSERT and outbox INSERT must happen in a single transaction; failure of either prevents both.", "scenario_refs": ["M001-FRS003-AS-2"]},
+        {"row_key": "M001-FRS003-FR-3", "fr_id": "FR-3", "requirement_text": "The outbox-relay must implement at-least-once delivery; consumers must dedup by claim_id.", "scenario_refs": ["M001-FRS003-AS-3"]},
+        {"row_key": "M001-FRS003-FR-4", "fr_id": "FR-4", "requirement_text": "Failed publish attempts must be retried with exponential backoff for up to 24 hours; after that, the row is dead-lettered and an operator alert is raised.", "scenario_refs": ["M001-FRS003-AS-4", "M001-FRS003-AS-5"]},
+        {"row_key": "M001-FRS003-FR-5", "fr_id": "FR-5", "requirement_text": "The event payload must conform to the v1 schema; consumers must ignore unknown fields (forward compatibility).", "scenario_refs": ["M001-FRS003-AS-6"]}
+      ],
+      "spec_decisions": [],
+      "traceability": [
+        {"source_table": "frs_specs", "source_row_key": "M001-FRS003", "target_kind": "brd_business_requirement", "target_ref": "BR-001", "target_label": "Customer identity verified before claim", "confidence": "medium"},
+        {"source_table": "frs_specs", "source_row_key": "M001-FRS003", "target_kind": "brd_business_requirement", "target_ref": "BR-006", "target_label": "Common error response envelope for backend services", "confidence": "high"},
+        {"source_table": "frs_specs", "source_row_key": "M001-FRS003", "target_kind": "within_frs", "target_ref": "M000-FRS001", "target_label": "Cross-cutting Standards FRS depended upon", "confidence": "high"},
+        {"source_table": "frs_acceptance_scenarios", "source_row_key": "M001-FRS003-AS-1", "target_kind": "within_frs", "target_ref": "M001-FRS003-FR-1", "target_label": "happy-path handoff", "confidence": "high"}
+      ],
+      "independent_test": "Submit a valid claim via M001-FRS002 and observe the Claims Triage queue for a claim_submitted event with the matching claim_id arriving within 30 seconds. Then disconnect the database mid-submission and verify that neither a claim_draft row nor an outbox row exists. Finally, take the event bus offline for 5 minutes and observe that outbox-relay retries until the bus is restored, with no events lost.",
+      "data_and_validation": "Inputs come from the claim_draft INSERT (same transaction). claim_id format CLM-XXXXXXXXXX (10 alphanumeric). Outbox payload size limited to 8KB.",
+      "errors_and_edge_cases": "Transactional rollback on either INSERT failing. Outbox-relay retries with exponential backoff. Dead-lettering after 24h. Consumer-side dedup by claim_id. All error envelopes follow M000-FRS001.",
+      "observability": "Outbox depth gauge. claim_intake.handoff.published counter. claim_intake.handoff.dead_letter counter. Per-event tracing with correlation_id.",
+      "implementation_tasks": [{"task": "Create outbox table + index", "done": false}, {"task": "Implement outbox-relay worker", "done": false}, {"task": "Wire dead-letter alert", "done": false}],
+      "completeness": 90,
+      "confidence": "high",
+      "ui_blocked_reason": null
+    }
+  ],
+  "open_questions": [
+    {"question": "Should the rate-limit window for identity validation be tunable per business unit?", "field": "M001-FRS001.business_rules.BR-1", "why": "Operational teams may want to relax the limit for corporate brokers managing many clients.", "example": "5 per session for retail; 20 per session for corporate broker accounts"}
+  ],
+  "completeness": 90,
+  "confidence": "high"
+}

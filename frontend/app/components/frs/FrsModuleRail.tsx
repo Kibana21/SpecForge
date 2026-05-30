@@ -12,8 +12,10 @@
  * When module count > 8, a filter+search bar appears.
  * Hover reveals a "glance" tooltip with summary + quick actions.
  */
-import { useMemo, useState } from 'react'
-import { Lock, Plus, Search, Filter } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  CheckCircle2, ChevronDown, ChevronRight, Filter, Loader2, Lock, Plus, Search,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { FRS_MODULE_LAYER_LABELS, FRS_LAYER_STYLES } from '@/lib/frs-manifest'
 import type { FrsLayer, FrsModuleHydrated } from '@/lib/types'
@@ -22,14 +24,21 @@ import { pickCapabilityIcon } from './icons'
 interface Props {
   modules: FrsModuleHydrated[]
   activeModuleKey: string | null
+  /** Active spec row_key when a spec panel is open. */
+  activeSpecRowKey?: string | null
+  /** unit_status from the document — used to render per-spec progress indicators. */
+  unitStatus?: Record<string, unknown> | null
   onSelectModule: (rowKey: string) => void
+  /** Called when a nested spec row is clicked (Stage B). */
+  onSelectSpec?: (specRowKey: string, moduleRowKey: string) => void
   onAddModule?: () => void
 }
 
 const LAYER_ORDER: FrsLayer[] = ['foundation', 'vertical', 'cross_cutting']
 
 export function FrsModuleRail({
-  modules, activeModuleKey, onSelectModule, onAddModule,
+  modules, activeModuleKey, activeSpecRowKey, unitStatus,
+  onSelectModule, onSelectSpec, onAddModule,
 }: Props) {
   const [filter, setFilter] = useState('')
   const [layerFilter, setLayerFilter] = useState<'all' | FrsLayer>('all')
@@ -117,7 +126,10 @@ export function FrsModuleRail({
                   key={m.row_key}
                   module={m}
                   active={m.row_key === activeModuleKey}
+                  activeSpecRowKey={activeSpecRowKey ?? null}
+                  unitStatus={unitStatus ?? null}
                   onClick={() => onSelectModule(m.row_key)}
+                  onSelectSpec={onSelectSpec}
                 />
               ))}
             </div>
@@ -152,15 +164,28 @@ export function FrsModuleRail({
 // ── Module row ──────────────────────────────────────────────────────────────
 
 function FrsModuleRailItem({
-  module: m, active, onClick,
+  module: m, active, activeSpecRowKey, unitStatus, onClick, onSelectSpec,
 }: {
   module: FrsModuleHydrated
   active: boolean
+  activeSpecRowKey: string | null
+  unitStatus: Record<string, unknown> | null
   onClick: () => void
+  onSelectSpec?: (specRowKey: string, moduleRowKey: string) => void
 }) {
   const [hover, setHover] = useState(false)
+  // Default-expanded when the module is active OR contains the active spec
+  const stubs = m.backlog ?? []
+  const containsActiveSpec = !!activeSpecRowKey && stubs.some(s => s.row_key === activeSpecRowKey)
+  const [expanded, setExpanded] = useState<boolean>(active || containsActiveSpec)
+
+  // Auto-expand when this module becomes active or contains the active spec
+  useEffect(() => {
+    if (active || containsActiveSpec) setExpanded(true)
+  }, [active, containsActiveSpec])
+
   const Icon = pickCapabilityIcon(m.slug)
-  const stubCount = m.backlog?.length ?? 0
+  const stubCount = stubs.length
   const layerStyle = FRS_LAYER_STYLES[m.layer]
 
   const stubBadgeCls =
@@ -172,67 +197,140 @@ function FrsModuleRailItem({
       ? 'bg-amber-50 text-amber-600'
       : 'bg-[var(--bg-elevated)] text-[var(--text-tertiary)]'
 
+  const moduleUnit = (unitStatus?.[`design_mod_${m.row_key}`] as
+    Record<string, unknown> | undefined) ?? null
+  const currentUnit = unitStatus?.['_current_unit'] as string | undefined
+  const moduleDesigning = currentUnit === `design_mod_${m.row_key}`
+
   return (
     <div
       className="relative"
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
-      <button
-        onClick={onClick}
+      <div
         className={cn(
-          'group w-full flex items-center gap-2 px-3 py-2 text-left transition-colors',
+          'group w-full flex items-center gap-1 px-1 py-2 transition-colors',
           'border-l-2',
           active
             ? 'bg-[var(--frs-rail-active-bg)] border-[var(--frs-rail-active-border)]'
             : 'border-transparent hover:bg-[var(--frs-rail-hover-bg)]',
         )}
-        aria-current={active ? 'location' : undefined}
       >
-        <span
-          className={cn(
-            'shrink-0 transition-colors',
-            active ? 'text-[var(--accent)]' : 'text-[var(--text-secondary)]',
-          )}
-          style={{ color: active ? undefined : layerStyle.accent }}
+        {/* Chevron toggle */}
+        <button
+          onClick={(e) => { e.stopPropagation(); setExpanded(v => !v) }}
+          className="shrink-0 rounded p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"
+          aria-label={expanded ? 'Collapse module' : 'Expand module'}
+          aria-expanded={expanded}
         >
-          <Icon size={14} />
-        </span>
-        <div className="flex-1 min-w-0">
-          <p
+          {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </button>
+
+        {/* Module body — clicking selects the module */}
+        <button
+          onClick={onClick}
+          className="flex-1 flex items-center gap-2 min-w-0 text-left"
+          aria-current={active ? 'location' : undefined}
+        >
+          <span
             className={cn(
-              'text-sm truncate',
-              active
-                ? 'font-semibold text-[var(--text-primary)]'
-                : 'text-[var(--text-secondary)]',
+              'shrink-0 transition-colors',
+              active ? 'text-[var(--accent)]' : 'text-[var(--text-secondary)]',
             )}
+            style={{ color: active ? undefined : layerStyle.accent }}
           >
-            {m.name}
-          </p>
-          <p className="text-[10px] text-[var(--text-tertiary)] truncate font-mono">
-            {m.row_key}
-          </p>
-        </div>
-        <span
-          className={cn(
-            'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold',
-            stubBadgeCls,
+            <Icon size={14} />
+          </span>
+          <div className="flex-1 min-w-0">
+            <p
+              className={cn(
+                'text-sm truncate',
+                active
+                  ? 'font-semibold text-[var(--text-primary)]'
+                  : 'text-[var(--text-secondary)]',
+              )}
+            >
+              {m.name}
+            </p>
+            <p className="text-[10px] text-[var(--text-tertiary)] truncate font-mono">
+              {m.row_key}
+            </p>
+          </div>
+          <span
+            className={cn(
+              'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold',
+              stubBadgeCls,
+            )}
+            title={`${stubCount} backlog stub(s)`}
+          >
+            {stubCount}
+          </span>
+          {m.is_locked && (
+            <Lock
+              size={11}
+              className="shrink-0 text-amber-600"
+              aria-label="Locked"
+            />
           )}
-          title={`${stubCount} backlog stub(s)`}
-        >
-          {stubCount}
-        </span>
-        {m.is_locked && (
-          <Lock
-            size={11}
-            className="shrink-0 text-amber-600"
-            aria-label="Locked"
-          />
-        )}
-      </button>
+          {moduleDesigning && (
+            <Loader2
+              size={11}
+              className="shrink-0 text-blue-600 animate-spin"
+              aria-label="Designing"
+            />
+          )}
+        </button>
+      </div>
+
+      {/* Nested spec rows */}
+      {expanded && stubs.length > 0 && onSelectSpec && (
+        <ul className="ml-6 mb-1 border-l border-[var(--border-subtle)]">
+          {stubs.map((s) => {
+            const isActive = s.row_key === activeSpecRowKey
+            const designed = (s.completeness ?? 0) > 0
+            const designing = moduleDesigning && !designed
+            return (
+              <li key={s.row_key}>
+                <button
+                  onClick={() => onSelectSpec(s.row_key, m.row_key)}
+                  className={cn(
+                    'group/spec w-full flex items-center gap-2 pl-3 pr-2 py-1 text-left text-xs transition-colors',
+                    isActive
+                      ? 'bg-[var(--frs-rail-active-bg)]/60 font-medium text-[var(--text-primary)]'
+                      : 'text-[var(--text-secondary)] hover:bg-[var(--frs-rail-hover-bg)]',
+                  )}
+                  aria-current={isActive ? 'location' : undefined}
+                >
+                  <span className="shrink-0 w-3 flex justify-center">
+                    {designed && (s.completeness ?? 0) >= 90 ? (
+                      <CheckCircle2 size={10} className="text-[var(--accent)]" />
+                    ) : designed ? (
+                      <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
+                    ) : designing ? (
+                      <Loader2 size={10} className="text-blue-600 animate-spin" />
+                    ) : (
+                      <span className="w-1.5 h-1.5 rounded-full bg-[var(--text-tertiary)]/40" />
+                    )}
+                  </span>
+                  <span className="flex-1 min-w-0 truncate">{s.title}</span>
+                  {designed && (
+                    <span className="shrink-0 text-[10px] text-[var(--text-tertiary)]">
+                      {s.completeness}%
+                    </span>
+                  )}
+                  {s.is_locked && (
+                    <Lock size={9} className="shrink-0 text-amber-600" />
+                  )}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
 
       {/* Glance card — slides out to right on hover */}
-      {hover && <FrsModuleGlanceCard module={m} />}
+      {hover && !expanded && <FrsModuleGlanceCard module={m} />}
     </div>
   )
 }

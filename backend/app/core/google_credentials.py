@@ -25,6 +25,13 @@ def configure_google_genai_env() -> None:
         os.environ.setdefault("GOOGLE_CLOUD_PROJECT", settings.gemini_project_id)
     if settings.gemini_location:
         os.environ.setdefault("GOOGLE_CLOUD_LOCATION", settings.gemini_location)
+        # LiteLLM (used by DSPy + PageIndex) ignores GOOGLE_CLOUD_LOCATION and
+        # defaults Vertex to us-central1 unless VERTEXAI_LOCATION / VERTEXAI_PROJECT
+        # are set. Gemini 3.x text models are served only from `global`, so this
+        # is required or every DSPy call 404s against us-central1.
+        os.environ.setdefault("VERTEXAI_LOCATION", settings.gemini_location)
+        if settings.gemini_project_id:
+            os.environ.setdefault("VERTEXAI_PROJECT", settings.gemini_project_id)
 
 
 @lru_cache(maxsize=1)

@@ -301,7 +301,7 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
 
   function frsStatusBadge() {
     if (!frsStatus) return null
-    if (frsStatus === 'generating') return <span className="text-[9px] rounded px-1.5 py-0.5 bg-blue-100 text-blue-700 font-semibold animate-pulse">Generating…</span>
+    if (frsStatus === 'generating') return <span className="text-[9px] rounded px-1.5 py-0.5 bg-blue-100 text-blue-700 font-semibold animate-pulse">{frsStageAApproved ? 'Designing…' : 'Generating…'}</span>
     if (frsStatus === 'validated') return <span className="text-[9px] rounded px-1.5 py-0.5 bg-emerald-100 text-emerald-700 font-semibold">Validated ✓</span>
     if (frsStageAApproved) return <span className="text-[9px] rounded px-1.5 py-0.5 bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200">Stage 1 ✓</span>
     if (frsStatus === 'in_interview') return <span className="text-[9px] rounded px-1.5 py-0.5 bg-amber-100 text-amber-700 font-semibold">Draft</span>
@@ -309,7 +309,7 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
   }
   const frsSublabel = !frsStatus
     ? (brdValidated ? 'Functional Specifications' : 'Unlocks after BRD')
-    : frsStatus === 'generating' ? 'Modularizing…'
+    : frsStatus === 'generating' ? (frsStageAApproved ? 'Designing modules…' : 'Modularizing…')
     : frsStatus === 'validated' ? 'Validated'
     : frsStageAApproved ? 'Stage 1 approved · Stage 2 ready'
     : 'Draft · in progress'

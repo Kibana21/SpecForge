@@ -82,7 +82,29 @@ function SourceRow({ label, description, status, accentColor, icon, expandedCont
   )
 }
 
+const STATUS_DOT: Record<SourceRowProps['status'], string> = {
+  ready:   'bg-[var(--status-success)]',
+  pending: 'bg-[var(--status-warning)]',
+  stale:   'bg-[var(--stale)]',
+  missing: 'bg-[var(--text-tertiary)]',
+}
+
+function CompactChip({ label, status, icon }: Pick<SourceRowProps, 'label' | 'status' | 'icon'>) {
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border-default)] bg-[var(--bg-surface)] px-2 py-1 text-[11px] text-[var(--text-secondary)]"
+      title={`${label}: ${status}`}
+    >
+      <span className="shrink-0 text-[var(--text-tertiary)]">{icon}</span>
+      <span className="font-medium text-[var(--text-primary)]">{label}</span>
+      <span className={cn('h-1.5 w-1.5 rounded-full shrink-0', STATUS_DOT[status])} />
+    </span>
+  )
+}
+
 export function SourceStrip({ readiness, cbStatus, brdStatus, brdCounts, onManageSources }: Props) {
+  const [expanded, setExpanded] = useState(false)
+
   const totalDocs = readiness.docs?.length ?? 0
   const readyDocs = readiness.docs?.filter((d) => d.indexing_status === 'done').length ?? 0
   const hasPendingDocs = readiness.pending_doc_count > 0
@@ -99,114 +121,114 @@ export function SourceStrip({ readiness, cbStatus, brdStatus, brdCounts, onManag
     cbStatus === 'generating' ? 'pending' :
     'stale'
 
+  // Build the source list once; render as compact chips (default) or full cards.
+  const sources: SourceRowProps[] = [
+    {
+      label: 'App Brain',
+      description: 'Application facts & context',
+      status: 'ready',
+      accentColor: 'border-l-blue-500',
+      icon: <Brain size={13} />,
+    },
+    {
+      label: 'Documents',
+      description:
+        totalDocs === 0 ? 'No documents uploaded'
+        : hasPendingDocs ? `${readyDocs}/${totalDocs} indexed…`
+        : `${totalDocs} document${totalDocs !== 1 ? 's' : ''} ready`,
+      status: docsStatus,
+      accentColor: 'border-l-sky-500',
+      icon: <FileText size={13} />,
+      expandedContent:
+        totalDocs > 0 ? (
+          <div className="space-y-1">
+            {readiness.docs?.map((doc) => (
+              <div key={doc.id} className="flex items-center gap-2 text-xs">
+                {doc.indexing_status === 'done' ? (
+                  <CheckCircle2 size={11} className="text-[var(--status-success)] shrink-0" />
+                ) : doc.indexing_status === 'error' ? (
+                  <AlertTriangle size={11} className="text-[var(--status-danger)] shrink-0" />
+                ) : (
+                  <Clock size={11} className="text-[var(--status-warning)] shrink-0" />
+                )}
+                <span className="flex-1 truncate text-[var(--text-secondary)]" title={doc.filename}>
+                  {doc.filename}
+                </span>
+                {doc.page_count !== null && (
+                  <span className="text-[10px] text-[var(--text-tertiary)]">{doc.page_count}p</span>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : undefined,
+    },
+    {
+      label: 'Concept Brief',
+      description:
+        !cbStatus ? 'Not yet created' :
+        cbStatus === 'validated' ? 'Validated ✓' :
+        cbStatus === 'generating' ? 'Generating…' :
+        'Draft — not validated',
+      status: cbStatusParsed,
+      accentColor: 'border-l-green-500',
+      icon: <Sparkles size={13} />,
+    },
+    ...(brdStatus ? [{
+      label: 'BRD',
+      description:
+        brdStatus === 'validated' && brdCounts
+          ? `${brdCounts.brs ?? 0} BRs · ${brdCounts.objectives ?? 0} objectives · ${brdCounts.risks ?? 0} risks · ${brdCounts.kpis ?? 0} KPIs`
+          : brdStatus === 'generating' ? 'Generating…'
+          : brdStatus === 'validated' ? 'Validated ✓'
+          : 'Draft — not validated',
+      status: (brdStatus === 'validated' ? 'ready'
+        : brdStatus === 'generating' ? 'pending' : 'stale') as SourceRowProps['status'],
+      accentColor: 'border-l-pink-500',
+      icon: <BookOpen size={13} />,
+      expandedContent:
+        brdStatus === 'validated' && brdCounts ? (
+          <div className="space-y-1 text-xs text-[var(--text-secondary)]">
+            <p>This FRS will be grounded on every BRD row.</p>
+            <p className="text-[var(--text-tertiary)]">Stakeholders: {brdCounts.stakeholders ?? 0}</p>
+          </div>
+        ) : undefined,
+    }] : []),
+  ]
+
   return (
-    <div className="border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2.5 space-y-1.5">
-      <div className="flex items-center justify-between mb-1">
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">
+    <div className="border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <button
+          onClick={() => setExpanded((e) => !e)}
+          className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+        >
           Generation Sources
-        </p>
+          {expanded
+            ? <ChevronUp size={12} className="shrink-0" />
+            : <ChevronDown size={12} className="shrink-0" />}
+        </button>
         {onManageSources && (
           <button
             onClick={onManageSources}
-            className="text-[10px] text-[var(--accent)] hover:opacity-80 transition-opacity"
+            className="text-[10px] text-[var(--accent)] hover:opacity-80 transition-opacity shrink-0"
           >
             Manage →
           </button>
         )}
       </div>
 
-      {/* App Brain — always show */}
-      <SourceRow
-        label="App Brain"
-        description="Application facts & context"
-        status="ready"
-        accentColor="border-l-blue-500"
-        icon={<Brain size={13} />}
-      />
-
-      {/* Documents */}
-      <SourceRow
-        label="Documents"
-        description={
-          totalDocs === 0
-            ? 'No documents uploaded'
-            : hasPendingDocs
-            ? `${readyDocs}/${totalDocs} indexed…`
-            : `${totalDocs} document${totalDocs !== 1 ? 's' : ''} ready`
-        }
-        status={docsStatus}
-        accentColor="border-l-sky-500"
-        icon={<FileText size={13} />}
-        expandedContent={
-          totalDocs > 0 ? (
-            <div className="space-y-1">
-              {readiness.docs?.map((doc) => (
-                <div key={doc.id} className="flex items-center gap-2 text-xs">
-                  {doc.indexing_status === 'done' ? (
-                    <CheckCircle2 size={11} className="text-[var(--status-success)] shrink-0" />
-                  ) : doc.indexing_status === 'error' ? (
-                    <AlertTriangle size={11} className="text-[var(--status-danger)] shrink-0" />
-                  ) : (
-                    <Clock size={11} className="text-[var(--status-warning)] shrink-0" />
-                  )}
-                  <span className="flex-1 truncate text-[var(--text-secondary)]" title={doc.filename}>
-                    {doc.filename}
-                  </span>
-                  {doc.page_count !== null && (
-                    <span className="text-[10px] text-[var(--text-tertiary)]">{doc.page_count}p</span>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : undefined
-        }
-      />
-
-      {/* Concept Brief */}
-      <SourceRow
-        label="Concept Brief"
-        description={
-          !cbStatus ? 'Not yet created' :
-          cbStatus === 'validated' ? 'Validated ✓' :
-          cbStatus === 'generating' ? 'Generating…' :
-          'Draft — not validated'
-        }
-        status={cbStatusParsed}
-        accentColor="border-l-green-500"
-        icon={<Sparkles size={13} />}
-      />
-
-      {/* BRD (optional 4th layer — only shown when brdStatus is provided, e.g. FRS Builder) */}
-      {brdStatus && (
-        <SourceRow
-          label="BRD"
-          description={
-            brdStatus === 'validated' && brdCounts
-              ? `${brdCounts.brs ?? 0} BRs · ${brdCounts.objectives ?? 0} objectives · ${brdCounts.risks ?? 0} risks · ${brdCounts.kpis ?? 0} KPIs`
-              : brdStatus === 'generating'
-              ? 'Generating…'
-              : brdStatus === 'validated'
-              ? 'Validated ✓'
-              : 'Draft — not validated'
-          }
-          status={
-            !brdStatus ? 'missing' :
-            brdStatus === 'validated' ? 'ready' :
-            brdStatus === 'generating' ? 'pending' : 'stale'
-          }
-          accentColor="border-l-pink-500"
-          icon={<BookOpen size={13} />}
-          expandedContent={
-            brdStatus === 'validated' && brdCounts ? (
-              <div className="space-y-1 text-xs text-[var(--text-secondary)]">
-                <p>This FRS will be grounded on every BRD row.</p>
-                <p className="text-[var(--text-tertiary)]">
-                  Stakeholders: {brdCounts.stakeholders ?? 0}
-                </p>
-              </div>
-            ) : undefined
-          }
-        />
+      {expanded ? (
+        <div className="space-y-1.5 mt-2">
+          {sources.map((s) => (
+            <SourceRow key={s.label} {...s} />
+          ))}
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+          {sources.map((s) => (
+            <CompactChip key={s.label} label={s.label} status={s.status} icon={s.icon} />
+          ))}
+        </div>
       )}
     </div>
   )

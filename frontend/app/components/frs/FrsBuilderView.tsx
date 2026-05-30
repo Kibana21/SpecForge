@@ -26,10 +26,15 @@ import type { FrsFindingsResponse, FrsSpecDecisionRow } from '@/lib/types'
 
 import { FrsEmptyState } from './FrsEmptyState'
 import { FrsConstructionTheater } from './FrsConstructionTheater'
+import { FrsTwoPhaseGenerationViz } from './FrsTwoPhaseGenerationViz'
 import { FrsModuleRail } from './FrsModuleRail'
 import { FrsModulePanel } from './FrsModulePanel'
+import { FrsSpecPanel } from './FrsSpecPanel'
 import { FrsModuleDecisionPrompt } from './FrsModuleDecisionPrompt'
 import { FrsModularizeFindings } from './FrsModularizeFindings'
+import { FrsFindingsDrawer } from './FrsFindingsDrawer'
+import { FrsCoverageGalaxy } from './FrsCoverageGalaxy'
+import { FrsExportMenu } from './FrsExportMenu'
 import { FrsContinueStageBBanner } from './FrsContinueStageBBanner'
 import { FrsBrdEchoStrip } from './FrsBrdEchoStrip'
 import { SourceStrip } from '@/app/components/brd/SourceStrip'
@@ -57,11 +62,14 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
 
   // ── State ────────────────────────────────────────────────────────────────
   const [activeModuleKey, setActiveModuleKey] = useState<string | null>(null)
+  const [activeSpecRowKey, setActiveSpecRowKey] = useState<string | null>(null)
+  const [coverageOpen, setCoverageOpen] = useState(false)
   const [openDecision, setOpenDecision] = useState<FrsSpecDecisionRow | null>(null)
   const [findingsOpen, setFindingsOpen] = useState(false)
   const [findings, setFindings] = useState<FrsFindingsResponse | null>(null)
   const [findingsLoading, setFindingsLoading] = useState(false)
   const [bannerDismissed, setBannerDismissed] = useState(false)
+  const [stageBRunning, setStageBRunning] = useState(false)
 
   // Auto-select first module when modules first appear
   useEffect(() => {
@@ -77,6 +85,14 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
   const modularizeStatus = doc?.unit_status?.['modularize'] as { completeness?: number; confidence?: string } | undefined
   const stageAApproved = Boolean(doc?.unit_status?.['_stage_a_approved'])
   const activeModule = modules.find((m) => m.row_key === activeModuleKey) ?? null
+  const activeSpec = useMemo(() => {
+    if (!activeSpecRowKey) return null
+    for (const m of modules) {
+      const s = m.backlog?.find((sp) => sp.row_key === activeSpecRowKey)
+      if (s) return { spec: s, module: m }
+    }
+    return null
+  }, [activeSpecRowKey, modules])
 
   const openModuleDecisions: FrsSpecDecisionRow[] = useMemo(() => {
     if (!detail?.decisions || !activeModuleKey) return []
@@ -103,11 +119,9 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
   async function handleRegenerateModule() {
     if (!activeModuleKey) return
     try {
-      // v1: re-runs the whole modularize unit (locked modules preserved verbatim).
-      // Stage B will add per-module design re-run.
-      await api.frs.modularize(projectId)
-      toast.success('Re-modularization queued')
-      mutate()
+      await api.frs.designModule(projectId, activeModuleKey)
+      toast.success(`Module design queued for ${activeModuleKey}`)
+      await mutate()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Regeneration failed')
     }
@@ -138,6 +152,25 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
     }
   }
 
+  async function handleContinueStageB() {
+    setBannerDismissed(true)
+    setStageBRunning(true)
+    const moduleKeys = modules.map((m) => m.row_key)
+    let ok = 0
+    for (const key of moduleKeys) {
+      try {
+        await api.frs.designModule(projectId, key)
+        ok++
+        await mutate()
+      } catch {
+        toast.error(`Design failed for module ${key}`)
+      }
+    }
+    setStageBRunning(false)
+    if (ok > 0) toast.success(`Stage 2 complete — ${ok} module${ok !== 1 ? 's' : ''} designed`)
+    await mutate()
+  }
+
   // ── Render gates ─────────────────────────────────────────────────────────
 
   // Loading first hit
@@ -150,6 +183,21 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
     )
   }
 
+  // S3b — Stage B generation in progress (client-driven, mock-mode)
+  if (stageBRunning) {
+    const coveredBrsB = new Set(modules.flatMap((m) => m.backlog?.flatMap((s) => s.br_refs ?? []) ?? []))
+    return (
+      <FrsTwoPhaseGenerationViz
+        projectId={projectId}
+        modules={modules}
+        unitStatus={doc?.unit_status}
+        brCount={coveredBrsB.size}
+        onComplete={() => { setStageBRunning(false); mutate() }}
+        onCancel={() => { setStageBRunning(false); mutate() }}
+      />
+    )
+  }
+
   // S3 — generating WITH real progress signal (recent unit_status update or
   // _current_unit pointer). Without this, a stale 'generating' status from a
   // failed worker would strand the user in the spinner forever.
@@ -158,6 +206,21 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
     (modularizeStatus?.completeness && modularizeStatus.completeness > 0),
   )
   if (status === 'generating' && hasGenerationProgress) {
+    // Stage A approved → Stage B is running; show the two-phase viz with per-module bars.
+    // Stage A not yet approved → Stage A modularization is running; show the construction theater.
+    if (stageAApproved) {
+      const coveredBrsGen = new Set(modules.flatMap((m) => m.backlog?.flatMap((s) => s.br_refs ?? []) ?? []))
+      return (
+        <FrsTwoPhaseGenerationViz
+          projectId={projectId}
+          modules={modules}
+          unitStatus={doc?.unit_status}
+          brCount={coveredBrsGen.size}
+          onComplete={() => { setStageBRunning(false); mutate() }}
+          onCancel={() => { setStageBRunning(false); mutate() }}
+        />
+      )
+    }
     return (
       <FrsConstructionTheater
         projectId={projectId}
@@ -225,6 +288,7 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
         onCheckValidate={handleCheckValidate}
         checkBusy={findingsLoading}
         showActions
+        onCoverage={() => setCoverageOpen(true)}
       />
 
       {/* Body: rail + active surface */}
@@ -232,7 +296,13 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
         <FrsModuleRail
           modules={modules}
           activeModuleKey={activeModuleKey}
-          onSelectModule={setActiveModuleKey}
+          activeSpecRowKey={activeSpecRowKey}
+          unitStatus={doc?.unit_status ?? null}
+          onSelectModule={(rk) => { setActiveModuleKey(rk); setActiveSpecRowKey(null) }}
+          onSelectSpec={(specKey, modKey) => {
+            setActiveModuleKey(modKey)
+            setActiveSpecRowKey(specKey)
+          }}
         />
 
         <div className="flex-1 overflow-y-auto">
@@ -267,9 +337,17 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
           )}
           <FrsBrdEchoStrip summary={readiness?.brd_summary ?? null} />
 
-          {/* Active module panel */}
+          {/* Active surface: spec panel (Stage B) takes priority, else module panel (Stage A) */}
           <div className="px-4 py-4 pb-32">
-            {activeModule ? (
+            {activeSpec ? (
+              <FrsSpecPanel
+                projectId={projectId}
+                spec={activeSpec.spec}
+                module={activeSpec.module}
+                onMutate={() => mutate()}
+                onBack={() => setActiveSpecRowKey(null)}
+              />
+            ) : activeModule ? (
               <FrsModulePanel
                 projectId={projectId}
                 module={activeModule}
@@ -293,8 +371,8 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
         </div>
       </div>
 
-      {/* Findings drawer */}
-      <FrsModularizeFindings
+      {/* Findings drawer (Stage-B-aware: locks rows + flips status='validated' when clean) */}
+      <FrsFindingsDrawer
         projectId={projectId}
         open={findingsOpen}
         findings={findings}
@@ -303,15 +381,32 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
           const r = await api.frs.findings(projectId)
           setFindings(r)
         }}
-        onApproved={() => {
+        onValidated={(r) => {
           mutate()
           setBannerDismissed(false)
+          if (r.stage_b_validated) {
+            toast.success(`FRS validated — ${r.locked_row_count ?? 0} rows locked`)
+          }
         }}
         onJumpToRow={(rowKey) => {
-          // If the row_key belongs to a module, switch to that module
+          // Spec-level row_key like M001-FRS001 → navigate to that spec
+          const specMatch = /^([A-Z]\d+-FRS\d+)/.exec(rowKey)
+          if (specMatch) {
+            for (const m of modules) {
+              const sp = m.backlog.find((s) => s.row_key === specMatch[1])
+              if (sp) {
+                setActiveModuleKey(m.row_key)
+                setActiveSpecRowKey(sp.row_key)
+                setFindingsOpen(false)
+                return
+              }
+            }
+          }
+          // Module-level row_key → just switch modules
           const mod = modules.find((m) => m.row_key === rowKey)
           if (mod) {
             setActiveModuleKey(mod.row_key)
+            setActiveSpecRowKey(null)
             setFindingsOpen(false)
             return
           }
@@ -328,6 +423,23 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
               return
             }
           }
+        }}
+      />
+
+      {/* Coverage galaxy modal */}
+      <FrsCoverageGalaxy
+        projectId={projectId}
+        open={coverageOpen}
+        onClose={() => setCoverageOpen(false)}
+        onSelectSpec={(specRowKey) => {
+          for (const m of modules) {
+            if (m.backlog.some((s) => s.row_key === specRowKey)) {
+              setActiveModuleKey(m.row_key)
+              setActiveSpecRowKey(specRowKey)
+              break
+            }
+          }
+          setCoverageOpen(false)
         }}
       />
 
@@ -350,11 +462,7 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
         stubCount={stubCount}
         brCount={coveredBrs.size}
         open={showContinueBanner}
-        onContinue={() => {
-          // Stage B kickoff TBD; for v1, just dismiss + toast.
-          toast.success('Stage 2 wiring lands with the FRS Functional Design plan.')
-          setBannerDismissed(true)
-        }}
+        onContinue={handleContinueStageB}
         onDismiss={() => setBannerDismissed(true)}
       />
     </div>
@@ -365,6 +473,7 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
 
 function Header({
   projectId, onBack, status, stageAApproved, onCheckValidate, checkBusy, showActions,
+  onCoverage,
 }: {
   projectId: string
   onBack: () => void
@@ -373,6 +482,7 @@ function Header({
   onCheckValidate: () => void
   checkBusy: boolean
   showActions: boolean
+  onCoverage?: () => void
 }) {
   const [restarting, setRestarting] = useState(false)
 
@@ -427,6 +537,17 @@ function Header({
         )}
         {restarting ? 'Resetting…' : 'Restart'}
       </button>
+      {showActions && onCoverage && (
+        <button
+          onClick={onCoverage}
+          title="BR → FRS coverage map"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-[var(--bg-surface)] px-2.5 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors"
+        >
+          <Sparkles size={13} />
+          Coverage
+        </button>
+      )}
+      {showActions && <FrsExportMenu projectId={projectId} />}
       {showActions && (
         <button
           onClick={onCheckValidate}
@@ -510,7 +631,7 @@ function StatusBadge({
     return (
       <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold bg-blue-100 text-blue-700 border border-blue-200">
         <Loader2 size={9} className="animate-spin" />
-        Modularizing…
+        {stageAApproved ? 'Designing…' : 'Modularizing…'}
       </span>
     )
   }

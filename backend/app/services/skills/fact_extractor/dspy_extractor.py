@@ -65,9 +65,18 @@ def _configure_dspy() -> None:
 
     configure_google_genai_env()
     settings = get_settings()
-    lm = dspy.LM(f"vertex_ai/{settings.gemini_model}", max_tokens=65536, cache=False)
+    lm = dspy.LM(
+        f"vertex_ai/{settings.gemini_model}",
+        max_tokens=65536,
+        cache=False,
+        vertex_location=settings.gemini_location,
+        vertex_project=settings.gemini_project_id or None,
+    )
     dspy.configure(lm=lm)
-    log.info("dspy configured lm=vertex_ai/%s", settings.gemini_model)
+    log.info(
+        "dspy configured lm=vertex_ai/%s location=%s",
+        settings.gemini_model, settings.gemini_location,
+    )
 
 
 async def run_dspy_fact_extraction(chunk_text: str) -> list[dict]:

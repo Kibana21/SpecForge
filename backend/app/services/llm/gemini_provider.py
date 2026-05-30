@@ -20,6 +20,32 @@ class LLMProviderError(Exception):
     pass
 
 
+def _as_text(content) -> str:
+    """Normalize a LangChain message `.content` to a plain string.
+
+    Gemini 3.x returns structured content — a list of parts like
+    [{'type': 'text', 'text': '...'}, {'type': 'thinking', ...}] — instead of a
+    bare string. Downstream skills (JSON parse, .strip()) expect a string, so we
+    concatenate only the visible text parts and drop thinking/reasoning parts.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        out: list[str] = []
+        for part in content:
+            if isinstance(part, str):
+                out.append(part)
+            elif isinstance(part, dict):
+                ptype = part.get("type")
+                # Keep text output; skip 'thinking'/'reasoning' parts.
+                if ptype in (None, "text") and isinstance(part.get("text"), str):
+                    out.append(part["text"])
+        return "".join(out)
+    return str(content)
+
+
 def _build_llm(settings) -> ChatGoogleGenerativeAI:
     creds = get_google_credentials()
     log.info(
@@ -56,7 +82,7 @@ class GeminiProvider(LLMProvider):
                     "llm_call skill=%s provider=vertex attempt=%d latency_ms=%d",
                     skill_name, attempt, latency,
                 )
-                return response.content
+                return _as_text(response.content)
             except Exception as exc:
                 latency = round((time.monotonic() - start) * 1000)
                 log.warning(
@@ -81,8 +107,9 @@ class GeminiProvider(LLMProvider):
         start = time.monotonic()
         try:
             async for chunk in self._llm.astream(messages):
-                if chunk.content:
-                    yield chunk.content
+                text = _as_text(chunk.content)
+                if text:
+                    yield text
             latency = round((time.monotonic() - start) * 1000)
             log.info("llm_stream skill=%s provider=vertex latency_ms=%d", skill_name, latency)
         except Exception as exc:
