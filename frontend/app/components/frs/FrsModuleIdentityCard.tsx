@@ -108,23 +108,22 @@ export function FrsModuleIdentityCard({
           </div>
 
           {/* Action bar */}
-          <div className="shrink-0 flex items-center gap-1">
+          <div className="shrink-0 flex items-center gap-1.5">
             {onRegenerate && (
               <button
-                onClick={onRegenerate}
-                disabled={regenerating || m.is_locked}
-                title={
-                  m.is_locked
-                    ? 'Unlock the module before regenerating'
-                    : 'Regenerate this module'
-                }
+                onClick={() => onRegenerate()}
+                disabled={regenerating}
+                title="Regenerate detailed specs for this module"
                 className={cn(
-                  'inline-flex items-center gap-1 rounded-md p-1.5 text-[var(--text-tertiary)]',
-                  'hover:text-[var(--accent)] hover:bg-[var(--accent-subtle)] transition-colors',
+                  'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold',
+                  'bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors shadow-sm',
                   'disabled:opacity-40 disabled:cursor-not-allowed',
                 )}
               >
-                {regenerating ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
+                {regenerating
+                  ? <Loader2 size={12} className="animate-spin" />
+                  : <RotateCcw size={12} />}
+                {regenerating ? 'Generating…' : 'Regenerate Specs'}
               </button>
             )}
             {onEdit && (

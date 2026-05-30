@@ -309,7 +309,7 @@ async def validate_frs_endpoint(
         )
         for model in (
             FrsModule, FrsModuleActor, FrsModuleResponsibility,
-            FrsModuleInterface, FrsModuleDataEntity, FrsSpec,
+            FrsModuleInterface, FrsModuleDataEntity,
             FrsScreen, FrsUiComponent, FrsEndpoint, FrsDataEntity,
             FrsBusinessRule, FrsAcceptanceScenario, FrsFunctionalRequirement,
             FrsSpecDecision,
@@ -325,6 +325,22 @@ async def validate_frs_endpoint(
                 .values(is_locked=True)
             )
             locked_count += r.rowcount or 0
+
+        # Lock only DESIGNED specs (completeness > 0). Stub specs that haven't
+        # been through Stage B yet have no authored content to preserve — locking
+        # them just blocks generation without any benefit.
+        r = await db.execute(
+            sa_update(FrsSpec)
+            .where(
+                FrsSpec.document_id == doc.id,
+                FrsSpec.is_current.is_(True),
+                FrsSpec.status == "active",
+                FrsSpec.is_locked.is_(False),
+                FrsSpec.completeness > 0,
+            )
+            .values(is_locked=True)
+        )
+        locked_count += r.rowcount or 0
         doc.status = "validated"
         committed = True
 
@@ -686,12 +702,59 @@ async def design_frs_module_endpoint(
         await db.commit()
         return ok(await get_frs_detail(project_id, db))
 
-    # Production: dispatch and return immediately
-    doc.status = "generating"
-    await db.commit()
+    # Production: dispatch and return immediately.
+    # Deliberately do NOT set doc.status = 'generating' here — that flag means
+    # "full bulk pipeline running" and triggers the FrsTwoPhaseGenerationViz
+    # takeover in the frontend. For a single-module regen, _current_unit being
+    # set inside generate_frs_design_module is the correct signal; the
+    # FrsModuleGeneratingOverlay handles it without hiding the rest of the builder.
     from workers.dispatch import dispatch
     from workers.tasks import regenerate_frs_module
     dispatch(regenerate_frs_module, str(project_id), module_row_key)
+    return ok(await get_frs_detail(project_id, db))
+
+
+class _FrsDesignAllIn(BaseModel):
+    skip_designed: bool = True
+
+
+@router.post("/projects/{project_id}/artifacts/frs/design-all-modules")
+async def design_all_frs_modules_endpoint(
+    project_id: UUID,
+    body: _FrsDesignAllIn = Body(default_factory=_FrsDesignAllIn),
+    project: Project = Depends(get_project_or_404),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Trigger Stage B design for all (or remaining) modules.
+
+    skip_designed=True (default): modules with completeness > 0 are skipped.
+    Mock mode: runs in-process. Production: dispatches to Celery.
+    """
+    from app.config import get_settings
+    from app.services.artifacts.frs_orchestrator import run_frs_stage_b
+
+    settings = get_settings()
+    if settings.llm_provider == "mock":
+        result = await run_frs_stage_b(project, db, skip_designed=body.skip_designed)
+        return ok(result)
+
+    doc = await _ensure_frs_document(project_id, db)
+    if doc.status == "generating":
+        return ok(await get_frs_detail(project_id, db))
+
+    doc.status = "generating"
+    await db.commit()
+
+    from workers.dispatch import dispatch
+    from workers.tasks import design_all_frs_modules
+    task = dispatch(design_all_frs_modules, str(project_id), body.skip_designed)
+    if task is None:
+        # Broker/worker unreachable — don't strand the doc in 'generating'.
+        doc.status = "in_interview"
+        await db.commit()
+        err("worker_unavailable",
+            "Generation worker is not reachable. Start the Celery worker and retry.", 503)
     return ok(await get_frs_detail(project_id, db))
 
 

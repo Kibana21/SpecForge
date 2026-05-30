@@ -113,6 +113,20 @@
   box-sizing: border-box;
 }
 
+@keyframes frs-spec-pulse {
+  0%, 100% { background-color: transparent; }
+  50%       { background-color: var(--accent-subtle); }
+}
+.frs-spec-pulse {
+  animation: frs-spec-pulse 2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .frs-spec-pulse {
+    animation: none;
+    background-color: var(--accent-subtle);
+  }
+}
+
 html,
 body {
   background-color: var(--bg-base);

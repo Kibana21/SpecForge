@@ -14,7 +14,7 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import {
-  CheckCircle2, ChevronDown, ChevronRight, Filter, Loader2, Lock, Plus, Search,
+  CheckCircle2, ChevronDown, ChevronRight, Filter, Loader2, Lock, Plus, RotateCcw, Search,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { FRS_MODULE_LAYER_LABELS, FRS_LAYER_STYLES } from '@/lib/frs-manifest'
@@ -31,6 +31,10 @@ interface Props {
   onSelectModule: (rowKey: string) => void
   /** Called when a nested spec row is clicked (Stage B). */
   onSelectSpec?: (specRowKey: string, moduleRowKey: string) => void
+  /** Called when the quick-regen button is clicked for a module. */
+  onRegenModule?: (moduleRowKey: string) => void
+  /** Resolves a module's generation state (centralised in FrsBuilderView). */
+  genStateOf?: (moduleRowKey: string) => 'done' | 'running' | 'partial' | 'queued' | 'idle'
   onAddModule?: () => void
 }
 
@@ -38,7 +42,7 @@ const LAYER_ORDER: FrsLayer[] = ['foundation', 'vertical', 'cross_cutting']
 
 export function FrsModuleRail({
   modules, activeModuleKey, activeSpecRowKey, unitStatus,
-  onSelectModule, onSelectSpec, onAddModule,
+  onSelectModule, onSelectSpec, onRegenModule, genStateOf, onAddModule,
 }: Props) {
   const [filter, setFilter] = useState('')
   const [layerFilter, setLayerFilter] = useState<'all' | FrsLayer>('all')
@@ -130,6 +134,8 @@ export function FrsModuleRail({
                   unitStatus={unitStatus ?? null}
                   onClick={() => onSelectModule(m.row_key)}
                   onSelectSpec={onSelectSpec}
+                  onRegenModule={onRegenModule}
+                  genState={genStateOf?.(m.row_key) ?? 'idle'}
                 />
               ))}
             </div>
@@ -164,14 +170,17 @@ export function FrsModuleRail({
 // ── Module row ──────────────────────────────────────────────────────────────
 
 function FrsModuleRailItem({
-  module: m, active, activeSpecRowKey, unitStatus, onClick, onSelectSpec,
+  module: m, active, activeSpecRowKey, unitStatus, genState,
+  onClick, onSelectSpec, onRegenModule,
 }: {
   module: FrsModuleHydrated
   active: boolean
   activeSpecRowKey: string | null
   unitStatus: Record<string, unknown> | null
+  genState: 'done' | 'running' | 'partial' | 'queued' | 'idle'
   onClick: () => void
   onSelectSpec?: (specRowKey: string, moduleRowKey: string) => void
+  onRegenModule?: (moduleRowKey: string) => void
 }) {
   const [hover, setHover] = useState(false)
   // Default-expanded when the module is active OR contains the active spec
@@ -199,8 +208,14 @@ function FrsModuleRailItem({
 
   const moduleUnit = (unitStatus?.[`design_mod_${m.row_key}`] as
     Record<string, unknown> | undefined) ?? null
-  const currentUnit = unitStatus?.['_current_unit'] as string | undefined
-  const moduleDesigning = currentUnit === `design_mod_${m.row_key}`
+  const moduleDesigning = genState === 'running'
+  const moduleQueued = genState === 'queued'
+  const modulePartial = genState === 'partial'
+  // Drive live counts off the actual designed stubs (ground truth), falling back
+  // to the intermediate specs_done pointer for the very first moments of a run.
+  const designedStubs = stubs.filter(s => (s.completeness ?? 0) > 0).length
+  const specsDone = Math.max(designedStubs, Number((moduleUnit?.['specs_done'] as number | undefined) ?? 0))
+  const specsTotal = stubCount || Number((moduleUnit?.['specs_total'] as number | undefined) ?? 0)
 
   return (
     <div
@@ -273,12 +288,41 @@ function FrsModuleRailItem({
               aria-label="Locked"
             />
           )}
-          {moduleDesigning && (
-            <Loader2
-              size={11}
-              className="shrink-0 text-blue-600 animate-spin"
-              aria-label="Designing"
+          {moduleDesigning ? (
+            <span className="shrink-0 inline-flex items-center gap-1">
+              {specsTotal > 0 && (
+                <span className="text-[9px] font-medium text-blue-600 tabular-nums">
+                  {specsDone}/{specsTotal}
+                </span>
+              )}
+              <Loader2
+                size={11}
+                className="text-blue-600 animate-spin"
+                aria-label="Designing"
+              />
+            </span>
+          ) : moduleQueued ? (
+            <span
+              className="shrink-0 w-1.5 h-1.5 rounded-full bg-blue-300"
+              aria-label="Queued"
+              title="Queued for design"
             />
+          ) : modulePartial && !hover ? (
+            <span
+              className="shrink-0 text-[9px] font-medium text-amber-600 tabular-nums"
+              title={`${specsDone} of ${specsTotal} specs designed — regenerate to finish`}
+            >
+              {specsDone}/{specsTotal}
+            </span>
+          ) : hover && onRegenModule && !m.is_locked && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onRegenModule(m.row_key) }}
+              title="Regenerate specs for this module"
+              className="shrink-0 rounded p-0.5 text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--accent-subtle)] transition-colors"
+              aria-label={`Regenerate specs for ${m.name}`}
+            >
+              <RotateCcw size={11} />
+            </button>
           )}
         </button>
       </div>

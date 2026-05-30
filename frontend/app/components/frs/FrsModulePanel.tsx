@@ -262,6 +262,12 @@ export function FrsModulePanel({
         module={m}
         onRegenerate={onRegenerateModule}
         regenerating={busy}
+        onLockToggle={() => handleToggleLock('frs_modules', m.id, m.is_locked, {
+          name: m.name,
+          slug: m.slug,
+          summary: m.summary,
+          layer: m.layer,
+        })}
       />
 
       {/* Decision banner */}

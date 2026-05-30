@@ -1305,6 +1305,27 @@ async def generate_frs_design_module(
         if sk in locked_keys:
             continue  # locked spec → preserve verbatim, never regenerate
         stub = specs_by_key.get(sk, {"row_key": sk})
+
+        # Mark THIS spec as the one being written, BEFORE the LLM call, so the
+        # frontend "Now writing" view names the in-progress spec (not the last
+        # finished one). current_spec_key is cleared in the final patch below.
+        await db.execute(sa_text(
+            "UPDATE artifact_documents "
+            "SET unit_status = COALESCE(unit_status, '{}'::jsonb) || CAST(:patch AS jsonb), "
+            "    updated_at = NOW() "
+            "WHERE id = :doc_id"
+        ), {
+            "patch": json.dumps({
+                f"design_mod_{module_row_key}": {
+                    "current_spec_key": sk,
+                    "specs_done": len(designed_specs),
+                    "specs_total": len(stub_keys),
+                },
+            }),
+            "doc_id": str(doc.id),
+        })
+        await db.commit()
+
         try:
             one = await asyncio.wait_for(
                 run_design_spec(
@@ -1340,6 +1361,9 @@ async def generate_frs_design_module(
                 doc.id, [spec_out], db, fallback_module_row_key=module_row_key,
             )
         await db.commit()
+        # The backlog stub's completeness now reflects this spec as designed —
+        # that's the ground-truth signal the frontend reads. specs_done updates
+        # on the next iteration's pre-call patch.
 
     avg_completeness = (
         int(sum(completeness_vals) / len(completeness_vals)) if completeness_vals else 0
@@ -1380,6 +1404,7 @@ async def generate_frs_design_module(
                 "completeness": avg_completeness,
                 "confidence": overall_confidence,
                 "spec_count": len(specs_to_persist),
+                "current_spec_key": None,   # module done — no spec in flight
             },
             "_current_unit": None,
         }),
@@ -1760,6 +1785,141 @@ async def generate_frs_all(
     await db.refresh(doc)
     doc.status = "in_interview"
     await db.commit()
+    return await get_frs_detail(project.id, db)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Stage B only — run_frs_stage_b
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+async def run_frs_stage_b(
+    project: Project,
+    db: AsyncSession,
+    *,
+    skip_designed: bool = True,
+    max_parallel_modules: int = 3,
+) -> dict:
+    """Run Stage B per-module design without re-running Stage A.
+
+    skip_designed=True (default): modules where unit_status already contains a
+    design_mod_<key> entry with completeness > 0 are skipped, making this safe
+    to call after partial completion or as a "design remaining" action.
+
+    Context is gathered once and shared across all module coroutines.
+    """
+    from app.models.frs import FrsModule
+
+    doc = await _ensure_frs_document(project.id, db)
+
+    if doc.status == "validated":
+        raise RuntimeError("FRS is validated — unlock before regenerating")
+
+    # NOTE: we intentionally do NOT bail when status == 'generating'. The API
+    # endpoint pre-sets 'generating' for immediate UI feedback before dispatching
+    # this task, so seeing 'generating' here is expected — bailing would leave the
+    # status stuck. Concurrent-run protection lives in the endpoint.
+
+    bundle = await gather_project_context(
+        project.id, db,
+        artifact_document_id=doc.id,
+        artifact_type="frs",
+    )
+
+    if not bundle.readiness.can_generate:
+        raise RuntimeError(
+            f"FRS generation blocked: {bundle.readiness.blocking_reason}"
+        )
+
+    modules = (
+        await db.execute(
+            select(FrsModule).where(
+                FrsModule.document_id == doc.id,
+                FrsModule.is_current.is_(True),
+                FrsModule.status == "active",
+            )
+        )
+    ).scalars().all()
+
+    if skip_designed:
+        # A module is "designed" only when EVERY active backlog stub has a spec
+        # (completeness > 0). A module whose loop finished but left some specs
+        # missing (spec-level timeouts) must be re-run — so it is NOT skipped.
+        from app.models.frs import FrsSpec
+        specs = (
+            await db.execute(
+                select(FrsSpec.module_row_key, FrsSpec.completeness).where(
+                    FrsSpec.document_id == doc.id,
+                    FrsSpec.is_current.is_(True),
+                    FrsSpec.status == "active",
+                )
+            )
+        ).all()
+        total_by_mod: dict[str, int] = {}
+        designed_by_mod: dict[str, int] = {}
+        for mod_key, comp in specs:
+            total_by_mod[mod_key] = total_by_mod.get(mod_key, 0) + 1
+            if (comp or 0) > 0:
+                designed_by_mod[mod_key] = designed_by_mod.get(mod_key, 0) + 1
+        module_keys = [
+            m.row_key for m in modules
+            if total_by_mod.get(m.row_key, 0) == 0
+            or designed_by_mod.get(m.row_key, 0) < total_by_mod.get(m.row_key, 0)
+        ]
+    else:
+        module_keys = [m.row_key for m in modules]
+
+    if not module_keys:
+        # Nothing to design (everything already complete). Make sure we don't
+        # strand the doc in 'generating' — the endpoint may have pre-set it.
+        if doc.status == "generating":
+            await db.execute(sa_text(
+                "UPDATE artifact_documents "
+                "SET status = 'in_interview', "
+                "    unit_status = COALESCE(unit_status, '{}'::jsonb) || '{\"_current_unit\": null}'::jsonb, "
+                "    updated_at = NOW() "
+                "WHERE id = :doc_id"
+            ), {"doc_id": str(doc.id)})
+            await db.commit()
+        return await get_frs_detail(project.id, db)
+
+    # Mark generating (preserve existing unit_status — skip_designed reads it)
+    await db.execute(sa_text(
+        "UPDATE artifact_documents "
+        "SET status = 'generating', updated_at = NOW() "
+        "WHERE id = :doc_id"
+    ), {"doc_id": str(doc.id)})
+    await db.commit()
+
+    sem = asyncio.Semaphore(max_parallel_modules)
+
+    async def _design_one(mod_row_key: str) -> None:
+        from app.db import AsyncSessionLocal
+        async with sem:
+            async with AsyncSessionLocal() as unit_db:
+                unit_doc = await unit_db.get(ArtifactDocument, doc.id)
+                if unit_doc is None:
+                    return
+                try:
+                    await generate_frs_design_module(
+                        project, mod_row_key, unit_doc, bundle, unit_db,
+                    )
+                    await unit_db.commit()
+                except Exception:
+                    log.exception(
+                        "run_frs_stage_b.module_failed",
+                        extra={"doc_id": str(doc.id), "module_row_key": mod_row_key},
+                    )
+                    await unit_db.rollback()
+
+    await asyncio.gather(*[_design_one(mk) for mk in module_keys])
+
+    async with AsyncSessionLocal() as fin_db:
+        fin_doc = await fin_db.get(ArtifactDocument, doc.id)
+        if fin_doc:
+            fin_doc.status = "in_interview"
+            await fin_db.commit()
+
     return await get_frs_detail(project.id, db)
 
 

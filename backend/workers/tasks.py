@@ -1290,8 +1290,10 @@ async def _generate_frs(project_id: str, brief: str | None) -> dict:
 
 
 @celery_app.task(name="workers.tasks.regenerate_frs_module", bind=True, max_retries=2,
-                 default_retry_delay=30, time_limit=480, soft_time_limit=420)
+                 default_retry_delay=30, time_limit=1800, soft_time_limit=1740)
 def regenerate_frs_module(self, project_id: str, module_row_key: str) -> dict:
+    # A module designs its specs sequentially, each capped at ~120s on Vertex.
+    # A large module (10-15 specs) can take 20-25 min; allow 30 min (1800s).
     return _run_async(_regenerate_frs_module(project_id, module_row_key))
 
 
@@ -1330,7 +1332,9 @@ async def _regenerate_frs_module(project_id: str, module_row_key: str) -> dict:
         except Exception:
             log.exception("regenerate_frs_module failed project_id=%s module=%s",
                           project_id, module_row_key)
-            # Reset stuck status so the user isn't trapped
+            # Self-heal so the user isn't trapped: clear the _current_unit pointer
+            # (which pins the frontend overlay open) and reset a stuck status.
+            from sqlalchemy import text as _text
             async with AsyncSessionLocal() as db2:
                 rd = (await db2.execute(
                     _select(ArtifactDocument).where(
@@ -1338,8 +1342,14 @@ async def _regenerate_frs_module(project_id: str, module_row_key: str) -> dict:
                         ArtifactDocument.artifact_type == "frs",
                     )
                 )).scalar_one_or_none()
-                if rd and rd.status == "generating":
-                    rd.status = "in_interview"
+                if rd:
+                    await db2.execute(_text(
+                        "UPDATE artifact_documents "
+                        "SET unit_status = COALESCE(unit_status, '{}'::jsonb) || '{\"_current_unit\": null}'::jsonb, "
+                        "    status = CASE WHEN status = 'generating' THEN 'in_interview' ELSE status END, "
+                        "    updated_at = NOW() "
+                        "WHERE id = :doc_id"
+                    ), {"doc_id": str(rd.id)})
                     await db2.commit()
             raise
 
@@ -1414,6 +1424,58 @@ async def _incorporate_frs_answer(project_id: str, target_spec_row_key: str | No
         log.info("incorporate_frs_answer no target_spec_row_key — skipping regen")
         return {"ok": True, "noop": True}
     return await _regenerate_frs_spec(project_id, target_spec_row_key, "full")
+
+
+@celery_app.task(
+    name="workers.tasks.design_all_frs_modules",
+    bind=True,
+    max_retries=1,
+    default_retry_delay=60,
+    time_limit=3600,
+    soft_time_limit=3540,
+)
+def design_all_frs_modules(
+    self, project_id: str, skip_designed: bool = True,
+) -> dict:
+    """Design all (or remaining) FRS modules in parallel (Semaphore=3).
+
+    skip_designed=True: modules with completeness > 0 are skipped, making
+    this safe to use as a "Design Remaining" action after partial completion.
+    """
+    return _run_async(_design_all_frs_modules(project_id, skip_designed))
+
+
+async def _design_all_frs_modules(project_id: str, skip_designed: bool) -> dict:
+    from uuid import UUID as _UUID
+    from sqlalchemy import select as _select
+    from app.db import AsyncSessionLocal
+    from app.models.artifact import ArtifactDocument
+    from app.models.project import Project
+    from app.services.artifacts.frs_orchestrator import run_frs_stage_b
+
+    async with AsyncSessionLocal() as db:
+        project = await db.get(Project, _UUID(project_id))
+        if project is None:
+            log.error("design_all_frs_modules project_id=%s not found", project_id)
+            return {"ok": False, "error": "project_not_found"}
+        try:
+            await run_frs_stage_b(project, db, skip_designed=skip_designed)
+            return {"ok": True}
+        except Exception:
+            log.exception(
+                "design_all_frs_modules failed project_id=%s", project_id,
+            )
+            async with AsyncSessionLocal() as db2:
+                doc = (await db2.execute(
+                    _select(ArtifactDocument).where(
+                        ArtifactDocument.project_id == _UUID(project_id),
+                        ArtifactDocument.artifact_type == "frs",
+                    )
+                )).scalar_one_or_none()
+                if doc and doc.status == "generating":
+                    doc.status = "in_interview"
+                    await db2.commit()
+            raise
 
 
 async def _generate_ru(task, project_id: str) -> dict:

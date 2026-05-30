@@ -533,6 +533,11 @@ export const api = {
       apiFetch<FrsCoverage>(`/api/projects/${projectId}/artifacts/frs/coverage`),
     exportBundle: (projectId: string) =>
       authedFetch(`/api/projects/${projectId}/artifacts/frs/export`).then(r => r.blob()),
+    designAllModules: (projectId: string, skipDesigned = true) =>
+      apiFetch<FrsDetail>(
+        `/api/projects/${projectId}/artifacts/frs/design-all-modules`,
+        { method: 'POST', body: JSON.stringify({ skip_designed: skipDesigned }) },
+      ),
   },
 
   apps: {

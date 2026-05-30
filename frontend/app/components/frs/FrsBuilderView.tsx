@@ -13,10 +13,10 @@
  * Header is always present with: Back · status badge · sources/coverage/check-validate
  * The "Resume from here" recovery button lives in the generation theater header.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import useSWR from 'swr'
 import {
-  AlertTriangle, ArrowLeft, ArrowRight, BookOpen, CheckCircle2, Loader2, RotateCcw, Sparkles,
+  AlertTriangle, ArrowLeft, CheckCircle2, Loader2, RotateCcw, Sparkles,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -35,7 +35,9 @@ import { FrsModularizeFindings } from './FrsModularizeFindings'
 import { FrsFindingsDrawer } from './FrsFindingsDrawer'
 import { FrsCoverageGalaxy } from './FrsCoverageGalaxy'
 import { FrsExportMenu } from './FrsExportMenu'
-import { FrsContinueStageBBanner } from './FrsContinueStageBBanner'
+import { FrsStageActionBar } from './FrsStageActionBar'
+import { FrsModuleGeneratingOverlay } from './FrsModuleGeneratingOverlay'
+import { FrsGenerationBanner } from './FrsGenerationBanner'
 import { FrsBrdEchoStrip } from './FrsBrdEchoStrip'
 import { SourceStrip } from '@/app/components/brd/SourceStrip'
 
@@ -46,6 +48,9 @@ interface Props {
 
 export function FrsBuilderView({ projectId, onBack }: Props) {
   const { readiness } = useFrsReadiness(projectId)
+  // True while the user has optimistically triggered regens that the poll hasn't
+  // yet confirmed/completed — keeps SWR polling through the optimistic gap.
+  const pendingPollRef = useRef(false)
   const { data: detail, mutate, isLoading } = useSWR(
     `frs-detail-${projectId}`,
     () => api.frs.get(projectId),
@@ -53,8 +58,9 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
       revalidateOnFocus: false,
       refreshInterval: (data) => {
         const status = data?.document?.status
-        if (status === 'generating') return 2000
-        if (data?.document?.unit_status?.['_current_unit']) return 2000
+        if (status === 'generating') return 1500
+        if (data?.document?.unit_status?.['_current_unit']) return 1500
+        if (pendingPollRef.current) return 1500
         return 0
       },
     },
@@ -68,8 +74,21 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
   const [findingsOpen, setFindingsOpen] = useState(false)
   const [findings, setFindings] = useState<FrsFindingsResponse | null>(null)
   const [findingsLoading, setFindingsLoading] = useState(false)
-  const [bannerDismissed, setBannerDismissed] = useState(false)
-  const [stageBRunning, setStageBRunning] = useState(false)
+  const [stageBMode, setStageBMode] = useState<'parallel' | 'sequential' | null>(null)
+  const [seqPaused, setSeqPaused] = useState(false)
+  const seqDispatchedKey = useRef<string | null>(null)
+  // Whether the optional full "watch generation" overlay is open (user choice).
+  const [vizOpen, setVizOpen] = useState(false)
+  // Modules the user optimistically triggered (single regens). Bridges the gap
+  // between click and the poll confirming the run started, then completed.
+  const [pendingRegens, setPendingRegens] = useState<Set<string>>(new Set())
+  const confirmedRunning = useRef<Set<string>>(new Set())
+  const regenTriggeredAt = useRef<Map<string, number>>(new Map())
+  // Spec-level optimistic regens (single-spec Regenerate in the spec panel).
+  const [pendingSpecRegens, setPendingSpecRegens] = useState<Set<string>>(new Set())
+  const specConfirmedWriting = useRef<Set<string>>(new Set())
+  const specRegenVersion = useRef<Map<string, number>>(new Map())
+  const specRegenAt = useRef<Map<string, number>>(new Map())
 
   // Auto-select first module when modules first appear
   useEffect(() => {
@@ -78,13 +97,176 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
     }
   }, [activeModuleKey, detail?.modules])
 
+  // Sequential mode: detect when the dispatched module finishes, then pause
+  useEffect(() => {
+    if (stageBMode !== 'sequential' || seqPaused || !seqDispatchedKey.current) return
+    const key = seqDispatchedKey.current
+    const us = detail?.document?.unit_status
+    const currentUnit = us?.['_current_unit'] as string | undefined
+    const modProgress = us?.[`design_mod_${key}`] as { completeness?: number } | undefined
+    if (!currentUnit && (modProgress?.completeness ?? 0) > 0) {
+      setSeqPaused(true)
+    }
+  }, [detail?.document?.unit_status, stageBMode, seqPaused])
+
+  // Reconcile optimistic regens with the polled unit_status: confirm started
+  // (via _current_unit), then mark done; stale-guard a worker that never picks up.
+  useEffect(() => {
+    if (pendingRegens.size === 0) return
+    const cu = detail?.document?.unit_status?.['_current_unit'] as string | undefined
+    const next = new Set(pendingRegens)
+    let changed = false
+    for (const key of Array.from(pendingRegens)) {
+      const unitKey = `design_mod_${key}`
+      if (cu === unitKey) {
+        confirmedRunning.current.add(key)
+      } else if (confirmedRunning.current.has(key)) {
+        confirmedRunning.current.delete(key)
+        regenTriggeredAt.current.delete(key)
+        next.delete(key); changed = true
+      } else {
+        const t = regenTriggeredAt.current.get(key) ?? 0
+        if (t && Date.now() - t > 90_000) {
+          regenTriggeredAt.current.delete(key)
+          next.delete(key); changed = true
+          toast.error(`Generation didn't start for ${key} — is the worker running?`)
+        }
+      }
+    }
+    if (changed) setPendingRegens(next)
+  }, [detail?.document?.unit_status, pendingRegens])
+
+  // Reconcile optimistic SPEC regens: confirm started (current_spec_key), then
+  // mark done when the module's current spec moves on or the spec's version bumps.
+  useEffect(() => {
+    if (pendingSpecRegens.size === 0) return
+    const us = detail?.document?.unit_status
+    const mods = detail?.modules ?? []
+    const next = new Set(pendingSpecRegens)
+    let changed = false
+    for (const sk of Array.from(pendingSpecRegens)) {
+      let stub: { version?: number } | undefined
+      let modKey: string | undefined
+      for (const m of mods) {
+        const s = m.backlog?.find((x) => x.row_key === sk)
+        if (s) { stub = s; modKey = m.row_key; break }
+      }
+      const mu = modKey ? (us?.[`design_mod_${modKey}`] as { current_spec_key?: string } | undefined) : undefined
+      if (mu?.current_spec_key === sk) {
+        specConfirmedWriting.current.add(sk)
+      } else if (specConfirmedWriting.current.has(sk)) {
+        specConfirmedWriting.current.delete(sk); specRegenAt.current.delete(sk); specRegenVersion.current.delete(sk)
+        next.delete(sk); changed = true
+      } else {
+        const startV = specRegenVersion.current.get(sk)
+        if (stub && startV != null && (stub.version ?? 0) > startV) {
+          specRegenAt.current.delete(sk); specRegenVersion.current.delete(sk)
+          next.delete(sk); changed = true
+        } else {
+          const t = specRegenAt.current.get(sk) ?? 0
+          if (t && Date.now() - t > 120_000) {
+            specRegenAt.current.delete(sk); specRegenVersion.current.delete(sk)
+            next.delete(sk); changed = true
+            toast.error(`Regeneration didn't start for ${sk} — is the worker running?`)
+          }
+        }
+      }
+    }
+    if (changed) setPendingSpecRegens(next)
+  }, [detail?.document?.unit_status, detail?.modules, pendingSpecRegens])
+
+  // Keep the SWR poll alive through the optimistic gap
+  useEffect(() => {
+    pendingPollRef.current = pendingRegens.size > 0 || pendingSpecRegens.size > 0
+  }, [pendingRegens, pendingSpecRegens])
+
+  // Snapshot of "is anything actually generating right now" for the self-heal.
+  const activityRef = useRef<{ active: boolean }>({ active: false })
+  useEffect(() => {
+    activityRef.current.active = Boolean(
+      detail?.document?.unit_status?.['_current_unit'] ||
+      pendingRegens.size > 0 || pendingSpecRegens.size > 0,
+    )
+  }, [detail?.document?.unit_status, pendingRegens, pendingSpecRegens])
+
+  // Self-heal a stuck 'generating' status: if the doc says generating but no
+  // module/spec is in flight for several seconds (worker died, broker was down,
+  // or a no-op design-all), clear it so the UI doesn't show "Designing" forever.
+  const healAttempted = useRef(false)
+  const docStatus = detail?.document?.status ?? null
+  useEffect(() => {
+    if (docStatus !== 'generating') { healAttempted.current = false; return }
+    let idleTicks = 0
+    const id = setInterval(() => {
+      if (activityRef.current.active) { idleTicks = 0; return }
+      idleTicks += 1
+      if (idleTicks >= 2 && !healAttempted.current) {   // ~6s with no activity
+        healAttempted.current = true
+        api.frs.resetGenerating(projectId).then(() => mutate()).catch(() => {})
+      }
+    }, 3000)
+    return () => clearInterval(id)
+  }, [docStatus, projectId, mutate])
+
+  // Auto-close the watch overlay when a parallel bulk run finishes (status flips
+  // back to in_interview and nothing is in flight). Sequential mode stays open
+  // for its pause card.
+  useEffect(() => {
+    if (!vizOpen || stageBMode === 'sequential') return
+    const st = detail?.document?.status
+    const cu = detail?.document?.unit_status?.['_current_unit']
+    if (st !== 'generating' && !cu && pendingRegens.size === 0 && stageBMode === 'parallel') {
+      setVizOpen(false)
+      setStageBMode(null)
+    }
+  }, [detail?.document?.status, detail?.document?.unit_status, vizOpen, stageBMode, pendingRegens])
+
   // ── Derived ─────────────────────────────────────────────────────────────
   const doc = detail?.document ?? null
-  const modules = detail?.modules ?? []
+  const modules = useMemo(() => detail?.modules ?? [], [detail?.modules])
   const status = doc?.status ?? null
   const modularizeStatus = doc?.unit_status?.['modularize'] as { completeness?: number; confidence?: string } | undefined
   const stageAApproved = Boolean(doc?.unit_status?.['_stage_a_approved'])
+  const bulkActive = status === 'generating' && stageAApproved
   const activeModule = modules.find((m) => m.row_key === activeModuleKey) ?? null
+
+  // Per-module generation state — single source of truth for "is it designing".
+  // "done" means every backlog stub is actually designed (completeness > 0), not
+  // merely that the module's design loop finished (which can leave specs missing).
+  const moduleGenState = useCallback(
+    (key: string): 'done' | 'running' | 'partial' | 'queued' | 'idle' => {
+      const m = modules.find((mm) => mm.row_key === key)
+      const stubs = m?.backlog ?? []
+      const total = stubs.length
+      const designed = stubs.filter((s) => (s.completeness ?? 0) > 0).length
+      const fullyDone = total > 0 && designed === total
+      const isCurrentUnit = doc?.unit_status?.['_current_unit'] === `design_mod_${key}`
+      if (pendingRegens.has(key) || isCurrentUnit) return 'running'
+      if (fullyDone) return 'done'
+      if (bulkActive) return 'queued'
+      if (designed > 0) return 'partial'   // loop finished but some specs missing
+      return 'idle'
+    },
+    [doc?.unit_status, pendingRegens, bulkActive, modules],
+  )
+
+  // Per-SPEC state — drives the "Now writing" view and the spec-panel banner.
+  const specGenState = useCallback(
+    (moduleKey: string, stub: { row_key: string; completeness?: number }):
+      'done' | 'writing' | 'queued' | 'incomplete' | 'pending' => {
+      const mu = doc?.unit_status?.[`design_mod_${moduleKey}`] as
+        | { current_spec_key?: string } | undefined
+      if (pendingSpecRegens.has(stub.row_key) || mu?.current_spec_key === stub.row_key) {
+        return 'writing'
+      }
+      if ((stub.completeness ?? 0) > 0) return 'done'
+      const ms = moduleGenState(moduleKey)
+      if (ms === 'running' || ms === 'queued') return 'queued'
+      if (ms === 'partial') return 'incomplete'
+      return 'pending'
+    },
+    [doc?.unit_status, pendingSpecRegens, moduleGenState],
+  )
   const activeSpec = useMemo(() => {
     if (!activeSpecRowKey) return null
     for (const m of modules) {
@@ -116,15 +298,51 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
   }
 
   // ── Actions ──────────────────────────────────────────────────────────────
-  async function handleRegenerateModule() {
-    if (!activeModuleKey) return
-    try {
-      await api.frs.designModule(projectId, activeModuleKey)
-      toast.success(`Module design queued for ${activeModuleKey}`)
-      await mutate()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Regeneration failed')
+
+  /** Optimistically mark a module as regenerating: overlay + rail spinner mount
+   *  instantly; the run is fired without blocking the UI. pendingRegens stays
+   *  set (bridging the Celery-pickup gap) until the reconcile effect clears it. */
+  function triggerModuleRegen(key: string) {
+    setPendingRegens(prev => new Set(prev).add(key))
+    regenTriggeredAt.current.set(key, Date.now())
+    pendingPollRef.current = true
+    api.frs.designModule(projectId, key)
+      .then(() => mutate())
+      .catch((e) => {
+        setPendingRegens(prev => { const n = new Set(prev); n.delete(key); return n })
+        regenTriggeredAt.current.delete(key)
+        toast.error(e instanceof Error ? e.message : 'Regeneration failed')
+      })
+  }
+
+  function handleRegenerateModule(moduleRowKey?: string) {
+    // Guard: onClick handlers pass a MouseEvent as the first arg — ignore it
+    const key = (typeof moduleRowKey === 'string' ? moduleRowKey : null) ?? activeModuleKey
+    if (!key) return
+    toast.message(`Designing ${key}…`, { description: 'Specs appear as they complete.' })
+    triggerModuleRegen(key)
+  }
+
+  /** Optimistic single-spec regenerate. The spec panel + "Now writing" view
+   *  show progress instantly; pendingSpecRegens clears when the run completes. */
+  function handleRegenerateSpec(specRowKey: string, moduleRowKey: string, scope: 'full' | 'ui_only' = 'full') {
+    let v = 0
+    for (const m of modules) {
+      const s = m.backlog?.find((x) => x.row_key === specRowKey)
+      if (s) { v = s.version ?? 0; break }
     }
+    setPendingSpecRegens(prev => new Set(prev).add(specRowKey))
+    specRegenVersion.current.set(specRowKey, v)
+    specRegenAt.current.set(specRowKey, Date.now())
+    pendingPollRef.current = true
+    toast.message(`Re-authoring ${specRowKey}…`, { description: 'Sections update when the model finishes.' })
+    api.frs.regenerateSpec(projectId, specRowKey, scope)
+      .then(() => mutate())
+      .catch((e) => {
+        setPendingSpecRegens(prev => { const n = new Set(prev); n.delete(specRowKey); return n })
+        specRegenAt.current.delete(specRowKey); specRegenVersion.current.delete(specRowKey)
+        toast.error(e instanceof Error ? e.message : 'Regenerate failed')
+      })
   }
 
   async function handleToggleLock(table: string, rowId: string, currentLocked: boolean) {
@@ -152,23 +370,57 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
     }
   }
 
-  async function handleContinueStageB() {
-    setBannerDismissed(true)
-    setStageBRunning(true)
-    const moduleKeys = modules.map((m) => m.row_key)
-    let ok = 0
-    for (const key of moduleKeys) {
+  async function handleDesignAll(sequential: boolean) {
+    if (sequential) {
+      const firstUndesigned = modules.find(
+        m => !((doc?.unit_status?.[`design_mod_${m.row_key}`] as { completeness?: number } | undefined)?.completeness),
+      )
+      if (!firstUndesigned) return
+      setStageBMode('sequential')
+      setSeqPaused(false)
+      setVizOpen(true)
+      seqDispatchedKey.current = firstUndesigned.row_key
+      triggerModuleRegen(firstUndesigned.row_key)
+    } else {
+      // Bulk parallel — open the "watch" overlay; the run sets status='generating'
+      // so the ambient banner shows too once the overlay is dismissed.
+      setStageBMode('parallel')
+      setVizOpen(true)
       try {
-        await api.frs.designModule(projectId, key)
-        ok++
+        await api.frs.designAllModules(projectId, true)
         await mutate()
-      } catch {
-        toast.error(`Design failed for module ${key}`)
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Failed to start generation')
+        setStageBMode(null)
+        setVizOpen(false)
       }
     }
-    setStageBRunning(false)
-    if (ok > 0) toast.success(`Stage 2 complete — ${ok} module${ok !== 1 ? 's' : ''} designed`)
-    await mutate()
+  }
+
+  function handleDesignNext() {
+    const nextUndesigned = modules.find(
+      m => !((doc?.unit_status?.[`design_mod_${m.row_key}`] as { completeness?: number } | undefined)?.completeness),
+    )
+    if (!nextUndesigned) {
+      setStageBMode(null)
+      setSeqPaused(false)
+      return
+    }
+    setSeqPaused(false)
+    seqDispatchedKey.current = nextUndesigned.row_key
+    triggerModuleRegen(nextUndesigned.row_key)
+  }
+
+  async function handleDesignAllRemaining() {
+    setStageBMode('parallel')
+    setSeqPaused(false)
+    try {
+      await api.frs.designAllModules(projectId, true)
+      await mutate()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to start generation')
+      setStageBMode(null)
+    }
   }
 
   // ── Render gates ─────────────────────────────────────────────────────────
@@ -183,44 +435,14 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
     )
   }
 
-  // S3b — Stage B generation in progress (client-driven, mock-mode)
-  if (stageBRunning) {
-    const coveredBrsB = new Set(modules.flatMap((m) => m.backlog?.flatMap((s) => s.br_refs ?? []) ?? []))
-    return (
-      <FrsTwoPhaseGenerationViz
-        projectId={projectId}
-        modules={modules}
-        unitStatus={doc?.unit_status}
-        brCount={coveredBrsB.size}
-        onComplete={() => { setStageBRunning(false); mutate() }}
-        onCancel={() => { setStageBRunning(false); mutate() }}
-      />
-    )
-  }
-
-  // S3 — generating WITH real progress signal (recent unit_status update or
-  // _current_unit pointer). Without this, a stale 'generating' status from a
-  // failed worker would strand the user in the spinner forever.
-  const hasGenerationProgress = Boolean(
-    doc?.unit_status?.['_current_unit'] ||
+  // S3 — Stage A first-run theater. Full-screen ONLY while there is genuinely no
+  // builder to show yet (modularization producing the very first modules). Every
+  // Stage B run is ambient (banner + overlays) and never blocks the builder.
+  const hasModularizeProgress = Boolean(
+    doc?.unit_status?.['_current_unit'] === 'modularize' ||
     (modularizeStatus?.completeness && modularizeStatus.completeness > 0),
   )
-  if (status === 'generating' && hasGenerationProgress) {
-    // Stage A approved → Stage B is running; show the two-phase viz with per-module bars.
-    // Stage A not yet approved → Stage A modularization is running; show the construction theater.
-    if (stageAApproved) {
-      const coveredBrsGen = new Set(modules.flatMap((m) => m.backlog?.flatMap((s) => s.br_refs ?? []) ?? []))
-      return (
-        <FrsTwoPhaseGenerationViz
-          projectId={projectId}
-          modules={modules}
-          unitStatus={doc?.unit_status}
-          brCount={coveredBrsGen.size}
-          onComplete={() => { setStageBRunning(false); mutate() }}
-          onCancel={() => { setStageBRunning(false); mutate() }}
-        />
-      )
-    }
+  if (status === 'generating' && !stageAApproved && modules.length === 0 && hasModularizeProgress) {
     return (
       <FrsConstructionTheater
         projectId={projectId}
@@ -275,9 +497,6 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
   const stubCount = modules.reduce((sum, m) => sum + (m.backlog?.length ?? 0), 0)
   const coveredBrs = new Set(modules.flatMap((m) => m.backlog?.flatMap((s) => s.br_refs ?? []) ?? []))
 
-  const showContinueBanner =
-    stageAApproved && !bannerDismissed && status === 'in_interview'
-
   return (
     <div className="flex flex-col h-full overflow-hidden bg-[var(--bg-base)]">
       <Header
@@ -303,9 +522,32 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
             setActiveModuleKey(modKey)
             setActiveSpecRowKey(specKey)
           }}
+          onRegenModule={handleRegenerateModule}
+          genStateOf={moduleGenState}
         />
 
         <div className="flex-1 overflow-y-auto">
+          {/* Ambient generation banner — non-blocking, opens the full viz on demand */}
+          <FrsGenerationBanner
+            modules={modules}
+            unitStatus={doc?.unit_status ?? null}
+            bulkActive={bulkActive}
+            pendingCount={pendingRegens.size}
+            onOpenDetails={() => setVizOpen(true)}
+          />
+
+          {/* Stage B action bar — inline, visible while specs are pending and idle */}
+          {!bulkActive && pendingRegens.size === 0 && (
+            <FrsStageActionBar
+              projectId={projectId}
+              modules={modules}
+              unitStatus={doc?.unit_status ?? null}
+              stageAApproved={stageAApproved}
+              docStatus={status}
+              onDesignAll={handleDesignAll}
+            />
+          )}
+
           {/* Source strip + BRD echo */}
           {readiness && (
             <SourceStrip
@@ -346,21 +588,34 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
                 module={activeSpec.module}
                 onMutate={() => mutate()}
                 onBack={() => setActiveSpecRowKey(null)}
+                onRegenerate={(scope) => handleRegenerateSpec(activeSpec.spec.row_key, activeSpec.module.row_key, scope)}
+                regenerating={specGenState(activeSpec.module.row_key, activeSpec.spec) === 'writing'}
               />
-            ) : activeModule ? (
-              <FrsModulePanel
-                projectId={projectId}
-                module={activeModule}
-                allModules={modules}
-                decisions={detail?.decisions ?? []}
-                onMutate={() => mutate()}
-                onOpenDecision={setOpenDecision}
-                onNavigateModule={(rowKey) => setActiveModuleKey(rowKey)}
-                onRegenerateModule={handleRegenerateModule}
-                onToggleLock={handleToggleLock}
-                onDeleteStub={handleDeleteStub}
-              />
-            ) : (
+            ) : activeModule ? (() => {
+              const modDesigning = moduleGenState(activeModule.row_key) === 'running'
+              const modProgress =
+                (doc?.unit_status?.[`design_mod_${activeModule.row_key}`] as
+                  Record<string, unknown> | undefined) ?? {}
+              return modDesigning ? (
+                <FrsModuleGeneratingOverlay
+                  module={activeModule}
+                  progress={modProgress}
+                />
+              ) : (
+                <FrsModulePanel
+                  projectId={projectId}
+                  module={activeModule}
+                  allModules={modules}
+                  decisions={detail?.decisions ?? []}
+                  onMutate={() => mutate()}
+                  onOpenDecision={setOpenDecision}
+                  onNavigateModule={(rowKey) => setActiveModuleKey(rowKey)}
+                  onRegenerateModule={handleRegenerateModule}
+                  onToggleLock={handleToggleLock}
+                  onDeleteStub={handleDeleteStub}
+                />
+              )
+            })() : (
               <div className="mx-auto max-w-md text-center py-16">
                 <p className="text-sm text-[var(--text-tertiary)]">
                   Select a module from the rail to view its contents.
@@ -383,7 +638,6 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
         }}
         onValidated={(r) => {
           mutate()
-          setBannerDismissed(false)
           if (r.stage_b_validated) {
             toast.success(`FRS validated — ${r.locked_row_count ?? 0} rows locked`)
           }
@@ -456,15 +710,33 @@ export function FrsBuilderView({ projectId, onBack }: Props) {
         />
       )}
 
-      {/* Continue to Stage 2 banner */}
-      <FrsContinueStageBBanner
-        moduleCount={moduleCount}
-        stubCount={stubCount}
-        brCount={coveredBrs.size}
-        open={showContinueBanner}
-        onContinue={handleContinueStageB}
-        onDismiss={() => setBannerDismissed(true)}
-      />
+      {/* Optional full "watch generation" overlay — opened on demand, dismissible.
+          Generation keeps running ambiently when minimized. */}
+      {vizOpen && (
+        <div className="fixed inset-0 z-50 bg-[var(--bg-base)]">
+          <FrsTwoPhaseGenerationViz
+            projectId={projectId}
+            modules={modules}
+            unitStatus={doc?.unit_status}
+            brCount={coveredBrs.size}
+            bulkActive={bulkActive}
+            specStateOf={specGenState}
+            onComplete={() => { setVizOpen(false); setStageBMode(null); mutate() }}
+            onCancel={() => { setVizOpen(false); setStageBMode(null); setSeqPaused(false); mutate() }}
+            onMinimize={() => setVizOpen(false)}
+            onSelectSpec={(specRowKey, moduleRowKey) => {
+              setActiveModuleKey(moduleRowKey)
+              setActiveSpecRowKey(specRowKey)
+              setVizOpen(false)
+            }}
+            sequential={stageBMode === 'sequential'}
+            pausedAfterModule={seqPaused ? (seqDispatchedKey.current ?? null) : null}
+            onReviewAndContinue={() => { setVizOpen(false); setStageBMode(null); setSeqPaused(false); mutate() }}
+            onDesignNext={handleDesignNext}
+            onDesignAllRemaining={handleDesignAllRemaining}
+          />
+        </div>
+      )}
     </div>
   )
 }

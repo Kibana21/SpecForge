@@ -11,7 +11,7 @@
  * Body shows title + 1-line stub description + BR trace chips.
  */
 import { useState } from 'react'
-import { ArrowRight, Check, Clock, Edit, Lock, Trash2, Unlock } from 'lucide-react'
+import { ArrowRight, Check, Clock, Edit, Lock, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { FRS_PRIORITY_STYLES } from '@/lib/frs-manifest'
 import type { FrsSpecRow } from '@/lib/types'
@@ -67,7 +67,19 @@ export function FrsBacklogStubCard({
               {priorityStyle.label}
             </span>
             {stub.is_locked && (
-              <Lock size={10} className="text-amber-600 shrink-0" aria-label="Locked" />
+              onLockToggle ? (
+                <button
+                  onClick={onLockToggle}
+                  title="Locked — click to unlock"
+                  className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors"
+                >
+                  <Lock size={9} /> Locked
+                </button>
+              ) : (
+                <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                  <Lock size={9} /> Locked
+                </span>
+              )
             )}
           </div>
           <p className="mt-1 text-sm font-medium text-[var(--text-primary)]">
@@ -104,19 +116,15 @@ export function FrsBacklogStubCard({
               <Edit size={12} />
             </button>
           )}
-          {onLockToggle && (
+          {/* Lock stub (unlocked → locked). Unlock is on the chip itself when locked. */}
+          {onLockToggle && !stub.is_locked && (
             <button
               onClick={onLockToggle}
               disabled={busy}
-              title={stub.is_locked ? 'Unlock stub' : 'Lock stub'}
-              className={cn(
-                'rounded-md p-1 transition-colors disabled:opacity-40',
-                stub.is_locked
-                  ? 'text-amber-600 hover:bg-amber-50'
-                  : 'text-[var(--text-tertiary)] hover:text-amber-600 hover:bg-amber-50',
-              )}
+              title="Lock stub — preserve through regeneration"
+              className="rounded-md p-1 text-[var(--text-tertiary)] hover:text-amber-600 hover:bg-amber-50 transition-colors disabled:opacity-40"
             >
-              {stub.is_locked ? <Unlock size={12} /> : <Lock size={12} />}
+              <Lock size={12} />
             </button>
           )}
           {onDelete && !stub.is_locked && (

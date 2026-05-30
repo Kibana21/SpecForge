@@ -1032,6 +1032,23 @@ export interface FrsBundleReadiness {
   } | null
 }
 
+// ── Stage B generation progress ─────────────────────────────────────────────
+
+/** Shape of unit_status["design_mod_<row_key>"] during and after Stage B. */
+export interface FrsModuleDesignProgress {
+  /** 0 during generation; final average completeness once all specs are done. */
+  completeness?: number
+  confidence?: 'high' | 'medium' | 'low'
+  /** Final: how many specs were successfully designed in this module. */
+  spec_count?: number
+  /** Live: row_key of the spec currently being sent to the LLM. */
+  current_spec_key?: string
+  /** Live: how many specs have been persisted so far this run. */
+  specs_done?: number
+  /** Live: total stubs that need to be designed this run. */
+  specs_total?: number
+}
+
 // ── Stage B row types ────────────────────────────────────────────────────────
 
 export interface FrsScreenRow extends FrsRowBase {

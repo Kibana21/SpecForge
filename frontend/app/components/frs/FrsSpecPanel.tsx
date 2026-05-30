@@ -14,8 +14,8 @@
  */
 import { useMemo, useState } from 'react'
 import {
-  ArrowLeft, BookOpen, ChevronDown, ChevronRight, Loader2, Pencil,
-  RotateCcw, Sparkles,
+  ArrowLeft, BookOpen, ChevronDown, ChevronRight, Layers, Loader2, Lock, LockOpen,
+  Pencil, RotateCcw, Sparkles,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -48,6 +48,11 @@ interface Props {
   onMutate: () => void
   /** Back to module view. */
   onBack: () => void
+  /** Optimistic regenerate handled by the parent (ambient progress). Falls back
+   *  to a local call when not provided. */
+  onRegenerate?: (scope: 'full' | 'ui_only') => void
+  /** True while this spec is being (re)authored — drives the inline banner. */
+  regenerating?: boolean
 }
 
 const SPEC_INTENT_FIELDS: FrsRowField[] = [
@@ -72,10 +77,11 @@ const SPEC_TEXT_FIELDS = {
 } as const
 
 export function FrsSpecPanel({
-  projectId, spec, module: m, onMutate, onBack,
+  projectId, spec, module: m, onMutate, onBack, onRegenerate, regenerating,
 }: Props) {
   const [expanded, setExpanded] = useState(DEFAULT_EXPANDED)
   const [busyRegen, setBusyRegen] = useState(false)
+  const [busyLock, setBusyLock] = useState(false)
   const [editing, setEditing] = useState<null | 'intent' | keyof typeof SPEC_TEXT_FIELDS>(null)
   const [activeDecision, setActiveDecision] = useState<FrsSpecDecisionRow | null>(null)
 
@@ -120,7 +126,34 @@ export function FrsSpecPanel({
     })
   }
 
+  async function handleToggleLock() {
+    setBusyLock(true)
+    try {
+      if (spec.is_locked) {
+        await api.frs.unlockRow(projectId, 'frs_specs', spec.id)
+        toast.success('Spec unlocked — will be regenerated on next run')
+      } else {
+        await api.frs.editRow(projectId, 'frs_specs', spec.id, {}, { lock: true })
+        toast.success('Spec locked — preserved through regeneration')
+      }
+      onMutate()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to toggle lock')
+    } finally {
+      setBusyLock(false)
+    }
+  }
+
+  // Combined "this spec is regenerating" signal: parent-driven (ambient) takes
+  // precedence; otherwise the local busy flag from the fallback path.
+  const isRegenerating = regenerating || busyRegen
+
   async function handleRegenerate(scope: 'full' | 'ui_only') {
+    if (onRegenerate) {
+      // Parent owns optimistic + ambient progress; just delegate.
+      onRegenerate(scope)
+      return
+    }
     setBusyRegen(true)
     try {
       await api.frs.regenerateSpec(projectId, spec.row_key, scope)
@@ -135,22 +168,52 @@ export function FrsSpecPanel({
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-[var(--bg-base)]">
-      {/* Header */}
-      <div className="shrink-0 flex items-start gap-3 px-4 py-3 border-b border-[var(--border-default)] bg-[var(--bg-surface)]">
-        <button
-          onClick={onBack}
-          className="shrink-0 inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors"
-        >
-          <ArrowLeft size={14} /> Module
-        </button>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <code className="text-[11px] font-mono text-[var(--text-tertiary)]">
-              {spec.row_key}
-            </code>
+      {/* ── Spec header ─────────────────────────────────────────────────────── */}
+      <div
+        className="shrink-0 relative border-b border-[var(--border-default)]"
+        style={{
+          background: `linear-gradient(to right, ${layerStyle?.accent}0A 0%, transparent 45%), #fff`,
+        }}
+      >
+        {/* 3px layer accent bar — top edge */}
+        <div className="h-[3px]" style={{ background: layerStyle?.accent }} />
+
+        {/* ── Row 1: navigation rail ── */}
+        <div className="flex items-center gap-2 px-4 h-11 border-b border-[var(--border-subtle)]">
+
+          {/* Back — real button, always findable */}
+          <button
+            onClick={onBack}
+            className={cn(
+              'shrink-0 inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium',
+              'bg-[var(--bg-elevated)] border border-[var(--border-default)] text-[var(--text-secondary)]',
+              'hover:bg-[var(--bg-sunken)] hover:text-[var(--text-primary)] transition-colors',
+            )}
+          >
+            <ArrowLeft size={12} /> Module
+          </button>
+
+          {/* Divider */}
+          <div className="h-4 w-px bg-[var(--border-default)] shrink-0" />
+
+          {/* Module context */}
+          <code
+            className="shrink-0 text-[11px] font-mono font-semibold"
+            style={{ color: layerStyle?.accent }}
+          >
+            {m.row_key}
+          </code>
+          <span className="text-[11px] text-[var(--text-tertiary)] truncate min-w-0">
+            {m.name}
+          </span>
+
+          <div className="flex-1 min-w-0" />
+
+          {/* Classification chips */}
+          <div className="shrink-0 flex items-center gap-1.5">
             <span
               className={cn(
-                'text-[10px] font-semibold rounded px-1.5 py-0.5 border',
+                'text-[10px] font-bold rounded px-2 py-0.5 border',
                 priorityStyle?.bg, priorityStyle?.text, priorityStyle?.border,
               )}
             >
@@ -158,52 +221,121 @@ export function FrsSpecPanel({
             </span>
             <span
               className={cn(
-                'text-[10px] font-semibold rounded-full px-2 py-0.5 border',
+                'inline-flex items-center gap-1 text-[10px] font-semibold rounded-full px-2.5 py-0.5 border',
                 layerStyle?.ribbon,
               )}
             >
+              <Layers size={9} />
               {FRS_MODULE_LAYER_LABELS[spec.layer as FrsLayer]}
             </span>
-            {(spec.completeness ?? 0) > 0 && (
-              <span className="text-[10px] text-[var(--text-tertiary)]">
-                completeness {spec.completeness}% · {spec.confidence}
+            {spec.is_locked && (
+              <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold bg-amber-50 text-amber-600 border border-amber-200">
+                <Lock size={9} /> Locked
               </span>
             )}
           </div>
-          <h1 className="mt-0.5 text-lg font-semibold text-[var(--text-primary)] leading-snug truncate">
+
+          {/* Divider */}
+          <div className="h-4 w-px bg-[var(--border-default)] shrink-0" />
+
+          {/* Actions — prominent, solid */}
+          <div className="shrink-0 flex items-center gap-1.5">
+            {spec.is_locked ? (
+              <button
+                onClick={handleToggleLock}
+                disabled={busyLock}
+                title="Locked — preserved through regeneration. Click to unlock."
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors',
+                  'bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200',
+                  'disabled:opacity-50',
+                )}
+              >
+                {busyLock ? <Loader2 size={11} className="animate-spin" /> : <LockOpen size={11} />}
+                Unlock
+              </button>
+            ) : (
+              <button
+                onClick={handleToggleLock}
+                disabled={busyLock}
+                title="Lock — preserved verbatim on regeneration"
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
+                  'bg-[var(--bg-elevated)] border border-[var(--border-default)] text-[var(--text-secondary)]',
+                  'hover:text-amber-700 hover:bg-amber-50 hover:border-amber-300',
+                  'disabled:opacity-50',
+                )}
+              >
+                {busyLock ? <Loader2 size={11} className="animate-spin" /> : <Lock size={11} />}
+                Lock
+              </button>
+            )}
+
+            <button
+              onClick={() => handleRegenerate('full')}
+              disabled={isRegenerating || spec.is_locked}
+              title={spec.is_locked ? 'Unlock to regenerate' : 'Re-author this spec from scratch'}
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors',
+                'bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]',
+                'disabled:opacity-40 disabled:cursor-not-allowed',
+              )}
+            >
+              {isRegenerating ? <Loader2 size={11} className="animate-spin text-white" /> : <RotateCcw size={11} />}
+              {isRegenerating ? 'Re-authoring…' : 'Regenerate'}
+            </button>
+          </div>
+        </div>
+
+        {/* ── Row 2: title strip ── */}
+        <div className="flex items-center gap-4 px-4 py-2.5">
+          <h1 className="flex-1 min-w-0 text-[20px] font-bold text-[var(--text-primary)] leading-tight tracking-tight truncate">
             {spec.title}
           </h1>
-          <div className="mt-0.5 flex items-center gap-2 text-[11px] text-[var(--text-secondary)] flex-wrap">
-            <span>Module:</span>
-            <code className="font-mono">{m.row_key}</code>
-            <span className="text-[var(--text-tertiary)]">·</span>
-            <span>{m.name}</span>
+          {/* Inline meta — far right, quiet */}
+          <div className="shrink-0 flex items-center gap-1.5 text-[11px] text-[var(--text-tertiary)]">
+            <code className="font-mono">{spec.row_key}</code>
+            <span>·</span>
+            <span>v{spec.version}</span>
+            {(spec.completeness ?? 0) > 0 && (
+              <>
+                <span>·</span>
+                <span>
+                  <span className="font-semibold" style={{ color: layerStyle?.accent }}>
+                    {spec.completeness}%
+                  </span>
+                  {' '}· {spec.confidence}
+                </span>
+              </>
+            )}
             {spec.depends_on?.length ? (
               <>
-                <span className="text-[var(--text-tertiary)]">·</span>
-                <span>Depends on:</span>
-                <span className="font-mono text-[var(--accent)]">
+                <span>·</span>
+                <span>depends on</span>
+                <code className="font-mono" style={{ color: layerStyle?.accent }}>
                   {spec.depends_on.join(', ')}
-                </span>
+                </code>
               </>
             ) : null}
           </div>
-        </div>
-        <div className="shrink-0 flex items-center gap-1">
-          <button
-            onClick={() => handleRegenerate('full')}
-            disabled={busyRegen}
-            title="Re-author the entire spec from scratch"
-            className="inline-flex items-center gap-1 rounded-md border border-[var(--border-default)] bg-[var(--bg-surface)] px-2 py-1 text-xs hover:bg-[var(--bg-elevated)] disabled:opacity-50 transition-colors"
-          >
-            {busyRegen ? <Loader2 size={11} className="animate-spin" /> : <RotateCcw size={11} />}
-            Regenerate
-          </button>
         </div>
       </div>
 
       {/* Body */}
       <div className="flex-1 overflow-auto px-4 py-3 space-y-3">
+        {/* Re-authoring banner — non-blocking; current content stays visible
+            below and is replaced when the model finishes. */}
+        {isRegenerating && (
+          <div className="flex items-center gap-2.5 rounded-lg border border-blue-200 bg-blue-50/70 px-3 py-2">
+            <Loader2 size={13} className="shrink-0 text-blue-600 animate-spin" />
+            <p className="text-xs text-blue-800">
+              <span className="font-semibold">Re-authoring this spec…</span>
+              {' '}every section is regenerated in one pass (30–120s). The page
+              updates in place when it completes — you can keep working elsewhere.
+            </p>
+          </div>
+        )}
+
         {/* Open decision banners */}
         {openDecisions.length > 0 && (
           <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2">
