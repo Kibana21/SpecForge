@@ -3,7 +3,7 @@ import { useState, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
 import {
-  AlertTriangle, ArrowLeft, Cpu, History, Pencil, FileText, BookOpen, Layers,
+  AlertTriangle, ArrowLeft, Cpu, History, Pencil, FileText, BookOpen, BookMarked, Layers,
   CheckSquare, Sparkles, Lock, ChevronRight, Check, Circle, X
 } from 'lucide-react'
 import { useProjectContext } from '@/lib/context/ProjectContext'
@@ -28,11 +28,12 @@ import { InterviewPanel } from '@/app/components/InterviewPanel'
 import { DocumentViewer } from '@/app/components/DocumentViewer'
 import { BrdBuilderView } from '@/app/components/brd/BrdBuilderView'
 import { FrsBuilderView } from '@/app/components/frs/FrsBuilderView'
+import { ProjectWiki } from '@/app/components/ProjectWiki'
 import type { DocumentRead } from '@/lib/types'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type View = 'interview' | 'concept-brief' | 'brd' | 'frs' | null
+type View = 'interview' | 'wiki' | 'concept-brief' | 'brd' | 'frs' | null
 
 // ── NavItem helper ────────────────────────────────────────────────────────────
 
@@ -145,7 +146,7 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
   const [editing, setEditing] = useState(false)
   const [view, setView] = useState<View>(() => {
     const v = searchParams.get('view')
-    return (v === 'interview' || v === 'concept-brief' || v === 'brd' || v === 'frs') ? v : null
+    return (v === 'interview' || v === 'wiki' || v === 'concept-brief' || v === 'brd' || v === 'frs') ? v : null
   })
   const [selectedDoc, setSelectedDoc] = useState<DocumentRead | null>(null)
   const [staleBannerDismissed, setStaleBannerDismissed] = useState<boolean>(() => {
@@ -347,6 +348,15 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
           onClick={() => setView('interview')}
         />
 
+        {/* Project Wiki — emergent, source-grounded knowledge from uploaded docs */}
+        <NavItem
+          label="Project Wiki"
+          sublabel="Source-grounded knowledge"
+          icon={<BookMarked size={14} />}
+          active={view === 'wiki'}
+          onClick={() => setView('wiki')}
+        />
+
         {/* 2. Concept Brief */}
         <NavItem
           label="Concept Brief"
@@ -451,6 +461,25 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
           onBack={() => setView(null)}
           onValidated={() => { mutateProject(); setView(null) }}
         />
+      )
+    }
+
+    if (view === 'wiki') {
+      return (
+        <div className="flex flex-col h-full overflow-hidden bg-[var(--bg-base)]">
+          <div className="shrink-0 h-12 flex items-center gap-3 border-b border-[var(--border-default)] bg-[var(--bg-surface)] px-4">
+            <button
+              onClick={() => setView(null)}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors"
+            >
+              ← Back
+            </button>
+            <span className="text-sm font-semibold text-[var(--text-primary)]">Project Wiki</span>
+          </div>
+          <div className="flex-1 overflow-hidden p-4">
+            <ProjectWiki projectId={projectId} canWrite />
+          </div>
+        </div>
       )
     }
 

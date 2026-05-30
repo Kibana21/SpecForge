@@ -182,9 +182,46 @@ export interface InterviewMessage {
   created_at: string
 }
 
+export type ClarificationKind = 'contradiction' | 'ambiguity' | 'gap'
+export type ClarificationSeverity = 'blocker' | 'major' | 'minor'
+
+export interface Clarification {
+  id: string
+  question: string
+  kind: ClarificationKind | null
+  category: string
+  severity: ClarificationSeverity
+  rationale: string | null
+  citations: string[]     // canonical tokens: S:<doc>:<node> | C:<slug> | F:<id>
+  resolved: boolean
+  resolution_text: string | null
+}
+
 export interface UnderstandingDetail {
   understanding: RequirementUnderstanding | null
   messages: InterviewMessage[]
+  clarifications?: Clarification[]
+}
+
+/** Resolution of a canonical `F:<app_fact_id>` citation token → the App Brain
+ *  fact it points at. Powers the IntakeTraceChip drill-down. */
+export interface ResolvedFact {
+  id: string
+  app: string
+  kind: string
+  text: string
+  confidence: string
+  source_ref: string | null
+}
+
+export interface ProjectLineage {
+  documents: { id: string; label: string }[]
+  concepts: { slug: string; title: string; doc_ids: string[] }[]
+  clarifications: {
+    id: string; question: string; kind: ClarificationKind | null
+    severity: ClarificationSeverity; resolved: boolean
+    concept_slugs: string[]; doc_ids: string[]
+  }[]
 }
 
 export interface ProjectCreateWizard {

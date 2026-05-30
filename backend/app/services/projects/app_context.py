@@ -36,6 +36,7 @@ async def load_app_facts_for_project(project_id: uuid.UUID, db: AsyncSession) ->
 
     return [
         {
+            "id": str(fact.id),
             "app": name,
             "kind": fact.kind,
             "text": fact.text,

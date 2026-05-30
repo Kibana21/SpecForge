@@ -138,6 +138,7 @@ class ProjectContextBundle:
     docs: DocsLayer
     cb: CbLayer
     brd: BrdLayer | None            # populated only when artifact_type == 'frs'
+    intake: "IntakeLayer"           # validated RU + resolved clarifications + wiki concepts
     readiness: BundleReadiness
     snapshot_timestamp: str     # ISO-8601 when the bundle was assembled
 
@@ -176,9 +177,12 @@ async def gather_project_context(
     # same session can trip async-SQLAlchemy's "concurrent operations not
     # permitted" guard when the session has prior uncommitted/lazy state. The
     # cost is small (each layer is a handful of queries) and correctness wins.
+    from app.services.context.intake_layer import build_intake_layer
+
     apps_layer = await build_app_layer(project_id, db)
     docs_layer = await build_docs_layer(project_id, db, artifact_document_id=artifact_document_id)
     cb_layer = await build_cb_layer(project_id, db)
+    intake_layer = await build_intake_layer(project_id, db)
 
     brd_layer: BrdLayer | None = None
     if artifact_type == "frs":
@@ -198,6 +202,7 @@ async def gather_project_context(
         docs=docs_layer,
         cb=cb_layer,
         brd=brd_layer,
+        intake=intake_layer,
         readiness=readiness,
         snapshot_timestamp=datetime.now(timezone.utc).isoformat(),
     )

@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Index, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -42,6 +42,11 @@ class GapQuestion(TimestampMixin, Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     source: Mapped[str] = mapped_column(String(20), nullable=False, server_default="gap_detector")
+
+    # ── Clarification Engine (E2) metadata — additive, nullable ─────────────────
+    kind: Mapped[str | None] = mapped_column(String(20), nullable=True)  # contradiction|ambiguity|gap
+    citations: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")  # tokens
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     project: Mapped["Project"] = relationship("Project", back_populates="gap_questions")  # noqa: F821
 

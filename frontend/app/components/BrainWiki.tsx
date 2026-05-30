@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback, Fragment } from 'react'
+import { useState, useEffect, useCallback, useMemo, Fragment } from 'react'
 import {
   RefreshCw, BookMarked, FileText, Network, AlertTriangle, Link2, MapPin,
   ShieldCheck, ShieldAlert, GitFork, X,
@@ -9,13 +9,36 @@ import { api } from '@/lib/api'
 import type {
   WikiIndexResponse, AppWikiConcept, AppWikiSummary, WikiTreeNodeRef, WikiHealth, WikiSectionContent,
 } from '@/lib/types'
+import { IntakeTraceChip } from '@/app/components/IntakeTraceChip'
+
+// Canonical intake citation tokens, linkified inline when a projectId is present:
+//   F:<uuid>  app fact   ·   C:<slug>  wiki concept   ·   S:<doc>:<node>  source section
+const TOKEN_SPLIT = /(\[\[[^\]]+\]\]|\*\*[^*]+\*\*|\bF:[0-9a-fA-F-]{8,}\b|\bC:[a-z0-9][a-z0-9_-]+\b|\bS:[0-9a-fA-F-]{8,}:[A-Za-z0-9._-]+\b)/g
+
+/** Scope-agnostic data adapter so the same wiki UI serves App Brain (E1) and
+ *  Project (E2). When omitted, an App Brain adapter is built from `appId` —
+ *  keeping the existing App caller 100% backward-compatible. */
+export interface WikiAdapter {
+  label: string
+  getIndex: () => Promise<WikiIndexResponse>
+  getConcept: (slug: string) => Promise<AppWikiConcept>
+  getSummary: (docId: string) => Promise<AppWikiSummary>
+  rebuild: () => Promise<unknown>
+  checkHealth: () => Promise<unknown>
+  getSection: (docId: string, nodeId: string) => Promise<WikiSectionContent>
+}
 
 interface Props {
-  appId: string
+  appId?: string
+  adapter?: WikiAdapter
   initialCompiledAt: string | null
   initialStatus: string
   lastIndexedAt: string | null
   canWrite: boolean
+  /** Project scope (E2): enables open-on-slug deep-linking + inline citation
+   *  trace chips (`F:`/`C:`/`S:`) in wiki prose. Omitted for App Brain. */
+  projectId?: string
+  initialSlug?: string
 }
 
 type Selection =
@@ -27,10 +50,14 @@ type Selection =
 function renderInline(
   text: string,
   onLink: (target: string) => void,
+  projectId?: string,
 ): React.ReactNode {
-  // Split on [[wikilink]] and **bold**, preserving delimiters
-  const parts = text.split(/(\[\[[^\]]+\]\]|\*\*[^*]+\*\*)/g)
+  // Split on [[wikilink]], **bold**, and (project scope) canonical citation tokens.
+  const parts = text.split(TOKEN_SPLIT)
   return parts.map((p, i) => {
+    if (projectId && (p.startsWith('F:') || p.startsWith('C:') || p.startsWith('S:'))) {
+      return <IntakeTraceChip key={i} projectId={projectId} token={p} inline />
+    }
     if (p.startsWith('[[') && p.endsWith(']]')) {
       const inner = p.slice(2, -2)
       const [target, alias] = inner.split('|')
@@ -65,17 +92,17 @@ function stripLeadingTitle(md: string, title: string): string {
   return md
 }
 
-function MarkdownBody({ md, onLink }: { md: string; onLink: (t: string) => void }) {
+function MarkdownBody({ md, onLink, projectId }: { md: string; onLink: (t: string) => void; projectId?: string }) {
   const lines = md.split('\n')
   return (
     <div className="text-[13px] space-y-0.5 max-w-[680px]">
       {lines.map((line, i) => {
         if (line.startsWith('### '))
-          return <h3 key={i} className="text-xs font-semibold text-[var(--text-secondary)] mt-4 mb-1 uppercase tracking-wide">{renderInline(line.slice(4), onLink)}</h3>
+          return <h3 key={i} className="text-xs font-semibold text-[var(--text-secondary)] mt-4 mb-1 uppercase tracking-wide">{renderInline(line.slice(4), onLink, projectId)}</h3>
         if (line.startsWith('## '))
-          return <h2 key={i} className="text-sm font-bold text-[var(--text-primary)] mt-5 mb-1.5">{renderInline(line.slice(3), onLink)}</h2>
+          return <h2 key={i} className="text-sm font-bold text-[var(--text-primary)] mt-5 mb-1.5">{renderInline(line.slice(3), onLink, projectId)}</h2>
         if (line.startsWith('# '))
-          return <h1 key={i} className="text-base font-bold text-[var(--text-primary)] mt-5 mb-2">{renderInline(line.slice(2), onLink)}</h1>
+          return <h1 key={i} className="text-base font-bold text-[var(--text-primary)] mt-5 mb-2">{renderInline(line.slice(2), onLink, projectId)}</h1>
         if (/^---+$/.test(line.trim()))
           return <hr key={i} className="my-4 border-[var(--border-subtle)]" />
         if (line.trim() === '')
@@ -84,10 +111,10 @@ function MarkdownBody({ md, onLink }: { md: string; onLink: (t: string) => void 
           return (
             <div key={i} className="flex gap-2 leading-relaxed">
               <span className="text-[var(--text-tertiary)] mt-0.5 flex-shrink-0">·</span>
-              <span className="text-[var(--text-secondary)]">{renderInline(line.slice(2), onLink)}</span>
+              <span className="text-[var(--text-secondary)]">{renderInline(line.slice(2), onLink, projectId)}</span>
             </div>
           )
-        return <p key={i} className="leading-relaxed text-[var(--text-secondary)]">{renderInline(line, onLink)}</p>
+        return <p key={i} className="leading-relaxed text-[var(--text-secondary)]">{renderInline(line, onLink, projectId)}</p>
       })}
     </div>
   )
@@ -95,7 +122,10 @@ function MarkdownBody({ md, onLink }: { md: string; onLink: (t: string) => void 
 
 // ── Grounded-in (PageIndex) chips ───────────────────────────────────────────────
 
-function GroundedIn({ refs, appId }: { refs: WikiTreeNodeRef[]; appId: string }) {
+function GroundedIn({ refs, getSection }: {
+  refs: WikiTreeNodeRef[]
+  getSection: (docId: string, nodeId: string) => Promise<WikiSectionContent>
+}) {
   const [openKey, setOpenKey] = useState<string | null>(null)
   const [section, setSection] = useState<WikiSectionContent | null>(null)
   const [loading, setLoading] = useState(false)
@@ -106,7 +136,7 @@ function GroundedIn({ refs, appId }: { refs: WikiTreeNodeRef[]; appId: string })
     if (openKey === key) { setOpenKey(null); setSection(null); return }
     setOpenKey(key); setSection(null); setLoading(true)
     try {
-      setSection(await api.apps.getCorpusSection(appId, r.doc_id, r.node_id))
+      setSection(await getSection(r.doc_id, r.node_id))
     } catch {
       setSection(null)
     } finally {
@@ -174,7 +204,17 @@ function GroundedIn({ refs, appId }: { refs: WikiTreeNodeRef[]; appId: string })
 
 // ── Main component ──────────────────────────────────────────────────────────────
 
-export function BrainWiki({ appId, initialCompiledAt, initialStatus, lastIndexedAt, canWrite }: Props) {
+export function BrainWiki({ appId, adapter, initialCompiledAt, initialStatus, lastIndexedAt, canWrite, projectId, initialSlug }: Props) {
+  // Default to an App Brain adapter when none is supplied (backward-compatible).
+  const a: WikiAdapter = useMemo(() => adapter ?? {
+    label: 'Brain Wiki',
+    getIndex: () => api.apps.getWiki(appId!),
+    getConcept: (slug) => api.apps.getWikiConcept(appId!, slug),
+    getSummary: (docId) => api.apps.getWikiSummary(appId!, docId),
+    rebuild: () => api.apps.rebuildWiki(appId!),
+    checkHealth: () => api.apps.checkWikiHealth(appId!),
+    getSection: (docId, nodeId) => api.apps.getCorpusSection(appId!, docId, nodeId),
+  }, [adapter, appId])
   const [index, setIndex] = useState<WikiIndexResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(initialStatus === 'running')
@@ -187,11 +227,12 @@ export function BrainWiki({ appId, initialCompiledAt, initialStatus, lastIndexed
 
   const load = useCallback(async () => {
     try {
-      const data = await api.apps.getWiki(appId)
+      const data = await a.getIndex()
       setIndex(data)
       setRunning(data.status === 'running')
       setSelection(prev => {
         if (prev) return prev
+        if (initialSlug && data.concepts.some(c => c.slug === initialSlug)) return { type: 'concept', slug: initialSlug }
         if (data.concepts.length) return { type: 'concept', slug: data.concepts[0].slug }
         if (data.summaries.length) return { type: 'summary', docId: data.summaries[0].doc_id }
         return null
@@ -201,21 +242,27 @@ export function BrainWiki({ appId, initialCompiledAt, initialStatus, lastIndexed
     } finally {
       setLoading(false)
     }
-  }, [appId])
+  }, [a, initialSlug])
 
   useEffect(() => { load() }, [load])
+
+  // Deep-link: when the caller targets a specific concept (studio rail click),
+  // switch to it — even if the wiki was already open on another page.
+  useEffect(() => {
+    if (initialSlug) setSelection({ type: 'concept', slug: initialSlug })
+  }, [initialSlug])
 
   // Poll while compiling
   useEffect(() => {
     if (!running) return
     const id = setInterval(async () => {
       try {
-        const data = await api.apps.getWiki(appId)
+        const data = await a.getIndex()
         setIndex(data)
         if (data.status !== 'running') {
           setRunning(false)
           clearInterval(id)
-          toast.success('Brain Wiki compiled', {
+          toast.success(`${a.label} compiled`, {
             description: `${data.concepts.length} concepts · ${data.summaries.length} documents`,
           })
         }
@@ -225,17 +272,17 @@ export function BrainWiki({ appId, initialCompiledAt, initialStatus, lastIndexed
       }
     }, 4000)
     return () => clearInterval(id)
-  }, [running, appId])
+  }, [running, a])
 
   // Fetch selected page
   useEffect(() => {
     if (!selection) { setConcept(null); setSummary(null); return }
     setPageLoading(true); setConcept(null); setSummary(null)
     const p = selection.type === 'concept'
-      ? api.apps.getWikiConcept(appId, selection.slug).then(setConcept)
-      : api.apps.getWikiSummary(appId, selection.docId).then(setSummary)
+      ? a.getConcept(selection.slug).then(setConcept)
+      : a.getSummary(selection.docId).then(setSummary)
     p.catch(() => {}).finally(() => setPageLoading(false))
-  }, [appId, selection])
+  }, [a, selection])
 
   function handleWikiLink(target: string) {
     if (!index) return
@@ -249,7 +296,7 @@ export function BrainWiki({ appId, initialCompiledAt, initialStatus, lastIndexed
   async function handleRebuild() {
     setRunning(true)
     try {
-      await api.apps.rebuildWiki(appId)
+      await a.rebuild()
       toast.info('Wiki compilation started', { description: 'This may take a minute for large corpora.' })
     } catch (e: unknown) {
       setRunning(false)
@@ -262,11 +309,11 @@ export function BrainWiki({ appId, initialCompiledAt, initialStatus, lastIndexed
     setShowHealth(true)
     const prevCheckedAt = index?.health?.checked_at ?? null
     try {
-      await api.apps.checkWikiHealth(appId)
+      await a.checkHealth()
       // Poll until the report's checked_at changes (or give up after ~40s)
       for (let i = 0; i < 10; i++) {
         await new Promise(r => setTimeout(r, 4000))
-        const data = await api.apps.getWiki(appId)
+        const data = await a.getIndex()
         setIndex(data)
         if (data.health && data.health.checked_at !== prevCheckedAt) {
           const n = data.health.contradictions.length + data.health.orphans.length
@@ -303,7 +350,7 @@ export function BrainWiki({ appId, initialCompiledAt, initialStatus, lastIndexed
         <div>
           <h2 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2">
             <BookMarked size={15} className="text-[var(--accent)]" />
-            Brain Wiki
+            {a.label}
           </h2>
           <p className="text-xs text-[var(--text-tertiary)] mt-1">
             {compiledAt
@@ -484,9 +531,9 @@ export function BrainWiki({ appId, initialCompiledAt, initialStatus, lastIndexed
                   </p>
                 )}
                 <div className="mt-4">
-                  <MarkdownBody md={stripLeadingTitle(concept.content_md, concept.title)} onLink={handleWikiLink} />
+                  <MarkdownBody md={stripLeadingTitle(concept.content_md, concept.title)} onLink={handleWikiLink} projectId={projectId} />
                 </div>
-                <GroundedIn refs={concept.tree_node_refs} appId={appId} />
+                <GroundedIn refs={concept.tree_node_refs} getSection={a.getSection} />
                 {concept.related_slugs.length > 0 && (
                   <div className="mt-4 pt-3 border-t border-[var(--border-subtle)]">
                     <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-2">Related</p>
@@ -518,7 +565,7 @@ export function BrainWiki({ appId, initialCompiledAt, initialStatus, lastIndexed
                   </p>
                 )}
                 <div className="mt-4">
-                  <MarkdownBody md={stripLeadingTitle(summary.content_md, docName)} onLink={handleWikiLink} />
+                  <MarkdownBody md={stripLeadingTitle(summary.content_md, docName)} onLink={handleWikiLink} projectId={projectId} />
                 </div>
                 {summary.related_slugs.length > 0 && (
                   <div className="mt-4 pt-3 border-t border-[var(--border-subtle)]">

@@ -171,8 +171,8 @@ class RUResult(BaseModel):
 
 class RequirementUnderstandingSignature(dspy.Signature):
     """Build a structured Requirement Understanding (RU) from the inputs only —
-    project identity, retrieved source sections, in-scope app-brain facts, and
-    prior interview Q&A. Do NOT invent facts.
+    project identity, the brief, retrieved source sections, the associated App
+    Brain (wiki concepts + facts), and prior interview Q&A. Do NOT invent facts.
 
     For every field set field_confidence (high=explicit, medium=implied,
     low=inferred) with a completeness 0–100. Attach citation markers [S#] (source)
@@ -184,8 +184,10 @@ class RequirementUnderstandingSignature(dspy.Signature):
     project_name: str = dspy.InputField()
     business_unit: str = dspy.InputField()
     description: str = dspy.InputField()
-    source_sections: str = dspy.InputField()
+    brief: str = dspy.InputField(desc="The project brief / enhanced brief")
+    source_sections: str = dspy.InputField(desc="Retrieved sections from ALL uploaded documents")
     app_facts: str = dspy.InputField()
+    app_brain: str = dspy.InputField(desc="In-scope App Brain wiki concepts (grounding)")
     qa_pairs: str = dspy.InputField()
     result: RUResult = dspy.OutputField()
 
@@ -195,11 +197,13 @@ class RequirementUnderstandingModule(dspy.Module):
         super().__init__()
         self.predict = dspy.ChainOfThought(RequirementUnderstandingSignature)
 
-    def forward(self, project_name, business_unit, description, source_sections, app_facts, qa_pairs) -> dict:
+    def forward(self, project_name, business_unit, description, brief,
+                source_sections, app_facts, app_brain, qa_pairs) -> dict:
         try:
             return self.predict(
                 project_name=project_name, business_unit=business_unit, description=description,
-                source_sections=source_sections, app_facts=app_facts, qa_pairs=qa_pairs,
+                brief=brief, source_sections=source_sections, app_facts=app_facts,
+                app_brain=app_brain, qa_pairs=qa_pairs,
             ).result.model_dump()
         except Exception as exc:
             log.error("dspy requirement_understanding failed: %s", exc, exc_info=True)
@@ -209,6 +213,7 @@ class RequirementUnderstandingModule(dspy.Module):
 async def run_requirement_understanding(
     project_name: str, business_unit: str, description: str,
     source_sections: str, app_facts: str, qa_pairs: str,
+    brief: str = "", app_brain: str = "",
 ) -> dict:
     if _is_mock():
         from app.services.skills.mock_fixtures import mock_fixture
@@ -217,5 +222,83 @@ async def run_requirement_understanding(
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
         None, RequirementUnderstandingModule(),
-        project_name, business_unit, description, source_sections, app_facts, qa_pairs,
+        project_name, business_unit, description, brief,
+        source_sections, app_facts, app_brain, qa_pairs,
+    )
+
+
+# ── Corpus Clarifier (E2 intelligent intake) ────────────────────────────────────
+
+class ClarificationItem(BaseModel):
+    question: str = Field(min_length=1)
+    kind: Literal["contradiction", "ambiguity", "gap"]
+    category: Literal["scope", "data", "security", "integration", "ux"]
+    severity: Literal["blocker", "major", "minor"]
+    rationale: str = ""
+    citations: list[str] = Field(default_factory=list)  # tokens: S:<doc>:<node> | C:<slug> | F:<fact>
+
+
+class ClarificationResult(BaseModel):
+    items: list[ClarificationItem] = Field(default_factory=list)
+
+
+class CorpusClarifierSignature(dspy.Signature):
+    """Generate high-signal clarification questions a Business Analyst MUST resolve
+    before specs are written, given the project's wiki concepts (synthesized,
+    source-grounded topics), already-detected cross-concept contradictions, the
+    brief, the associated App Brain, and prior interview Q&A.
+
+    Three kinds only:
+      - contradiction: a claim that conflicts across documents, or between a
+        document and the brief, or between a document and an app fact. Cite BOTH
+        conflicting sources in citations.
+      - ambiguity: a concept mentioned but never defined, or an under-specified
+        term that materially affects scope. Cite the source(s).
+      - gap: information needed that no source supplies.
+
+    Never invent conflicts. Never re-ask something the Q&A already answered. Each
+    item must cite its conflicting/missing sources (concept slug as C:<slug>, or
+    source section as S:<doc>:<node>, or app fact as F:<id>). Return an empty list
+    if the corpus is genuinely clear.
+    """
+
+    project_name: str = dspy.InputField()
+    wiki_concepts: str = dspy.InputField(desc="lines of 'slug · title — brief'")
+    detected_contradictions: str = dspy.InputField(desc="WikiLint output, or '(none)'")
+    brief_context: str = dspy.InputField()
+    app_brain: str = dspy.InputField()
+    qa_pairs: str = dspy.InputField()
+    result: ClarificationResult = dspy.OutputField()
+
+
+class CorpusClarifierModule(dspy.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.predict = dspy.ChainOfThought(CorpusClarifierSignature)
+
+    def forward(self, project_name, wiki_concepts, detected_contradictions,
+                brief_context, app_brain, qa_pairs) -> dict:
+        try:
+            return self.predict(
+                project_name=project_name, wiki_concepts=wiki_concepts,
+                detected_contradictions=detected_contradictions, brief_context=brief_context,
+                app_brain=app_brain, qa_pairs=qa_pairs,
+            ).result.model_dump()
+        except Exception as exc:
+            log.error("dspy corpus_clarifier failed: %s", exc, exc_info=True)
+            return ClarificationResult().model_dump()
+
+
+async def run_corpus_clarifier(
+    project_name: str, wiki_concepts: str, detected_contradictions: str,
+    brief_context: str, app_brain: str, qa_pairs: str,
+) -> dict:
+    if _is_mock():
+        from app.services.skills.mock_fixtures import mock_fixture
+        return mock_fixture("corpus_clarifier")
+    _configure()
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None, CorpusClarifierModule(),
+        project_name, wiki_concepts, detected_contradictions, brief_context, app_brain, qa_pairs,
     )

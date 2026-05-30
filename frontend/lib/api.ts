@@ -56,6 +56,8 @@ import type {
   SpecVersion,
   TriageItem,
   UnderstandingDetail,
+  ProjectLineage,
+  ResolvedFact,
 } from './types'
 import { tokenStore } from './auth/tokenStore'
 
@@ -211,6 +213,31 @@ export const api = {
       apiFetch<{ ru_validated: boolean; understanding: RequirementUnderstanding }>(
         `/api/projects/${id}/understanding/validate`, { method: 'POST' },
       ),
+    answerClarification: (id: string, gqId: string, answer: string) =>
+      apiFetch<UnderstandingDetail>(
+        `/api/projects/${id}/understanding/clarifications/${gqId}/answer`,
+        { method: 'POST', body: JSON.stringify({ answer }) },
+      ),
+    // ── Project Wiki (E2) ──────────────────────────────────────────────────
+    getWiki: (id: string) => apiFetch<WikiIndexResponse>(`/api/projects/${id}/wiki`),
+    getWikiConcept: (id: string, slug: string) =>
+      apiFetch<AppWikiConcept>(`/api/projects/${id}/wiki/concepts/${slug}`),
+    getWikiSummary: (id: string, docId: string) =>
+      apiFetch<AppWikiSummary>(`/api/projects/${id}/wiki/summaries/${docId}`),
+    rebuildWiki: (id: string) =>
+      apiFetch<{ task_id: string | null; status: string }>(
+        `/api/projects/${id}/wiki/rebuild`, { method: 'POST' }),
+    checkWikiHealth: (id: string) =>
+      apiFetch<{ task_id: string | null; status: string }>(
+        `/api/projects/${id}/wiki/health`, { method: 'POST' }),
+    getSourceSection: (id: string, docId: string, nodeId: string) =>
+      apiFetch<WikiSectionContent>(`/api/projects/${id}/sources/${docId}/section/${nodeId}`),
+    resolveFact: (id: string, factId: string) =>
+      apiFetch<ResolvedFact>(`/api/projects/${id}/facts/${factId}`),
+    resolveFactByIndex: (id: string, index: number) =>
+      apiFetch<ResolvedFact>(`/api/projects/${id}/facts/by-index/${index}`),
+    provenance: (id: string) =>
+      apiFetch<ProjectLineage>(`/api/projects/${id}/provenance`),
   },
 
   triage: {

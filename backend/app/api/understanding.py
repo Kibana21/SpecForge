@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,9 +40,26 @@ async def _detail(project_id: UUID, db: AsyncSession) -> dict:
             .order_by(InterviewMessage.seq)
         )
     ).scalars().all()
+    from app.models.gap import GapQuestion
+    clarifs = (
+        await db.execute(
+            select(GapQuestion)
+            .where(GapQuestion.project_id == project_id, GapQuestion.source == "clarifier")
+            .order_by(GapQuestion.ext_id)
+        )
+    ).scalars().all()
     return {
         "understanding": RequirementUnderstandingRead.model_validate(ru).model_dump(mode="json") if ru else None,
         "messages": [InterviewMessageRead.model_validate(m).model_dump(mode="json") for m in messages],
+        "clarifications": [
+            {
+                "id": str(c.id), "question": c.question, "kind": c.kind,
+                "category": c.category, "severity": c.severity, "rationale": c.rationale,
+                "citations": c.citations or [], "resolved": c.resolved,
+                "resolution_text": c.resolution_text,
+            }
+            for c in clarifs
+        ],
     }
 
 
@@ -84,6 +102,40 @@ async def answer_understanding(
     from app.services.understanding.orchestrator import incorporate_answer
 
     await incorporate_answer(project_id, body.answer, db, provider, body.seq)
+    return ok(await _detail(project_id, db))
+
+
+class ClarificationAnswerIn(BaseModel):
+    answer: str
+
+
+@router.post("/projects/{project_id}/understanding/clarifications/{gq_id}/answer")
+async def answer_clarification(
+    project_id: UUID,
+    gq_id: UUID,
+    body: ClarificationAnswerIn,
+    project: Project = Depends(get_project_or_404),
+    db: AsyncSession = Depends(get_db),
+):
+    """Resolve a clarification question. Resolved answers flow into the Intake
+    Context Pack and reach CB/BRD/FRS generation."""
+    from datetime import timezone as _tz
+
+    from app.models.gap import GapQuestion
+
+    gq = (await db.execute(
+        select(GapQuestion).where(
+            GapQuestion.id == gq_id,
+            GapQuestion.project_id == project_id,
+            GapQuestion.source == "clarifier",
+        )
+    )).scalar_one_or_none()
+    if gq is None:
+        err("clarification_not_found", "Clarification question not found.", 404)
+    gq.resolution_text = body.answer
+    gq.resolved = True
+    gq.resolved_at = datetime.now(_tz.utc)
+    await db.commit()
     return ok(await _detail(project_id, db))
 
 

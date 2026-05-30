@@ -20,6 +20,7 @@ from app.models.project_intake import (
     TriageItem,
 )
 from app.models.project_source import DocumentTree
+from app.models.project_wiki import ProjectWikiConcept, ProjectWikiSummary
 from app.models.requirement import ExtractedRequirement
 from app.models.review import ReviewComment
 from app.models.spec import SpecVersion
@@ -89,6 +90,8 @@ __all__ = [
     "InterviewMessage",
     "AppWikiSummary",
     "AppWikiConcept",
+    "ProjectWikiSummary",
+    "ProjectWikiConcept",
     "AppAskSession",
     "BrdActor",
     "BrdAssumption",

@@ -70,8 +70,13 @@ def project_for_unit(
     combined_parts = [
         "=== App Brain ===\n" + bundle.apps.formatted_context,
         "=== Project Documents ===\n" + (doc_sections or bundle.docs.outline_text),
-        cb_context,
     ]
+    # Intake Context Pack — the validated understanding + resolved clarifications
+    # + wiki concepts. Injected for every unit/artifact (the single chokepoint).
+    intake_ctx = getattr(getattr(bundle, "intake", None), "formatted_context", "")
+    if intake_ctx:
+        combined_parts.append(intake_ctx)
+    combined_parts.append(cb_context)
     if brd_context:
         combined_parts.append(brd_context)
     combined = "\n\n".join(p for p in combined_parts if p.strip())

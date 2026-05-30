@@ -1,0 +1,28 @@
+{
+  "items": [
+    {
+      "question": "Compliance_Policy.pdf states claim records must be retained for 7 years, but Tech_Spec.docx says to purge claim data after 90 days. Which retention period applies?",
+      "kind": "contradiction",
+      "category": "data",
+      "severity": "blocker",
+      "rationale": "Retention drives the data model and a compliance NFR in the BRD — the two sources cannot both hold.",
+      "citations": ["C:data_retention", "C:storage"]
+    },
+    {
+      "question": "The term \"SLA\" is referenced across documents but never defined. What is the target settlement/response SLA?",
+      "kind": "ambiguity",
+      "category": "scope",
+      "severity": "major",
+      "rationale": "The SLA target shapes non-functional requirements and acceptance criteria downstream.",
+      "citations": ["C:overview"]
+    },
+    {
+      "question": "No source specifies the error-handling and retry behaviour for failed settlements. What should happen on a settlement failure?",
+      "kind": "gap",
+      "category": "integration",
+      "severity": "major",
+      "rationale": "Error paths and retry policy are needed to author FRS endpoints and edge cases.",
+      "citations": []
+    }
+  ]
+}

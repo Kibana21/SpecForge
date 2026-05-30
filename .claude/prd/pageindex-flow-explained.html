@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PageIndex in SpecForge — Project Source Flow, Explained</title>
+<style>
+  :root{
+    --ink:#11221b; --ink-soft:#3a4d45; --muted:#6b7d75; --faint:#9aa9a2;
+    --bg:#f6f4ee; --panel:#ffffff; --line:#e3e0d6; --line-soft:#eeece4;
+    --accent:#2f6b4c; --accent-soft:#e7f0ea; --accent-ink:#1f4d36;
+    --pageidx:#8a4b2f; --pageidx-soft:#f4e8e1;
+    --llm:#4a5db0; --llm-soft:#e7eaf6;
+    --db:#7a6a1f; --db-soft:#f2eed8;
+    --code-bg:#10211a; --code-ink:#d7e6df; --code-faint:#7f9b8e;
+    --radius:14px; --shadow:0 1px 2px rgba(17,34,27,.05),0 8px 28px rgba(17,34,27,.06);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.65 ui-serif,Georgia,"Iowan Old Style","Palatino Linotype",serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:0 28px}
+  code,pre,.mono{font-family:"SF Mono",ui-monospace,"JetBrains Mono","Fira Code",Menlo,monospace}
+
+  /* Header */
+  header.hero{
+    background:linear-gradient(155deg,#13261d 0%, #1c3a2a 55%, #2f6b4c 130%);
+    color:#eaf3ee; padding:56px 0 48px; border-bottom:3px solid var(--accent);
+  }
+  header.hero .kicker{font:600 12px/1 ui-sans-serif,system-ui;letter-spacing:.22em;text-transform:uppercase;color:#9fd3b6;margin-bottom:18px}
+  header.hero h1{font-size:40px;line-height:1.1;margin:0 0 14px;letter-spacing:-.02em;font-weight:700}
+  header.hero p{font-size:18px;max-width:760px;margin:0;color:#cfe3d7}
+  header.hero .meta{margin-top:24px;font:13px/1.5 ui-sans-serif,system-ui;color:#8fbda3}
+  header.hero .meta b{color:#d7ece0;font-weight:600}
+
+  h2{font-size:27px;letter-spacing:-.01em;margin:56px 0 6px;font-weight:700;scroll-margin-top:20px}
+  h2 .num{color:var(--accent);font:700 15px/1 ui-sans-serif,system-ui;vertical-align:middle;margin-right:12px;
+    background:var(--accent-soft);padding:6px 10px;border-radius:8px}
+  h3{font-size:19px;margin:32px 0 4px;font-weight:700;color:var(--ink)}
+  .lead{color:var(--ink-soft);font-size:17px;margin:8px 0 0}
+  p{margin:14px 0}
+  a{color:var(--accent-ink);text-decoration:none;border-bottom:1px solid #bcd6c7}
+  a:hover{background:var(--accent-soft)}
+  section{border-top:1px solid var(--line-soft)}
+  section:first-of-type{border-top:none}
+
+  /* TOC */
+  .toc{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:22px 26px;margin:36px 0;box-shadow:var(--shadow)}
+  .toc h4{margin:0 0 12px;font:600 12px/1 ui-sans-serif,system-ui;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+  .toc ol{margin:0;padding:0;list-style:none;counter-reset:t;
+    display:grid;grid-template-columns:1fr 1fr;gap:6px 32px}
+  .toc li{counter-increment:t;font:15px/1.5 ui-sans-serif,system-ui}
+  .toc li::before{content:counter(t,decimal-leading-zero);color:var(--accent);font-weight:700;margin-right:10px;font-size:13px}
+  .toc a{border:none;color:var(--ink-soft)}
+  .toc a:hover{color:var(--accent-ink);background:none;text-decoration:underline}
+
+  /* Code */
+  pre{background:var(--code-bg);color:var(--code-ink);border-radius:12px;padding:18px 20px;overflow-x:auto;
+    font-size:13px;line-height:1.6;margin:18px 0;box-shadow:var(--shadow)}
+  pre .c{color:var(--code-faint)}      /* comment */
+  pre .k{color:#7ec99b}                /* keyword/identifier */
+  pre .s{color:#e6c98a}                /* string */
+  pre .fn{color:#8fb9ff}               /* function */
+  :not(pre)>code{background:#ece9df;color:#3a4d45;padding:1.5px 6px;border-radius:5px;font-size:.86em;border:1px solid var(--line)}
+  .path{display:inline-block;background:var(--code-bg);color:#9fd3b6;padding:2px 8px;border-radius:6px;
+    font-size:12px;font-family:"SF Mono",ui-monospace,monospace}
+
+  /* Callouts */
+  .note{border-left:3px solid var(--accent);background:var(--accent-soft);
+    padding:14px 18px;border-radius:0 10px 10px 0;margin:20px 0;font-size:15px;color:var(--accent-ink)}
+  .note.warn{border-color:#b5642f;background:#f6eae1;color:#7a431f}
+  .note.idx{border-color:var(--pageidx);background:var(--pageidx-soft);color:#6e3a22}
+  .note b{font-weight:700}
+
+  /* Pipeline diagram */
+  .pipe{display:flex;flex-direction:column;gap:0;margin:28px 0}
+  .stage{display:grid;grid-template-columns:46px 1fr;gap:18px;align-items:stretch}
+  .rail{display:flex;flex-direction:column;align-items:center}
+  .dot{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font:700 14px/1 ui-sans-serif,system-ui;
+    color:#fff;background:var(--accent);box-shadow:0 0 0 5px var(--accent-soft);flex:none}
+  .dot.idx{background:var(--pageidx);box-shadow:0 0 0 5px var(--pageidx-soft)}
+  .dot.llm{background:var(--llm);box-shadow:0 0 0 5px var(--llm-soft)}
+  .dot.db{background:var(--db);box-shadow:0 0 0 5px var(--db-soft)}
+  .line-v{flex:1;width:2px;background:linear-gradient(var(--line),var(--line));margin:4px 0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 20px;margin-bottom:16px;box-shadow:var(--shadow)}
+  .card h4{margin:0 0 4px;font:700 16px/1.3 ui-sans-serif,system-ui;color:var(--ink)}
+  .card .where{font:600 11px/1 ui-sans-serif,system-ui;color:var(--faint);letter-spacing:.04em;float:right;margin-left:12px}
+  .card p{margin:6px 0 0;font-size:14.5px;font-family:ui-sans-serif,system-ui;color:var(--ink-soft)}
+  .card .tag{display:inline-block;font:600 10px/1 ui-sans-serif,system-ui;text-transform:uppercase;letter-spacing:.08em;
+    padding:4px 8px;border-radius:6px;margin:8px 8px 0 0}
+  .tag.idx{background:var(--pageidx-soft);color:var(--pageidx)}
+  .tag.llm{background:var(--llm-soft);color:var(--llm)}
+  .tag.db{background:var(--db-soft);color:var(--db)}
+  .tag.acc{background:var(--accent-soft);color:var(--accent-ink)}
+
+  /* Tables */
+  table{border-collapse:collapse;width:100%;margin:20px 0;font:14.5px/1.5 ui-sans-serif,system-ui;
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:var(--shadow)}
+  th,td{text-align:left;padding:11px 16px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+  th{background:#efece3;font-weight:700;color:var(--ink);font-size:12.5px;text-transform:uppercase;letter-spacing:.04em}
+  tr:last-child td{border-bottom:none}
+  td code{font-size:12.5px}
+
+  /* Tree sample */
+  .tree{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 22px;box-shadow:var(--shadow);
+    font:13px/1.7 "SF Mono",ui-monospace,monospace;color:var(--ink-soft);margin:20px 0}
+  .tree .root{color:var(--pageidx);font-weight:700}
+  .tree .nid{color:var(--accent-ink);font-weight:700}
+  .tree .ttl{color:var(--ink)}
+  .tree .sm{color:var(--muted)}
+
+  /* split columns */
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:20px 0}
+  .cols .card{margin:0}
+  @media(max-width:780px){.cols,.toc ol{grid-template-columns:1fr}.stage{grid-template-columns:38px 1fr}}
+
+  footer{margin:64px 0 40px;padding-top:24px;border-top:1px solid var(--line);
+    font:13px/1.6 ui-sans-serif,system-ui;color:var(--muted)}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin:18px 0 0;font:600 12px/1 ui-sans-serif,system-ui}
+  .legend span{display:inline-flex;align-items:center;gap:7px;color:var(--ink-soft)}
+  .swatch{width:13px;height:13px;border-radius:4px;display:inline-block}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="kicker">SpecForge · E2 Project Intake · Engineering Explainer</div>
+    <h1>How PageIndex Powers the Project Source Flow</h1>
+    <p>From the moment a document is uploaded to a project, through the PageIndex reasoning tree, to the emergent Project Wiki concepts and the source‑grounded citations you click in the Understanding Studio — traced directly from the source code.</p>
+    <div class="meta">
+      Scope: <b>E2 project sources</b> (the <code>document_trees</code> / Project Wiki path) — distinct from the E1 App Brain path, which has its own copy.
+      &nbsp;·&nbsp; Grounded in <b>backend/app/services/corpus_index</b>, <b>workers/tasks.py</b>, <b>app/services/wiki/compile_core.py</b>.
+    </div>
+    <div class="legend">
+      <span><i class="swatch" style="background:#2f6b4c"></i> Orchestration / app code</span>
+      <span><i class="swatch" style="background:#8a4b2f"></i> PageIndex (tree)</span>
+      <span><i class="swatch" style="background:#4a5db0"></i> LLM (Vertex Gemini)</span>
+      <span><i class="swatch" style="background:#7a6a1f"></i> Postgres</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc">
+    <h4>What's inside</h4>
+    <ol>
+      <li><a href="#mental">The mental model</a></li>
+      <li><a href="#pipeline">The end‑to‑end pipeline</a></li>
+      <li><a href="#upload">Stage 1 — Upload &amp; sync parse</a></li>
+      <li><a href="#ingest">Stage 2 — Ingestion task</a></li>
+      <li><a href="#tree">Stage 3 — Building the tree</a></li>
+      <li><a href="#store">Stage 4 — The stored tree</a></li>
+      <li><a href="#compile">Stage 5 — Compiling concepts</a></li>
+      <li><a href="#concepts">Stage 6 — How a concept is born</a></li>
+      <li><a href="#retrieval">Stage 7 — Retrieval (tree_search)</a></li>
+      <li><a href="#grounding">Stage 8 — Grounding &amp; trace chips</a></li>
+      <li><a href="#mock">Mock vs production</a></li>
+      <li><a href="#config">Config &amp; key files</a></li>
+    </ol>
+  </nav>
+
+  <!-- 1 -->
+  <section id="mental">
+    <h2><span class="num">01</span>The mental model</h2>
+    <p class="lead">PageIndex is a <b>vectorless</b>, reasoning‑based document index.</p>
+    <p>Most RAG systems chop a document into fixed‑size chunks, embed them as vectors, and retrieve by cosine similarity. PageIndex does something different: it turns each document into a <b>tree of sections</b> — like a generated, machine‑readable table of contents where every node knows its title, a one‑line summary, and the page range it covers. Retrieval is then <b>an LLM navigating that tree</b> to pick the relevant sections, rather than a vector nearest‑neighbour lookup.</p>
+    <p>In SpecForge's E2 project zone there is <b>no vector fallback</b> — the PageIndex tree <em>is</em> the index. That single tree per document does three jobs:</p>
+    <div class="cols">
+      <div class="card"><h4>① Retrieval substrate</h4><p>The reasoning tree the LLM searches to answer "which sections are relevant to <em>this</em> query?" — feeding the Requirement Understanding and every downstream artifact.</p></div>
+      <div class="card"><h4>② Concept grounding</h4><p>The outline (node_id · title · summary lines) is handed to the wiki compiler so each emergent concept can cite the exact sections it was synthesised from.</p></div>
+      <div class="card"><h4>③ Traceability spine</h4><p>Node references (<code>S:&lt;doc&gt;:&lt;node&gt;</code> tokens) become the "Grounded in" chips and the provenance lineage you click in the UI.</p></div>
+      <div class="card"><h4>The provider seam</h4><p>Everything sits behind <code>CorpusIndexProvider</code> (<span class="path">corpus_index/base.py</span>) with <code>build_index()</code> + <code>tree_search()</code> — so it's swappable and fully mockable.</p></div>
+    </div>
+    <div class="note idx"><b>Why a tree, not chunks?</b> Requirements documents are hierarchical (sections, sub‑clauses). A tree preserves that structure, so the model retrieves a coherent "§4.2 Data Retention" rather than three half‑sentences that happen to be near a query vector — and it can cite that section back to the user.</div>
+  </section>
+
+  <!-- 2 -->
+  <section id="pipeline">
+    <h2><span class="num">02</span>The end‑to‑end pipeline</h2>
+    <p class="lead">Eight stages, two of them async Celery tasks chained one after the other.</p>
+
+    <div class="pipe">
+      <div class="stage">
+        <div class="rail"><div class="dot">1</div><div class="line-v"></div></div>
+        <div class="card"><span class="where">app/api/documents.py</span><h4>Upload (request thread)</h4>
+          <p>File is stored, a <code>Document</code> row is created, text is parsed synchronously into <code>extracted_text</code>, then a Celery task is dispatched. The HTTP request returns immediately.</p>
+          <span class="tag acc">FastAPI</span><span class="tag db">documents</span></div>
+      </div>
+      <div class="stage">
+        <div class="rail"><div class="dot idx">2</div><div class="line-v"></div></div>
+        <div class="card"><span class="where">workers/tasks.py · _ingest_project_source</span><h4>Ingestion task</h4>
+          <p>Loads the doc, resolves the bytes/markdown to index, and calls the corpus‑index provider's <code>build_index()</code>. On success, persists a <code>DocumentTree</code> and chains the wiki‑compile task.</p>
+          <span class="tag idx">PageIndex</span><span class="tag db">document_trees</span></div>
+      </div>
+      <div class="stage">
+        <div class="rail"><div class="dot idx">3</div><div class="line-v"></div></div>
+        <div class="card"><span class="where">corpus_index/pageindex_provider.py</span><h4>Tree build</h4>
+          <p>PDFs go through PageIndex's native page path; everything else is bridged to Markdown. LiteLLM is pointed at Vertex Gemini. Heading‑less text falls back to one node per page.</p>
+          <span class="tag idx">vendor/pageindex</span><span class="tag llm">LiteLLM → Vertex</span></div>
+      </div>
+      <div class="stage">
+        <div class="rail"><div class="dot db">4</div><div class="line-v"></div></div>
+        <div class="card"><span class="where">models/project_source.py</span><h4>Persist DocumentTree</h4>
+          <p><code>tree_json</code> (the node tree), <code>page_texts</code> (page‑number → text, for fetching node text later), <code>node_count</code> and <code>model</code> — one row per document.</p>
+          <span class="tag db">document_trees</span></div>
+      </div>
+      <div class="stage">
+        <div class="rail"><div class="dot">5</div><div class="line-v"></div></div>
+        <div class="card"><span class="where">workers/tasks.py · _compile_project_wiki_for_doc</span><h4>Compile dispatched</h4>
+          <p>The ingest task chains <code>compile_project_wiki_for_doc.delay(...)</code>. It loads the tree + extracted text and calls the shared compile core.</p>
+          <span class="tag acc">chained task</span></div>
+      </div>
+      <div class="stage">
+        <div class="rail"><div class="dot llm">6</div><div class="line-v"></div></div>
+        <div class="card"><span class="where">wiki/compile_core.py · compile_doc_into_wiki</span><h4>Concepts created</h4>
+          <p>Summary → concept‑plan → parallel concept‑page, each grounded in the tree outline. Node references are whitelist‑validated, then concepts are upserted.</p>
+          <span class="tag llm">3 DSPy modules</span><span class="tag db">project_wiki_concepts</span></div>
+      </div>
+      <div class="stage">
+        <div class="rail"><div class="dot llm">7</div><div class="line-v"></div></div>
+        <div class="card"><span class="where">corpus_index · tree_search + clarifier</span><h4>Retrieval &amp; clarification</h4>
+          <p>The compile task chains the clarifier. Retrieval (<code>tree_search</code>) lets the RU and clarifier reason over the trees to surface relevant sections, contradictions, and gaps.</p>
+          <span class="tag llm">tree_search</span></div>
+      </div>
+      <div class="stage">
+        <div class="rail"><div class="dot db">8</div></div>
+        <div class="card"><span class="where">UI · IntakeTraceChip / GroundedIn</span><h4>Source‑grounded UI</h4>
+          <p>Concept "Grounded in" chips and clarification citations resolve back to exact tree sections via <code>S:&lt;doc&gt;:&lt;node&gt;</code> tokens — closing the traceability loop.</p>
+          <span class="tag acc">Understanding Studio</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section id="upload">
+    <h2><span class="num">03</span>Stage 1 — Upload &amp; the synchronous parse</h2>
+    <p>When a user uploads a project source, the request handler does the cheap, durable work synchronously and pushes the expensive work to a background worker. The crucial detail: <code>extracted_text</code> is set <em>here</em> (so the requirement‑extractor can use it instantly), while the PageIndex tree build is dispatched async.</p>
+    <pre><span class="c"># app/api/documents.py  (upload handler, ~L88–115)</span>
+doc = Document(..., parse_status=<span class="s">"pending"</span>, indexing_status=<span class="s">"pending"</span>)
+db.add(doc); <span class="k">await</span> db.flush()
+
+<span class="c"># Synchronous text extraction — used immediately by requirement_extractor</span>
+text = parser.parse(content, mime)
+doc.extracted_text = text
+doc.parse_status = <span class="s">"done"</span>
+<span class="k">await</span> db.commit()
+
+<span class="c"># Dispatch PageIndex ingestion (builds the reasoning tree → document_trees).</span>
+<span class="c"># Best-effort: a broker outage must not fail the (already durable) upload.</span>
+<span class="k">from</span> workers.dispatch <span class="k">import</span> dispatch
+<span class="k">from</span> workers.tasks <span class="k">import</span> ingest_project_source
+dispatch(ingest_project_source, str(doc.id))</pre>
+    <div class="note"><b>Why <code>dispatch()</code> and not <code>.delay()</code>?</b> <span class="path">workers/dispatch.py</span> does a fast TCP pre‑flight against Redis so the API never hangs if the broker is down. The upload is already committed and durable; ingestion is re‑triggerable. (See <span class="path">backend/CLAUDE.md</span> → Celery gotchas.)</div>
+  </section>
+
+  <!-- 4 -->
+  <section id="ingest">
+    <h2><span class="num">04</span>Stage 2 — The ingestion task</h2>
+    <p><code>_ingest_project_source(document_id)</code> (<span class="path">workers/tasks.py:1272</span>) is the orchestrator. It decides <em>what bytes to feed PageIndex</em> based on MIME type, calls the provider, stores the result, and chains the wiki compile.</p>
+    <h3>Choosing the index input</h3>
+    <table>
+      <tr><th>Document type</th><th>What gets indexed</th><th>Why</th></tr>
+      <tr><td><code>application/pdf</code></td><td><b>Raw PDF bytes</b> → PageIndex native path</td><td>PageIndex uses an LLM to infer section structure directly from the PDF — smarter than markdown on flat reports.</td></tr>
+      <tr><td>DOCX / images <span class="mono">(RICH_MIMES)</span></td><td>Azure‑converted <b>markdown</b> (cached in <code>extracted_text</code>)</td><td>No native PageIndex path; the markdown carries the headings PageIndex needs.</td></tr>
+      <tr><td>TXT / MD</td><td><code>extracted_text</code> as <b>markdown</b> bytes</td><td>Already plain text from the sync upload phase.</td></tr>
+    </table>
+    <pre><span class="c"># workers/tasks.py  _ingest_project_source  (~L1305–1358)</span>
+<span class="k">if</span> doc.mime_type <span class="k">in</span> RICH_MIMES:
+    <span class="k">if</span> <span class="k">not</span> doc.extracted_text:                 <span class="c"># convert once, commit separately</span>
+        markdown = <span class="k">await</span> md_provider.convert(data, doc.mime_type, doc.filename)
+        doc.extracted_text = markdown; <span class="k">await</span> db.commit()  <span class="c"># so a tree-build fail can't roll back Azure</span>
+    <span class="k">if</span> doc.mime_type == <span class="s">"application/pdf"</span>:
+        index_data, index_content_type = data, <span class="s">"application/pdf"</span>
+    <span class="k">else</span>:
+        index_data, index_content_type = doc.extracted_text.encode(), <span class="s">"text/markdown"</span>
+<span class="k">else</span>:                                            <span class="c"># TXT / MD</span>
+    index_data, index_content_type = (doc.extracted_text <span class="k">or</span> <span class="s">""</span>).encode(), <span class="s">"text/markdown"</span>
+
+result = <span class="k">await</span> get_corpus_index_provider().build_index(
+    data=index_data, content_type=index_content_type, filename=doc.filename)
+
+<span class="k">await</span> db.execute(delete(DocumentTree).where(DocumentTree.document_id == doc.id))
+db.add(DocumentTree(document_id=doc.id, project_id=doc.project_id,
+                    tree_json=result.tree, page_texts=result.page_texts,
+                    node_count=result.node_count, model=result.model))
+doc.indexing_status = <span class="s">"done"</span>; <span class="k">await</span> db.commit()
+compile_project_wiki_for_doc.delay(project_id_str, document_id)   <span class="c"># → Stage 5</span></pre>
+    <div class="note warn"><b>Resilience built in.</b> Markdown conversion is committed <em>before</em> the tree build, so a PageIndex failure can't waste the expensive Azure call on retry. On any error the task flips <code>indexing_status="error"</code> with the message (or detects a deleted doc) instead of crashing.</div>
+  </section>
+
+  <!-- 5 -->
+  <section id="tree">
+    <h2><span class="num">05</span>Stage 3 — Building the tree (the PageIndex provider)</h2>
+    <p><code>PageIndexProvider.build_index()</code> (<span class="path">corpus_index/pageindex_provider.py:146</span>) is where the vendored PageIndex OSS actually runs. Three things happen: LiteLLM is pointed at Vertex, the right builder is invoked, and per‑page text is captured for later node‑text fetching.</p>
+
+    <h3>① Point LiteLLM at our Vertex Gemini</h3>
+    <p>PageIndex internally calls <code>litellm.completion(model="vertex_ai/...")</code>. We configure it to use SpecForge's service account and project — verified in the opt‑in T6 spike (<span class="path">tests/test_pageindex_vertex.py</span>).</p>
+    <pre><span class="c"># _configure_litellm()  (L37)</span>
+litellm.drop_params = <span class="k">True</span>                          <span class="c"># tolerate unsupported OpenAI params</span>
+litellm.vertex_project  = settings.gemini_project_id
+litellm.vertex_location = settings.gemini_location
+os.environ[<span class="s">"GOOGLE_APPLICATION_CREDENTIALS"</span>] = settings.google_service_account_path
+<span class="k">return</span> settings.pageindex_model               <span class="c"># "vertex_ai/gemini-3.5-flash"</span></pre>
+
+    <h3>② Invoke the right builder</h3>
+    <table>
+      <tr><th>Input</th><th>Builder (vendor/pageindex)</th><th>Mode</th></tr>
+      <tr><td>PDF</td><td><code>page_index_main(path, opt)</code></td><td>sync — LLM reads the PDF's table of contents / page ranges</td></tr>
+      <tr><td>Markdown</td><td><code>md_to_tree(...)</code></td><td>async — tree from <code>#</code> headings</td></tr>
+    </table>
+    <p>Both run inside a thread executor (Celery‑safe) and return a structure of nodes. We pass <code>if_add_node_summary=yes</code>, <code>if_add_node_id=yes</code>, <code>if_add_node_text=no</code> — we want the outline (id, title, summary, page range) but fetch body text ourselves from <code>page_texts</code>.</p>
+
+    <h3>③ Normalise + the heading‑less fallback</h3>
+    <p>PageIndex output is coerced into the canonical <code>{"nodes":[...]}</code> shape. The important safety net: PageIndex builds nodes from <b>document structure</b>. A flat, heading‑less press release yields <b>zero nodes</b> — which in the E2 zone (no vector fallback) would make the doc invisible. So we synthesise one node per page:</p>
+    <pre><span class="c"># build_index() tail  (L177–187)</span>
+tree = _normalize_tree(raw)
+<span class="k">if</span> count_nodes(tree) == 0 <span class="k">and</span> page_texts:
+    tree = _fallback_tree(page_texts, filename)   <span class="c"># one node per page → still retrievable</span>
+    log.info(<span class="s">"pageindex_fallback filename=%s nodes=%d"</span>, filename, count_nodes(tree))
+<span class="k">return</span> DocTree(tree=tree, page_texts=page_texts,
+               node_count=count_nodes(tree), model=model)</pre>
+    <p>Per‑page text is captured up front — for PDFs via PyMuPDF (<code>_pdf_page_texts</code>), for markdown by paginating into 1500‑char pages (<code>_paginate</code>). This <code>page_texts</code> map is what lets us later fetch a node's full body from its page range without storing duplicate text in every node.</p>
+    <div class="note idx"><b>All PageIndex imports are lazy.</b> The module loads even when the package isn't installed, so the mock path (CI, tests) stays usable with zero Vertex/network calls.</div>
+  </section>
+
+  <!-- 6 -->
+  <section id="store">
+    <h2><span class="num">06</span>Stage 4 — The stored tree</h2>
+    <p>The result lands in one <code>DocumentTree</code> row (<span class="path">models/project_source.py</span>): unique per <code>document_id</code>, FK‑cascaded to both the document and the project.</p>
+    <table>
+      <tr><th>Column</th><th>Holds</th></tr>
+      <tr><td><code>tree_json</code></td><td>The canonical node tree (the outline)</td></tr>
+      <tr><td><code>page_texts</code></td><td><code>{"1": "...page 1 text...", "2": "..."}</code> — for fetching node body text on demand</td></tr>
+      <tr><td><code>node_count</code></td><td>How many nodes (0 would've triggered the fallback)</td></tr>
+      <tr><td><code>model</code></td><td>The LiteLLM model id used (audit/repro)</td></tr>
+    </table>
+    <h3>What a node looks like</h3>
+    <p>Each node is the unit of retrieval and citation. <code>start_index</code>/<code>end_index</code> are page numbers into <code>page_texts</code>.</p>
+    <div class="tree">
+<span class="root">nodes:</span><br>
+&nbsp;&nbsp;<span class="nid">node_id "0000"</span> · <span class="ttl">"Secure Document Portal"</span> &nbsp;<span class="sm">(pp 1–4)</span><br>
+&nbsp;&nbsp;<span class="sm">summary: "Overview of the portal's purpose and scope…"</span><br>
+&nbsp;&nbsp;<span class="root">nodes:</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="nid">node_id "0001"</span> · <span class="ttl">"Document Management &amp; Processing"</span> <span class="sm">(pp 1–1)</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="sm">summary: "Upload, processing, version control of files…"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="nid">node_id "0002"</span> · <span class="ttl">"Security, Authentication &amp; Compliance"</span> <span class="sm">(pp 2–3)</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="sm">summary: "MFA, RBAC, AES‑256, GDPR/SOC2 on Azure…"</span>
+    </div>
+    <p>The helpers in <span class="path">corpus_index/base.py</span> operate on this shape everywhere: <code>iter_nodes</code> (depth‑first walk), <code>find_node</code> (by id), <code>node_text</code> (concatenate the page range, fall back to a node‑level <code>text</code> field), <code>count_nodes</code>, and <code>flatten_outline</code> (render the LLM‑readable outline for search).</p>
+  </section>
+
+  <!-- 7 -->
+  <section id="compile">
+    <h2><span class="num">07</span>Stage 5 — Compiling the tree into wiki concepts</h2>
+    <p>The ingest task chains <code>compile_project_wiki_for_doc</code>. Its async body (<span class="path">workers/tasks.py:1018</span>) sets <code>wiki_status="running"</code>, then <code>_compile_one_project_doc</code> resolves the tree + text and calls the shared compile core:</p>
+    <pre><span class="c"># _compile_one_project_doc  (L990)</span>
+tree_row  = <span class="k">await</span> db.execute(select(DocumentTree).where(DocumentTree.document_id == doc.id))…
+tree_json = tree_row.tree_json <span class="k">if</span> tree_row <span class="k">else</span> <span class="k">None</span>
+source_text = doc.extracted_text <span class="k">or</span> <span class="s">""</span>
+
+<span class="k">return await</span> compile_doc_into_wiki(
+    db, scope_id=project.id, scope_name=project.name,
+    doc_id=doc.id, doc_name=doc.filename,
+    tree_json=tree_json, node_count=tree_row.node_count,
+    source_text=source_text, scope=_project_wiki_scope(), settings=settings)</pre>
+    <div class="note"><b>One core, two wikis.</b> <code>compile_doc_into_wiki</code> (<span class="path">wiki/compile_core.py</span>) is a parameterised copy of the App Brain pipeline, bound to a concrete wiki by a <code>WikiScope</code> (which models + which scope/doc columns). The Project Wiki passes <code>ProjectWikiSummary</code>/<code>ProjectWikiConcept</code> + <code>project_id</code>; the App Brain keeps its own untouched copy ("copy, not refactor").</div>
+    <h3>The tree → outline bridge</h3>
+    <p>Before any LLM call, <code>build_tree_context(tree_json)</code> flattens the tree into the exact text the concept generator will cite from, and a <code>node_meta</code> map used to validate references:</p>
+    <pre><span class="c"># compile_core.py  build_tree_context  (L42)</span>
+<span class="k">for</span> node <span class="k">in</span> iter_nodes(tree_json):
+    lines.append(f<span class="s">"{nid} · {title} (pp {pages}) — {summary}"</span>)   <span class="c"># outline_text the LLM sees</span>
+    meta[nid] = (title, pages)                              <span class="c"># whitelist + enrichment</span>
+<span class="c"># doc_type = "pageindex" if the tree has nodes, else "short"</span></pre>
+  </section>
+
+  <!-- 8 -->
+  <section id="concepts">
+    <h2><span class="num">08</span>Stage 6 — How a concept is born</h2>
+    <p class="lead">Three DSPy modules, then a strict validation + upsert. Concepts are <b>emergent</b> — never a fixed taxonomy.</p>
+
+    <div class="pipe">
+      <div class="stage">
+        <div class="rail"><div class="dot llm">A</div><div class="line-v"></div></div>
+        <div class="card"><span class="where">run_doc_summary</span><h4>Summarise the document</h4>
+          <p><code>DocSummarySignature</code>: faithfully summarise what <em>this</em> document says, and suggest free‑form candidate cross‑document topics. → <code>{brief, content_md, candidate_concepts}</code>.</p>
+          <span class="tag llm">ChainOfThought</span></div>
+      </div>
+      <div class="stage">
+        <div class="rail"><div class="dot llm">B</div><div class="line-v"></div></div>
+        <div class="card"><span class="where">run_concept_plan</span><h4>Plan the changes</h4>
+          <p><code>ConceptPlanSignature</code> sees the new summary <em>and the briefs of concepts that already exist</em>, then returns <code>{create, update, related}</code>. Prefers updating an existing concept over duplicating it; for the first doc or two, creates only 2–4 foundational concepts.</p>
+          <span class="tag llm">incremental / accumulating</span></div>
+      </div>
+      <div class="stage">
+        <div class="rail"><div class="dot llm">C</div><div class="line-v"></div></div>
+        <div class="card"><span class="where">run_concept_page · asyncio.gather</span><h4>Write each page (in parallel)</h4>
+          <p><code>ConceptPageSignature</code> writes/revises a free‑form Markdown page for each created/updated topic, given the document text <b>and the tree outline</b>. It must put section grounding in a separate <code>tree_node_refs</code> field (node_ids from the outline) — never inline node ids in prose.</p>
+          <span class="tag llm">parallel per concept</span><span class="tag idx">cites node_ids</span></div>
+      </div>
+      <div class="stage">
+        <div class="rail"><div class="dot">D</div><div class="line-v"></div></div>
+        <div class="card"><span class="where">compile_core.py  L182–209</span><h4>Validate against the real tree</h4>
+          <p>Every <code>node_id</code> the model returned is checked against <code>valid_node_ids</code> (the actual tree). Valid refs are enriched with the real <code>title</code> + <code>pages</code> from <code>node_meta</code>; invented ones are dropped. Related slugs are likewise whitelisted. This is the wikilink/citation guard.</p>
+          <span class="tag acc">whitelist guard</span></div>
+      </div>
+      <div class="stage">
+        <div class="rail"><div class="dot db">E</div></div>
+        <div class="card"><span class="where">project_wiki_concepts</span><h4>Upsert + backlink</h4>
+          <p>New slug → insert; existing slug → merge (union <code>related_slugs</code>, <code>source_doc_ids</code>, replace this doc's <code>tree_node_refs</code>). The doc summary records which concepts it touched (backlink). Returns <code>concepts_touched</code>.</p>
+          <span class="tag db">accumulating model</span></div>
+      </div>
+    </div>
+
+    <h3>The validated reference — the heart of traceability</h3>
+    <pre><span class="c"># compile_core.py  L182–187  — only real nodes survive</span>
+<span class="k">for</span> ref <span class="k">in</span> page.get(<span class="s">"tree_node_refs"</span>, []):
+    nid = str(ref.get(<span class="s">"node_id"</span>)).strip()
+    <span class="k">if</span> nid <span class="k">and</span> nid <span class="k">in</span> valid_node_ids:          <span class="c"># whitelist against the real tree</span>
+        t, pages = node_meta[nid]
+        refs.append({<span class="s">"doc_id"</span>: str(doc_id), <span class="s">"node_id"</span>: nid,
+                     <span class="s">"title"</span>: t, <span class="s">"pages"</span>: pages})</pre>
+    <p>That <code>refs</code> list is stored on the concept as <code>tree_node_refs</code> — the column the UI reads to render the <b>"Grounded in"</b> chips and to build <code>S:&lt;doc_id&gt;:&lt;node_id&gt;</code> citation tokens.</p>
+    <table>
+      <tr><th>ProjectWikiConcept column</th><th>From</th></tr>
+      <tr><td><code>slug</code>, <code>title</code>, <code>brief</code>, <code>content_md</code></td><td>The concept‑page LLM output (prose stripped of any leaked node ids)</td></tr>
+      <tr><td><code>source_doc_ids</code></td><td>Accumulated set of documents that contributed</td></tr>
+      <tr><td><code>related_slugs</code></td><td>Whitelisted cross‑links to other concepts</td></tr>
+      <tr><td><code>tree_node_refs</code></td><td>Validated <code>{doc_id, node_id, title, pages}</code> — the PageIndex grounding</td></tr>
+    </table>
+  </section>
+
+  <!-- 9 -->
+  <section id="retrieval">
+    <h2><span class="num">09</span>Stage 7 — Retrieval: reasoning over the tree</h2>
+    <p>Concept compilation hands the LLM the whole outline. The other use of the tree is <b>targeted retrieval</b> — answering "which sections matter for <em>this</em> query?" — used by the Requirement Understanding, the clarifier, and every downstream artifact via <code>depth_search</code> (<span class="path">context/docs_layer.py:154</span>).</p>
+    <pre><span class="c"># PageIndexProvider.tree_search  (pageindex_provider.py:189)</span>
+outline = flatten_outline(docs)                 <span class="c"># [D0] node_id · title — summary, …</span>
+result  = <span class="k">await</span> run_tree_search(query, outline, top_k)   <span class="c"># DSPy module reasons, picks node_ids</span>
+<span class="k">for</span> sel <span class="k">in</span> result[<span class="s">"selections"</span>][:top_k]:
+    node = find_node(doc.tree, sel[<span class="s">"node_id"</span>])
+    out.append(RetrievedSection(
+        node_id=node[<span class="s">"node_id"</span>], title=node[<span class="s">"title"</span>],
+        page_start=node[<span class="s">"start_index"</span>], page_end=node[<span class="s">"end_index"</span>],
+        text=node_text(node, doc.page_texts),    <span class="c"># body fetched from page_texts</span>
+        reason=sel[<span class="s">"reason"</span>]))</pre>
+    <p>So retrieval is: <b>flatten every in‑scope tree → LLM selects node_ids with reasons → fetch each node's body from <code>page_texts</code></b>. No embeddings, no vector store. <code>top_k</code> defaults to <code>tree_search_top_k = 8</code>.</p>
+    <div class="note"><b>Breadth vs depth.</b> <span class="path">docs_layer.py</span> exposes two views over the same trees: <em>breadth</em> (the full outline inventory of every document, so generation never misses a doc) and <em>depth</em> (<code>tree_search</code> for a specific query/unit). The RU grounding uses both.</div>
+  </section>
+
+  <!-- 10 -->
+  <section id="grounding">
+    <h2><span class="num">10</span>Stage 8 — Grounding &amp; the trace chips you click</h2>
+    <p>This is where the tree closes the loop back to the UI. Two paths consume the stored grounding:</p>
+    <div class="cols">
+      <div class="card"><h4>Concept "Grounded in" chips</h4><p>Each concept's <code>tree_node_refs</code> render as section chips. Clicking one calls <span class="path">GET /projects/{id}/sources/{doc}/section/{node}</span>, which runs <code>find_node</code> + <code>node_text</code> over the stored tree and returns the exact section text + page range.</p></div>
+      <div class="card"><h4>Clarification &amp; RU citations</h4><p>The clarifier and RU emit canonical tokens — <code>S:&lt;doc&gt;:&lt;node&gt;</code> (source section), <code>C:&lt;slug&gt;</code> (wiki concept), <code>F:&lt;fact&gt;</code> — that <code>IntakeTraceChip</code> resolves to a floating popover. The <code>S:</code> resolver is the same section endpoint, powered by the PageIndex tree.</p></div>
+    </div>
+    <pre><span class="c"># app/api/project_wiki.py — section drill-down (the S: resolver)</span>
+node = find_node(tree.tree_json, node_id)
+<span class="k">return</span> ok({<span class="s">"doc_name"</span>: doc_name, <span class="s">"title"</span>: node[<span class="s">"title"</span>],
+            <span class="s">"pages"</span>: f<span class="s">"{start}-{end}"</span>,
+            <span class="s">"text"</span>: node_text(node, tree.page_texts)})   <span class="c"># ← page_texts again</span></pre>
+    <p>And the provenance lineage (<span class="path">services/provenance/lineage.py</span>) walks <code>Documents → Concepts</code> using exactly these <code>tree_node_refs</code> (a concept's source doc_ids come from <code>source_doc_ids ∪ tree_node_refs doc_ids</code>), so the LineageMap is, at root, a view over the PageIndex grounding.</p>
+  </section>
+
+  <!-- mock -->
+  <section id="mock">
+    <h2><span class="num">11</span>Mock vs production</h2>
+    <p>The whole flow runs deterministically with zero network when <code>LLM_PROVIDER=mock</code> — that's what keeps CI green and tests fast. The provider factory picks the implementation:</p>
+    <pre><span class="c"># corpus_index/__init__.py</span>
+<span class="k">if</span> choice == <span class="s">"auto"</span>:
+    choice = <span class="s">"mock"</span> <span class="k">if</span> settings.llm_provider == <span class="s">"mock"</span> <span class="k">else</span> <span class="s">"pageindex"</span></pre>
+    <table>
+      <tr><th>Step</th><th>Production (PageIndex)</th><th>Mock</th></tr>
+      <tr><td>Tree build</td><td>LiteLLM → Vertex Gemini reasons over structure</td><td><code>MockCorpusIndexProvider</code>: one node per 1500‑char page under a single root <code>0000</code> — same shape, no LLM</td></tr>
+      <tr><td>Summary / plan / page</td><td>3 DSPy ChainOfThought modules</td><td>Deterministic dict in <code>compile_doc_into_wiki</code>: an <code>overview</code> concept, <code>tree_node_refs</code> = first valid node</td></tr>
+      <tr><td>tree_search</td><td>DSPy <code>run_tree_search</code> picks node_ids</td><td>Mock provider returns deterministic selections</td></tr>
+    </table>
+    <p>Because the mock produces the <em>same tree shape and the same DB rows</em>, every stage downstream (concepts, refs, retrieval, trace chips) works identically — only the intelligence is stubbed.</p>
+  </section>
+
+  <!-- config -->
+  <section id="config">
+    <h2><span class="num">12</span>Config knobs &amp; key files</h2>
+    <table>
+      <tr><th>Setting <span class="mono">(app/config.py)</span></th><th>Default</th><th>Effect</th></tr>
+      <tr><td><code>corpus_index_provider</code></td><td><code>"auto"</code></td><td><code>auto</code> → mock when LLM is mock, else pageindex. Force with <code>mock</code>/<code>pageindex</code>.</td></tr>
+      <tr><td><code>pageindex_model</code></td><td><code>vertex_ai/gemini-3.5-flash</code></td><td>LiteLLM model id PageIndex uses for tree building.</td></tr>
+      <tr><td><code>tree_search_top_k</code></td><td><code>8</code></td><td>How many sections retrieval returns per query.</td></tr>
+    </table>
+
+    <h3>The files, in flow order</h3>
+    <table>
+      <tr><th>File</th><th>Role</th></tr>
+      <tr><td><span class="path">app/api/documents.py</span></td><td>Upload → sync parse → dispatch ingestion</td></tr>
+      <tr><td><span class="path">workers/tasks.py</span> · <code>_ingest_project_source</code></td><td>Decide index input → build_index → store DocumentTree → chain compile</td></tr>
+      <tr><td><span class="path">corpus_index/pageindex_provider.py</span></td><td><code>build_index</code> (tree) + <code>tree_search</code> (retrieval)</td></tr>
+      <tr><td><span class="path">corpus_index/base.py</span></td><td><code>DocTree</code> + tree helpers (iter/find/node_text/outline)</td></tr>
+      <tr><td><span class="path">vendor/pageindex/</span></td><td>The OSS tree builder: <code>page_index_main</code> (PDF), <code>md_to_tree</code> (MD)</td></tr>
+      <tr><td><span class="path">models/project_source.py</span></td><td><code>DocumentTree</code> table</td></tr>
+      <tr><td><span class="path">workers/tasks.py</span> · <code>_compile_project_wiki_for_doc</code></td><td>Chain target: load tree + text → compile core</td></tr>
+      <tr><td><span class="path">wiki/compile_core.py</span></td><td><code>compile_doc_into_wiki</code>: summary → plan → page → validate → upsert</td></tr>
+      <tr><td><span class="path">skills/wiki_compiler/dspy_wiki.py</span></td><td>The 3 DSPy signatures/modules + async runners</td></tr>
+      <tr><td><span class="path">context/docs_layer.py</span></td><td><code>depth_search</code> (per‑unit) + breadth outline for generation grounding</td></tr>
+      <tr><td><span class="path">api/project_wiki.py</span></td><td>Wiki index/concept/summary + the <code>S:</code> section drill‑down resolver</td></tr>
+      <tr><td><span class="path">services/provenance/lineage.py</span></td><td>Documents → Concepts → Clarifications lineage over <code>tree_node_refs</code></td></tr>
+    </table>
+
+    <div class="note idx" style="margin-top:28px"><b>One‑sentence summary.</b> A project document is parsed, then PageIndex (via Vertex Gemini) turns it into a <em>tree of titled, page‑ranged sections</em> stored as a <code>DocumentTree</code>; that tree is the retrieval substrate <em>and</em> the grounding that the wiki compiler cites when it synthesises emergent concepts — and those validated node references are exactly the source‑section citations you click in the Understanding Studio.</div>
+  </section>
+
+  <footer>
+    Generated from the SpecForge source tree for engineering onboarding · E2 Intelligent Intake.
+    Line references reflect the code at authoring time — treat them as signposts, not contracts; the function names are the durable anchors.
+  </footer>
+
+</div>
+</body>
+</html>

@@ -61,6 +61,8 @@ def _format_sections(sections: list[RetrievedSection]) -> str:
 
 
 def _format_facts(facts: list[dict]) -> str:
+    # Positional `[F#]` markers — the RU cites these inline and the UI resolves
+    # them against the generated `citations` array (small ints echo reliably).
     return "\n".join(
         f"[F{i}] ({f['kind']}, {f['confidence']}) {f['app']}: {f['text']}"
         for i, f in enumerate(facts, start=1)
@@ -103,17 +105,32 @@ async def generate(project_id: uuid.UUID, db: AsyncSession, provider) -> dict | 
     facts = await load_app_facts_for_project(project_id, db)
     qa = await _gather_qa(project_id, db)
 
+    # Full-context grounding (G8): brief + breadth/depth docs + App Brain wiki+facts.
+    from app.services.understanding.grounding import build_intake_grounding
+    grounding = await build_intake_grounding(project_id, db)
+
     result = await run_requirement_understanding(
         project_name=project.name,
         business_unit=project.business_unit or "—",
         description=project.description or "—",
-        source_sections=_format_sections(sections) or "(no source sections)",
+        brief=grounding["brief"],
+        source_sections=_format_sections(sections) or grounding["doc_depth"] or "(no source sections)",
         app_facts=_format_facts(facts) or "(no app facts)",
+        app_brain=grounding["app_brain"],
         qa_pairs=qa or "(none yet)",
     )
 
     await _persist(project, result, db)
     log.info("ru_generated project_id=%s sections=%d facts=%d", project_id, len(sections), len(facts))
+
+    # Intelligent clarification pass over the project wiki (best-effort — never
+    # block RU synthesis if the wiki is empty or the clarifier errors).
+    try:
+        from app.services.understanding.clarifier import run_clarification
+        await run_clarification(project_id, db, trigger="interview")
+    except Exception:  # noqa: BLE001
+        log.warning("clarifier (interview) failed project_id=%s", project_id, exc_info=True)
+
     return result
 
 

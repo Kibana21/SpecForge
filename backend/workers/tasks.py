@@ -98,6 +98,41 @@ def check_wiki_health(app_id: str) -> dict:
     return _run_async(_check_wiki_health(app_id))
 
 
+# ── Project Wiki (E2 intelligent intake) ───────────────────────────────────────
+
+@celery_app.task(name="workers.tasks.compile_project_wiki_for_doc")
+def compile_project_wiki_for_doc(project_id: str, document_id: str) -> dict:
+    return _run_async(_compile_project_wiki_for_doc(project_id, document_id))
+
+
+@celery_app.task(name="workers.tasks.rebuild_project_wiki")
+def rebuild_project_wiki(project_id: str) -> dict:
+    return _run_async(_rebuild_project_wiki(project_id))
+
+
+@celery_app.task(name="workers.tasks.check_project_wiki_health")
+def check_project_wiki_health(project_id: str) -> dict:
+    return _run_async(_check_project_wiki_health(project_id))
+
+
+@celery_app.task(name="workers.tasks.run_project_clarification")
+def run_project_clarification(project_id: str, trigger: str = "new_document") -> dict:
+    return _run_async(_run_project_clarification(project_id, trigger))
+
+
+async def _run_project_clarification(project_id: str, trigger: str) -> dict:
+    from app.db import AsyncSessionLocal
+    from app.services.understanding.clarifier import run_clarification
+
+    async with AsyncSessionLocal() as db:
+        try:
+            items = await run_clarification(UUID(project_id), db, trigger=trigger)  # type: ignore[arg-type]
+            return {"ok": True, "project_id": project_id, "items": len(items)}
+        except Exception as exc:  # noqa: BLE001
+            log.warning("run_project_clarification failed project_id=%s error=%s", project_id, exc)
+            return {"ok": False, "error": str(exc)}
+
+
 @celery_app.task(name="workers.tasks.reset_stale_rebuild_status")
 def reset_stale_rebuild_status() -> dict:
     return _run_async(_reset_stale_rebuild_status())
@@ -939,6 +974,218 @@ async def _check_wiki_health(app_id: str) -> dict:
     return {"ok": True, "app_id": app_id, "contradictions": len(contradictions), "orphans": len(orphans)}
 
 
+# ── Project Wiki async implementations ──────────────────────────────────────────
+
+def _project_wiki_scope():
+    from app.models.project_wiki import ProjectWikiConcept, ProjectWikiSummary
+    from app.services.wiki.compile_core import WikiScope
+    return WikiScope(
+        summary_model=ProjectWikiSummary,
+        concept_model=ProjectWikiConcept,
+        scope_col="project_id",
+        summary_doc_col="document_id",
+    )
+
+
+async def _compile_one_project_doc(db, project, doc, settings) -> int:
+    """Resolve a project document's tree + text and compile it into the project
+    wiki via the shared compile core."""
+    from sqlalchemy import select
+    from app.models.project_source import DocumentTree
+    from app.services.wiki.compile_core import compile_doc_into_wiki
+
+    tree_row = (await db.execute(
+        select(DocumentTree).where(DocumentTree.document_id == doc.id)
+    )).scalar_one_or_none()
+    tree_json = tree_row.tree_json if tree_row else None
+    node_count = tree_row.node_count if tree_row else 0
+    source_text = doc.extracted_text or ""
+
+    return await compile_doc_into_wiki(
+        db,
+        scope_id=project.id,
+        scope_name=project.name,
+        doc_id=doc.id,
+        doc_name=doc.filename,
+        tree_json=tree_json,
+        node_count=node_count,
+        source_text=source_text,
+        scope=_project_wiki_scope(),
+        settings=settings,
+    )
+
+
+async def _compile_project_wiki_for_doc(project_id: str, document_id: str) -> dict:
+    from sqlalchemy import select
+
+    from app.config import get_settings
+    from app.db import AsyncSessionLocal
+    from app.models.document import Document
+    from app.models.project import Project
+
+    settings = get_settings()
+    async with AsyncSessionLocal() as db:
+        project = await db.get(Project, UUID(project_id))
+        doc = await db.get(Document, UUID(document_id))
+        if project is None or doc is None:
+            log.error("compile_project_wiki_for_doc project=%s doc=%s not found", project_id, document_id)
+            return {"ok": False, "error": "not_found"}
+
+        project.wiki_status = "running"
+        await db.commit()
+        try:
+            n = await _compile_one_project_doc(db, project, doc, settings)
+            project.wiki_compiled_at = datetime.now(timezone.utc)
+            project.wiki_status = "idle"
+            await db.commit()
+        except Exception as exc:
+            await db.rollback()
+            # Benign race: the project (or its document) can be deleted while we
+            # compile — the LLM pass takes tens of seconds. Detect that and exit
+            # quietly instead of emitting a scary FK-violation traceback. Use a
+            # direct SELECT (not db.get, which is served from the identity map).
+            still_exists = (await db.execute(
+                select(Project.id).where(Project.id == UUID(project_id))
+            )).scalar_one_or_none()
+            if still_exists is None:
+                log.info("compile_project_wiki_for_doc project_id=%s deleted mid-compile; skipping", project_id)
+                return {"ok": False, "error": "project_deleted"}
+            log.error("compile_project_wiki_for_doc project_id=%s error=%s", project_id, exc, exc_info=True)
+            try:
+                fresh = await db.get(Project, UUID(project_id))
+                if fresh:
+                    fresh.wiki_status = "idle"
+                    await db.commit()
+            except Exception:
+                await db.rollback()
+            return {"ok": False, "error": str(exc)}
+
+    log.info("compile_project_wiki_for_doc project_id=%s document_id=%s concepts=%d", project_id, document_id, n)
+    # Wiki is fresh → regenerate clarification questions (best-effort).
+    try:
+        from workers.dispatch import dispatch
+        dispatch(run_project_clarification, project_id, "new_document")
+    except Exception:  # noqa: BLE001
+        pass
+    return {"ok": True, "project_id": project_id, "document_id": document_id, "concepts_touched": n}
+
+
+async def _rebuild_project_wiki(project_id: str) -> dict:
+    from sqlalchemy import delete as sa_delete, select
+
+    from app.config import get_settings
+    from app.db import AsyncSessionLocal
+    from app.models.document import Document
+    from app.models.project import Project
+    from app.models.project_wiki import ProjectWikiConcept, ProjectWikiSummary
+
+    settings = get_settings()
+    async with AsyncSessionLocal() as db:
+        project = await db.get(Project, UUID(project_id))
+        if project is None:
+            return {"ok": False, "error": "project_not_found"}
+
+        project.wiki_status = "running"
+        await db.commit()
+        try:
+            await db.execute(sa_delete(ProjectWikiConcept).where(ProjectWikiConcept.project_id == project.id))
+            await db.execute(sa_delete(ProjectWikiSummary).where(ProjectWikiSummary.project_id == project.id))
+            await db.flush()
+
+            docs = (await db.execute(
+                select(Document)
+                .where(Document.project_id == project.id, Document.indexing_status == "done")
+                .order_by(Document.created_at)
+            )).scalars().all()
+
+            total = 0
+            for doc in docs:
+                total += await _compile_one_project_doc(db, project, doc, settings)
+                await db.flush()
+
+            project.wiki_compiled_at = datetime.now(timezone.utc)
+            project.wiki_status = "idle"
+            await db.commit()
+        except Exception as exc:
+            await db.rollback()
+            still_exists = (await db.execute(
+                select(Project.id).where(Project.id == UUID(project_id))
+            )).scalar_one_or_none()
+            if still_exists is None:
+                log.info("rebuild_project_wiki project_id=%s deleted mid-compile; skipping", project_id)
+                return {"ok": False, "error": "project_deleted"}
+            log.error("rebuild_project_wiki project_id=%s error=%s", project_id, exc, exc_info=True)
+            try:
+                fresh = await db.get(Project, UUID(project_id))
+                if fresh:
+                    fresh.wiki_status = "idle"
+                    await db.commit()
+            except Exception:
+                await db.rollback()
+            return {"ok": False, "error": str(exc)}
+
+    log.info("rebuild_project_wiki project_id=%s docs=%d concepts=%d", project_id, len(docs), total)
+    return {"ok": True, "project_id": project_id, "docs": len(docs), "concepts": total}
+
+
+async def _check_project_wiki_health(project_id: str) -> dict:
+    from sqlalchemy import select
+
+    from app.db import AsyncSessionLocal
+    from app.models.project import Project
+    from app.models.project_wiki import ProjectWikiConcept
+    from app.services.skills.wiki_compiler.dspy_wiki import ConceptForLint, run_wiki_lint
+
+    async with AsyncSessionLocal() as db:
+        project = await db.get(Project, UUID(project_id))
+        if project is None:
+            return {"ok": False, "error": "project_not_found"}
+
+        concepts = (await db.execute(
+            select(ProjectWikiConcept).where(ProjectWikiConcept.project_id == UUID(project_id))
+        )).scalars().all()
+
+        linked_to: set[str] = set()
+        for c in concepts:
+            linked_to.update(c.related_slugs or [])
+        orphans = [
+            {"slug": c.slug, "title": c.title}
+            for c in concepts
+            if not (c.related_slugs or []) and c.slug not in linked_to
+        ]
+
+        contradictions: list[dict] = []
+        valid_slugs = {c.slug for c in concepts}
+        if len(concepts) >= 2:
+            try:
+                payload = [
+                    ConceptForLint(slug=c.slug, title=c.title, content_md=(c.content_md or "")[:4000])
+                    for c in concepts
+                ]
+                result = await run_wiki_lint(project.name, payload)
+                raw = result.get("contradictions", []) if isinstance(result, dict) else []
+                contradictions = [
+                    x for x in raw
+                    if x.get("concept_a") in valid_slugs and x.get("concept_b") in valid_slugs
+                ]
+            except Exception as exc:  # noqa: BLE001
+                log.warning("check_project_wiki_health lint failed project_id=%s error=%s", project_id, exc)
+
+        project.wiki_health = {
+            "contradictions": contradictions,
+            "orphans": orphans,
+            "concept_count": len(concepts),
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.commit()
+
+    log.info(
+        "check_project_wiki_health project_id=%s concepts=%d contradictions=%d orphans=%d",
+        project_id, len(concepts), len(contradictions), len(orphans),
+    )
+    return {"ok": True, "project_id": project_id, "contradictions": len(contradictions), "orphans": len(orphans)}
+
+
 async def _rebuild_app_brain(app_id: str) -> dict:
     from sqlalchemy import select
 
@@ -1103,8 +1350,11 @@ async def _ingest_project_source(document_id: str) -> dict:
             ))
             doc.indexing_status = "done"
             doc.index_error = None
+            project_id_str = str(doc.project_id)
             await db.commit()
             log.info("ingest_project_source document_id=%s nodes=%d", document_id, result.node_count)
+            # Compile this doc into the Project Wiki (mirrors app-brain corpus ingest).
+            compile_project_wiki_for_doc.delay(project_id_str, document_id)
             return {"ok": True, "document_id": document_id, "nodes": result.node_count}
 
         except Exception as exc:

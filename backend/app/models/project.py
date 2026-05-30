@@ -33,6 +33,11 @@ class Project(TimestampMixin, Base):
     stage_progress: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     ru_validated: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
 
+    # ── Project Wiki (E2 intelligent intake) compilation state ──────────────────
+    wiki_status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="idle")
+    wiki_compiled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    wiki_health: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
     # Relationships
     documents: Mapped[list["Document"]] = relationship(  # noqa: F821
         "Document", back_populates="project", cascade="all, delete-orphan", lazy="selectin"
