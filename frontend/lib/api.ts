@@ -421,7 +421,7 @@ export const api = {
         { method: 'POST', body: JSON.stringify({ brief_text: briefText }) },
       ),
     analyzeDiscover: (projectId: string, type: string, briefText: string) =>
-      apiFetch<{ questions: DiscoverQuestion[]; doc_count: number; app_count: number }>(
+      apiFetch<{ questions: DiscoverQuestion[]; analyzing: boolean }>(
         `/api/projects/${projectId}/artifacts/${type}/discover/analyze`,
         { method: 'POST', body: JSON.stringify({ brief_text: briefText }) },
       ),

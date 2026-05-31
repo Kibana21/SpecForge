@@ -89,7 +89,6 @@ export function ArtifactBuilderPanel({ projectId, artifactType, onBack }: Artifa
   const { detail, isLoading, mutate } = useArtifact(projectId, artifactType)
   const { project } = useProject(projectId)
 
-  const [answer, setAnswer] = useState('')
   const [initContext, setInitContext] = useState('')
   const [busy, setBusy] = useState(false)
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({})
@@ -97,6 +96,8 @@ export function ArtifactBuilderPanel({ projectId, artifactType, onBack }: Artifa
   const [historyRow, setHistoryRow] = useState<{ table: string; rowKey: string; unitKey: string } | null>(null)
   const [historyData, setHistoryData] = useState<CbRow[]>([])
   const threadEndRef = useRef<HTMLDivElement>(null)
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pollAttemptsRef = useRef(0)
 
   // Discover phase state
   const [discoverQuestions, setDiscoverQuestions] = useState<DiscoverQuestion[]>([])
@@ -163,6 +164,40 @@ export function ArtifactBuilderPanel({ projectId, artifactType, onBack }: Artifa
     threadEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages.length])
 
+  // Cleanup poll timer on unmount
+  useEffect(() => () => { if (pollTimerRef.current) clearTimeout(pollTimerRef.current) }, [])
+
+  function clearPoll() {
+    if (pollTimerRef.current) { clearTimeout(pollTimerRef.current); pollTimerRef.current = null }
+  }
+
+  function schedulePoll() {
+    clearPoll()
+    if (pollAttemptsRef.current >= 40) {
+      toast.error('Analysis is taking too long — please try again')
+      setDiscoverBusy(false)
+      pollAttemptsRef.current = 0
+      return
+    }
+    pollTimerRef.current = setTimeout(async () => {
+      pollAttemptsRef.current++
+      try {
+        const state = await api.artifacts.getDiscover(projectId, artifactType)
+        if (!state.analyzing && state.questions.length > 0) {
+          clearPoll()
+          pollAttemptsRef.current = 0
+          setDiscoverQuestions(state.questions)
+          await mutate()
+          setDiscoverBusy(false)
+        } else {
+          schedulePoll()
+        }
+      } catch {
+        schedulePoll()
+      }
+    }, 3000)
+  }
+
   async function run<T>(fn: () => Promise<T>, ok: string): Promise<T | undefined> {
     setBusy(true)
     try {
@@ -177,11 +212,14 @@ export function ArtifactBuilderPanel({ projectId, artifactType, onBack }: Artifa
     }
   }
 
-  // Load discover questions on mount when status=in_discover
+  // Load discover questions on mount when status=in_discover; resume polling if a task is still running
   useEffect(() => {
     if (doc?.status === 'in_discover' && discoverQuestions.length === 0) {
       api.artifacts.getDiscover(projectId, artifactType)
-        .then(r => setDiscoverQuestions(r.questions))
+        .then(r => {
+          setDiscoverQuestions(r.questions)
+          if (r.analyzing) { setDiscoverBusy(true); schedulePoll() }
+        })
         .catch(() => {})
     }
   }, [doc?.status]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -210,13 +248,18 @@ export function ArtifactBuilderPanel({ projectId, artifactType, onBack }: Artifa
   async function handleAnalyze() {
     if (discoverBusy) return
     setDiscoverBusy(true)
+    pollAttemptsRef.current = 0
     try {
       const r = await api.artifacts.analyzeDiscover(projectId, artifactType, initContext)
-      setDiscoverQuestions(r.questions)
-      await mutate()
+      if (r.analyzing) {
+        schedulePoll()
+      } else {
+        setDiscoverQuestions(r.questions)
+        await mutate()
+        setDiscoverBusy(false)
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Analysis failed')
-    } finally {
       setDiscoverBusy(false)
     }
   }
@@ -272,13 +315,11 @@ export function ArtifactBuilderPanel({ projectId, artifactType, onBack }: Artifa
     }
   }
 
-  async function handleAnswer(questionSeq?: number) {
-    if (!answer.trim() || busy) return
-    const a = answer.trim()
-    setAnswer('')
+  async function handleAnswer(answerText: string, questionSeq?: number) {
+    if (!answerText.trim() || busy) return
     setBusy(true)
     try {
-      const detail = await api.artifacts.answer(projectId, artifactType, a, questionSeq)
+      const detail = await api.artifacts.answer(projectId, artifactType, answerText.trim(), questionSeq)
       // Seed the SWR cache immediately with the returned detail, which already
       // has _current_unit set by save_answer. Using revalidate:false avoids a
       // redundant re-fetch that could race with the Celery task start and miss
@@ -498,8 +539,6 @@ export function ArtifactBuilderPanel({ projectId, artifactType, onBack }: Artifa
               ...(questionsByUnit['problem_context'] ?? []),
               ...(questionsByUnit['value_hypothesis'] ?? []),
             ]}
-            answer={answer}
-            onAnswerChange={setAnswer}
             onAnswerSubmit={handleAnswer}
           />
 
@@ -529,8 +568,6 @@ export function ArtifactBuilderPanel({ projectId, artifactType, onBack }: Artifa
                 onDelete={(rowId) => handleDeleteRow(table, rowId)}
                 openQuestions={ownedByProse ? [] : (questionsByUnit[unitKey] ?? [])}
                 refining={refiningUnit === unitKey}
-                answer={answer}
-                onAnswerChange={setAnswer}
                 onAnswerSubmit={handleAnswer}
               />
             )
@@ -1078,7 +1115,7 @@ function ProseBlock({
 
 function ProseSection({
   sections, unitStatus, validated, busy, refining, onRegenUnit, onEditProse,
-  openQuestions, answer, onAnswerChange, onAnswerSubmit,
+  openQuestions, onAnswerSubmit,
 }: {
   sections: Record<string, CbRow[]>
   unitStatus: Record<string, { completeness: number; confidence: Confidence }>
@@ -1088,9 +1125,7 @@ function ProseSection({
   onRegenUnit: (u: string) => void
   onEditProse: (rowId: string, text: string) => void
   openQuestions: ArtifactMessage[]
-  answer: string
-  onAnswerChange: (v: string) => void
-  onAnswerSubmit: (questionSeq?: number) => void
+  onAnswerSubmit: (answerText: string, questionSeq?: number) => void
 }) {
   const textBlocks = sections['cb_text_blocks'] ?? []
   const getRow = (key: string) => textBlocks.find(r => r.field_key === key)
@@ -1157,8 +1192,6 @@ function ProseSection({
         {hasQuestion && (
           <InlineClarification
             questions={openQuestions}
-            answer={answer}
-            onAnswerChange={onAnswerChange}
             onAnswerSubmit={onAnswerSubmit}
             busy={busy}
             validated={validated}
@@ -1174,7 +1207,7 @@ function ProseSection({
 function SectionPanel({
   table, label, rows, unitKey, unitStatus, validated, busy, expanded, refining,
   onToggle, onRegenUnit, onEdit, onUnlock, onHistory, onDelete,
-  openQuestions = [], answer = '', onAnswerChange, onAnswerSubmit,
+  openQuestions = [], onAnswerSubmit,
 }: {
   table: string
   label: string
@@ -1192,9 +1225,7 @@ function SectionPanel({
   onHistory: (r: CbRow) => void
   onDelete: (id: string) => void
   openQuestions?: ArtifactMessage[]
-  answer?: string
-  onAnswerChange?: (v: string) => void
-  onAnswerSubmit?: (questionSeq?: number) => void
+  onAnswerSubmit?: (answerText: string, questionSeq?: number) => void
 }) {
   const cols = TABLE_COLS[table] ?? []
   const activeRows = rows.filter(r => r.status === 'active')
@@ -1312,11 +1343,9 @@ function SectionPanel({
               </table>
             </div>
           )}
-          {openQuestions.length > 0 && onAnswerChange && onAnswerSubmit && (
+          {openQuestions.length > 0 && onAnswerSubmit && (
             <InlineClarification
               questions={openQuestions}
-              answer={answer}
-              onAnswerChange={onAnswerChange}
               onAnswerSubmit={onAnswerSubmit}
               busy={busy}
               validated={validated}
@@ -1333,22 +1362,42 @@ function SectionPanel({
 // ── Inline Clarification Card ─────────────────────────────────────────────────
 
 function InlineClarification({
-  questions, answer, onAnswerChange, onAnswerSubmit, busy, validated,
+  questions, onAnswerSubmit, busy, validated,
 }: {
   questions: ArtifactMessage[]
-  answer: string
-  onAnswerChange: (v: string) => void
-  onAnswerSubmit: (questionSeq?: number) => void
+  onAnswerSubmit: (answerText: string, questionSeq?: number) => void
   busy: boolean
   validated: boolean
 }) {
-  const [expandedQ, setExpandedQ] = useState<string | null>(null)
+  const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [submitted, setSubmitted] = useState<Record<string, string>>({}) // id → submitted answer text
+
+  // Drop submitted state when a question disappears from the list (SWR resolved it)
+  const questionIds = questions.map(q => q.id).join(',')
+  useEffect(() => {
+    setSubmitted(prev => {
+      const keep: Record<string, string> = {}
+      for (const id of Object.keys(prev)) {
+        if (questions.some(q => q.id === id)) keep[id] = prev[id]
+      }
+      return keep
+    })
+  }, [questionIds]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (questions.length === 0) return null
 
-  // Active = last by seq (matches backend desc-sorted questions[0])
-  const activeQ = questions.at(-1)!
-  const pendingQs = questions.slice(0, -1)
+  const pendingCount = questions.filter(q => !submitted[q.id]).length
+
+  const setAnswer = (id: string, val: string) =>
+    setAnswers(prev => ({ ...prev, [id]: val }))
+
+  function handleSubmit(q: ArtifactMessage) {
+    const val = answers[q.id] ?? ''
+    if (!val.trim()) return
+    setSubmitted(prev => ({ ...prev, [q.id]: val }))
+    setAnswer(q.id, '')
+    onAnswerSubmit(val, q.seq)
+  }
 
   return (
     <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/70 overflow-hidden">
@@ -1357,71 +1406,66 @@ function InlineClarification({
         <span className="text-[11px] font-semibold text-amber-800">
           SpecForge needs more information to refine this section
         </span>
-        {questions.length > 1 && (
-          <span className="ml-auto text-[10px] text-amber-600">{questions.length} questions</span>
+        {pendingCount > 1 && (
+          <span className="ml-auto text-[10px] text-amber-600">{pendingCount} questions</span>
         )}
       </div>
 
-      {/* Active question */}
-      <div className="px-4 pt-3 pb-2">
-        <p className="text-sm font-medium text-amber-900 leading-snug">{activeQ.content}</p>
-        {activeQ.meta?.why && (
-          <p className="mt-1.5 text-[11px] text-amber-700 italic leading-snug">{activeQ.meta.why}</p>
-        )}
-        {activeQ.meta?.example && (
-          <p className="mt-2 text-[11px] text-amber-800 bg-amber-100/80 rounded-md px-2.5 py-1.5 leading-snug border border-amber-200/60">
-            <span className="font-semibold">Example: </span>{activeQ.meta.example}
-          </p>
-        )}
-      </div>
+      {questions.map((q, idx) => {
+        const val = answers[q.id] ?? ''
+        const submittedAnswer = submitted[q.id]
 
-      {/* Pending questions — collapsed, expandable */}
-      {pendingQs.map(q => {
-        const isOpen = expandedQ === q.id
-        return (
-          <button
-            key={q.id}
-            onClick={() => setExpandedQ(isOpen ? null : q.id)}
-            className="w-full px-4 py-2 border-t border-amber-200/70 text-left hover:bg-amber-100/50 transition-colors"
-          >
-            <div className="flex items-start gap-2">
-              <p className={`text-xs text-amber-700 flex-1 ${isOpen ? '' : 'line-clamp-1'}`}>{q.content}</p>
-              {isOpen
-                ? <ChevronUp size={11} className="shrink-0 mt-0.5 text-amber-500" />
-                : <ChevronDown size={11} className="shrink-0 mt-0.5 text-amber-500" />}
+        if (submittedAnswer) {
+          return (
+            <div key={q.id} className={`px-4 py-3 ${idx > 0 ? 'border-t border-amber-200/70' : ''} bg-amber-50/40`}>
+              <p className="text-xs text-amber-700 line-clamp-1 mb-1.5">{q.content}</p>
+              <div className="flex items-center gap-2 rounded-lg bg-white/60 border border-amber-200/60 px-3 py-2">
+                <Loader2 size={12} className="animate-spin text-amber-500 shrink-0" />
+                <p className="text-xs text-amber-800 flex-1 truncate">{submittedAnswer}</p>
+                <span className="text-[10px] text-amber-500 shrink-0">Refining…</span>
+              </div>
             </div>
-            {isOpen && q.meta?.why && (
-              <p className="mt-1 text-[10px] text-amber-600 italic">{q.meta.why}</p>
+          )
+        }
+
+        return (
+          <div key={q.id} className={idx > 0 ? 'border-t border-amber-200/70' : ''}>
+            <div className="px-4 pt-3 pb-2">
+              <p className="text-sm font-medium text-amber-900 leading-snug">{q.content}</p>
+              {q.meta?.why && (
+                <p className="mt-1.5 text-[11px] text-amber-700 italic leading-snug">{q.meta.why as string}</p>
+              )}
+              {q.meta?.example && (
+                <p className="mt-2 text-[11px] text-amber-800 bg-amber-100/80 rounded-md px-2.5 py-1.5 leading-snug border border-amber-200/60">
+                  <span className="font-semibold">Example: </span>{q.meta.example as string}
+                </p>
+              )}
+            </div>
+            {!validated && (
+              <div className="px-4 pb-3">
+                <textarea
+                  value={val}
+                  onChange={e => setAnswer(q.id, e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit(q) }}
+                  placeholder="Type your answer… (⌘+Enter to send)"
+                  rows={2}
+                  className="w-full resize-none rounded-lg border border-amber-200 bg-white/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:opacity-50"
+                  disabled={busy}
+                />
+                <div className="flex justify-end mt-2">
+                  <Button
+                    onClick={() => handleSubmit(q)}
+                    disabled={busy || !val.trim()}
+                    className="bg-amber-600 hover:bg-amber-700 text-white border-0"
+                  >
+                    <Send size={13} /> Submit
+                  </Button>
+                </div>
+              </div>
             )}
-          </button>
+          </div>
         )
       })}
-
-      {/* Answer input */}
-      {!validated && (
-        <div className="px-4 py-3 border-t border-amber-200/70">
-          <textarea
-            value={answer}
-            onChange={e => onAnswerChange(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onAnswerSubmit(activeQ.seq) }}
-            placeholder="Type your answer… (⌘+Enter to send)"
-            rows={2}
-            className="w-full resize-none rounded-lg border border-amber-200 bg-white/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:opacity-50"
-            disabled={busy}
-          />
-          <div className="flex justify-end mt-2">
-            <Button
-              onClick={() => onAnswerSubmit(activeQ.seq)}
-              disabled={busy || !answer.trim()}
-              className="bg-amber-600 hover:bg-amber-700 text-white border-0"
-            >
-              {busy
-                ? <><Loader2 size={13} className="animate-spin" /> Refining…</>
-                : <><Send size={13} /> Submit answer</>}
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

@@ -642,6 +642,7 @@ export interface DiscoverEnhanceBriefResult {
 export interface DiscoverStateResponse {
   questions: DiscoverQuestion[]
   enhanced_brief: string | null
+  analyzing: boolean
 }
 
 export interface ArtifactDocument {

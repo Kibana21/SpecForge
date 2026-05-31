@@ -182,6 +182,11 @@ def incorporate_answer_task(
     return _run_async(_incorporate_answer_bg(project_id, artifact_type, question_seq))
 
 
+@celery_app.task(name="workers.tasks.analyze_discover", bind=True, max_retries=2, default_retry_delay=10)
+def analyze_discover(self, project_id: str, artifact_type: str, brief_text: str) -> dict:
+    return _run_async(_analyze_discover_bg(project_id, artifact_type, brief_text))
+
+
 # ── Async implementations ─────────────────────────────────────────────────────
 
 async def _ingest_corpus_doc(doc_id: str) -> dict:
@@ -1421,6 +1426,38 @@ async def _generate_concept_brief(
                     doc.status = "in_interview"
                     await db2.commit()
             raise
+
+
+async def _analyze_discover_bg(project_id: str, artifact_type: str, brief_text: str) -> dict:
+    from uuid import UUID as _UUID
+    from sqlalchemy import select
+    from app.db import AsyncSessionLocal
+    from app.models.artifact import ArtifactDocument
+    from app.models.project import Project
+
+    pid = _UUID(project_id)
+    async with AsyncSessionLocal() as db:
+        project = await db.get(Project, pid)
+        if project is None:
+            log.error("analyze_discover project_id=%s not found", project_id)
+            return {"ok": False}
+        try:
+            from app.services.artifacts.discover import analyze_brief
+            await analyze_brief(project, artifact_type, brief_text, db)
+        except Exception:
+            log.exception("analyze_discover failed project_id=%s", project_id)
+            raise
+        finally:
+            doc = (await db.execute(
+                select(ArtifactDocument).where(
+                    ArtifactDocument.project_id == pid,
+                    ArtifactDocument.artifact_type == artifact_type,
+                )
+            )).scalar_one_or_none()
+            if doc is not None:
+                doc.discover_analyzing = False
+                await db.commit()
+    return {"ok": True}
 
 
 async def _incorporate_answer_bg(

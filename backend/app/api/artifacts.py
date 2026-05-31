@@ -398,28 +398,23 @@ async def analyze_discover_endpoint(
     _user: User = Depends(get_current_user),
 ):
     atype = _resolve_type(artifact_type)
-    from app.services.artifacts.discover import analyze_brief, question_to_dict
-    import asyncio
-    try:
-        questions = await asyncio.wait_for(
-            analyze_brief(project, atype, body.brief_text, db),
-            timeout=90.0,
-        )
-    except asyncio.TimeoutError:
-        err("analyze_timeout", "Analysis timed out — try again", 504)
-    doc_count = len({
-        s["filename"] for q in questions
-        if q.context_sources for s in (q.context_sources.get("docs") or [])
-    })
-    app_count = len({
-        s["app_id"] for q in questions
-        if q.context_sources for s in (q.context_sources.get("apps") or [])
-    })
-    return ok({
-        "questions": [question_to_dict(q) for q in questions],
-        "doc_count": doc_count,
-        "app_count": app_count,
-    })
+
+    from app.config import get_settings
+    if get_settings().llm_provider == "mock":
+        from app.services.artifacts.discover import analyze_brief, question_to_dict
+        questions = await analyze_brief(project, atype, body.brief_text, db)
+        return ok({"questions": [question_to_dict(q) for q in questions], "analyzing": False})
+
+    from app.services.artifacts.discover import _ensure_discover_document
+    doc = await _ensure_discover_document(project.id, atype, db)
+    doc.discover_analyzing = True
+    await db.commit()
+
+    from workers.dispatch import dispatch
+    from workers.tasks import analyze_discover
+    dispatch(analyze_discover, str(project.id), atype, body.brief_text)
+
+    return ok({"questions": [], "analyzing": True})
 
 
 @router.get("/projects/{project_id}/artifacts/{artifact_type}/discover")
@@ -436,6 +431,7 @@ async def get_discover_endpoint(
     return ok({
         "questions": [question_to_dict(q) for q in state["questions"]],
         "enhanced_brief": state["enhanced_brief"],
+        "analyzing": state["analyzing"],
     })
 
 

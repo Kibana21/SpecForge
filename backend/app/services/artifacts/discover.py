@@ -323,7 +323,7 @@ async def get_questions(
         )
     ).scalar_one_or_none()
     if doc is None:
-        return {"questions": [], "enhanced_brief": None}
+        return {"questions": [], "enhanced_brief": None, "analyzing": False}
 
     questions = await _get_questions_for_doc(doc.id, db)
 
@@ -340,6 +340,7 @@ async def get_questions(
     return {
         "questions": questions,
         "enhanced_brief": latest_eb.enhanced_brief if latest_eb else None,
+        "analyzing": doc.discover_analyzing,
     }
 
 
