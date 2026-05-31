@@ -4,6 +4,7 @@ same session CRUD) but project-scoped and powered by dspy.ReAct.
 
 See .claude/plans/E2-ask-the-project.md.
 """
+import asyncio
 import hashlib
 import json
 import uuid
@@ -56,14 +57,28 @@ async def ask_project(
     await db.commit()
 
     async def event_generator():
-        async for event in ProjectChatAgent().stream_answer(
+        # Interleave heartbeat pings (SSE comments) every 8 seconds while the agent
+        # is running. This prevents the Next.js dev proxy from closing the connection
+        # (ECONNRESET) during long Vertex/LLM calls.
+        agent = ProjectChatAgent()
+        event_iter = agent.stream_answer(
             project_id=project.id,
             project_name=project.name,
             question=body.question,
             db=db,
             history=body.history,
-        ):
-            yield f"data: {json.dumps(event)}\n\n"
+        )
+        while True:
+            try:
+                event = await asyncio.wait_for(event_iter.__anext__(), timeout=8.0)
+                yield f"data: {json.dumps(event)}\n\n"
+                if event.get("type") == "done" or event.get("type") == "error":
+                    break
+            except StopAsyncIteration:
+                break
+            except asyncio.TimeoutError:
+                # Send a keep-alive comment to prevent proxy timeout
+                yield ": heartbeat\n\n"
 
     return StreamingResponse(
         event_generator(),

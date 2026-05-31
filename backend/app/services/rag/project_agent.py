@@ -248,19 +248,24 @@ async def _react_stream(
         log.warning("project ReAct stream failed (%s); falling back to one-shot", exc)
 
     if not streamed:
-        # Version-safe fallback: run the full ReAct in a thread, replay recorded steps
+        # One-shot fallback: run the full ReAct in a thread, replay recorded steps
         loop = asyncio.get_running_loop()
         tools_fallback = build_tools(k, trace)
         react_fallback = build_react(tools_fallback)
-        pred = await loop.run_in_executor(
-            None,
-            lambda: react_fallback(
-                project_name=project_name,
-                seed_context=seed,
-                conversation=format_conversation(history),
-                question=question,
-            ),
-        )
+        try:
+            pred = await loop.run_in_executor(
+                None,
+                lambda: react_fallback(
+                    project_name=project_name,
+                    seed_context=seed,
+                    conversation=format_conversation(history),
+                    question=question,
+                ),
+            )
+        except Exception as exc:
+            log.error("project ReAct one-shot fallback failed: %s", exc, exc_info=True)
+            yield {"type": "error", "message": "The agent could not complete its research. Please try again."}
+            return
         for s in trace.steps:
             yield {"type": "step", "text": s}
         answer = getattr(pred, "answer", "") or \
@@ -284,6 +289,9 @@ class ProjectChatAgent:
         from app.services.rag.project_tools import load_project_knowledge, TraceAccumulator
         from app.services.rag.project_seed import build_seed
 
+        # Emit immediately so the SSE connection is confirmed live to the browser/proxy
+        yield {"type": "step", "text": "Connecting to project knowledge…"}
+
         k = await load_project_knowledge(project_id, db)
         if not k.has_any():
             yield {
@@ -303,12 +311,17 @@ class ProjectChatAgent:
         yield {"type": "trace", "trace": _build_trace(k, trace, partial=True)}
 
         settings = get_settings()
-        if settings.llm_provider == "mock":
-            async for ev in _mock_trajectory(k, trace, question, seed):
-                yield ev
-        else:
-            async for ev in _react_stream(k, trace, project_name, question, seed, history):
-                yield ev
+        try:
+            if settings.llm_provider == "mock":
+                async for ev in _mock_trajectory(k, trace, question, seed):
+                    yield ev
+            else:
+                async for ev in _react_stream(k, trace, project_name, question, seed, history):
+                    yield ev
+        except Exception as exc:
+            log.error("project_agent stream_answer failed: %s", exc, exc_info=True)
+            yield {"type": "error", "message": "Something went wrong while generating the answer."}
+            return
 
         _verify_and_prune(k, trace)
         yield {"type": "trace", "trace": _build_trace(k, trace, partial=False)}
