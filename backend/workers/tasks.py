@@ -1772,3 +1772,98 @@ async def _generate_ru(task, project_id: str) -> dict:
 
     log.info("generate_requirement_understanding project_id=%s ok=%s", project_id, result is not None)
     return {"ok": result is not None, "project_id": project_id}
+
+
+# ── Project Copilot (Ask the Project) ────────────────────────────────────────
+
+@celery_app.task(
+    name="workers.tasks.run_project_chat",
+    bind=True,
+    max_retries=0,
+    time_limit=300,
+    soft_time_limit=270,
+)
+def run_project_chat(
+    self,
+    project_id: str,
+    project_name: str,
+    question: str,
+    history_json: list,
+    stream_key: str,
+) -> dict:
+    """Run the ProjectChatAgent loop in the worker, publishing each SSE event to a
+    Redis Stream. The /ask POST endpoint tails that stream and forwards events to
+    the browser. Search is heavy (multiple Vertex calls) so it runs off the API."""
+    return _run_async(
+        _run_project_chat(project_id, project_name, question, history_json, stream_key)
+    )
+
+
+async def _run_project_chat(
+    project_id: str,
+    project_name: str,
+    question: str,
+    history_json: list,
+    stream_key: str,
+) -> dict:
+    import json as _json
+    from uuid import UUID
+
+    from redis.asyncio import Redis
+
+    from app.config import get_settings
+    from app.db import AsyncSessionLocal
+    from app.services.rag.project_agent import ProjectChatAgent
+
+    # IMPORTANT: create a Redis client bound to THIS task's event loop. Celery prefork
+    # runs each task in a fresh asyncio.run() loop, so the process-level get_redis()
+    # singleton would be bound to a dead loop ("got Future attached to a different loop").
+    redis = Redis.from_url(get_settings().redis_url, decode_responses=True)
+    redis_key = f"ask:{stream_key}"
+    status_key = f"ask_status:{stream_key}"
+    _TTL = 1800  # 30 min
+
+    async def _pub(event: dict) -> None:
+        await redis.xadd(redis_key, {"e": _json.dumps(event)}, maxlen=1000)
+        await redis.expire(redis_key, _TTL)
+
+    n = 0
+    log.info("run_project_chat START stream_key=%s q=%r", stream_key, question[:80])
+    try:
+        await redis.setex(status_key, _TTL, "running")
+        async with AsyncSessionLocal() as db:
+            async for event in ProjectChatAgent().stream_answer(
+                project_id=UUID(project_id),
+                project_name=project_name,
+                question=question,
+                db=db,
+                history=history_json,
+            ):
+                await _pub(event)
+                n += 1
+                etype = event.get("type")
+                if etype in ("step", "error"):
+                    log.info("run_project_chat stream_key=%s [%s] %s",
+                             stream_key, etype, (event.get("text") or event.get("message") or "")[:80])
+                if etype in ("done", "error"):
+                    await redis.setex(status_key, _TTL, etype)
+                    log.info("run_project_chat END stream_key=%s events=%d status=%s", stream_key, n, etype)
+                    return {"ok": True, "stream_key": stream_key, "events": n}
+        await redis.setex(status_key, _TTL, "done")
+        log.info("run_project_chat END stream_key=%s events=%d (no explicit done)", stream_key, n)
+        return {"ok": True, "stream_key": stream_key, "events": n}
+    except Exception as exc:
+        log.error("run_project_chat FAILED stream_key=%s: %s", stream_key, exc, exc_info=True)
+        try:
+            await _pub({"type": "error", "message": "Agent task failed. Please try again."})
+            await _pub({"type": "done"})
+            await redis.setex(status_key, _TTL, "error")
+        except Exception:
+            pass
+        return {"ok": False, "stream_key": stream_key, "events": n}
+    finally:
+        # Close this task's Redis connection so it isn't left bound to the loop we dispose.
+        try:
+            await redis.aclose()
+        except Exception:
+            pass

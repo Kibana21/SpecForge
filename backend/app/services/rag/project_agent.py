@@ -14,6 +14,7 @@ Pipeline:
 from __future__ import annotations
 
 import asyncio
+import functools
 import hashlib
 import logging
 import re
@@ -27,52 +28,29 @@ _TOKEN_RE = re.compile(
     r"\b(S:[0-9a-fA-F-]{8,}:[A-Za-z0-9._-]+|C:[a-z0-9][a-z0-9_-]+|F:[0-9a-fA-F-]{8,})\b"
 )
 
+# Smaller output cap than the shared 65536-token LM (fact extraction / generation)
+# → faster finalization, but large enough that ReAct reasoning + the final answer
+# are not truncated (3072 was too small and cut answers off mid-sentence).
+_CHAT_MAX_TOKENS = 8192
 
-# ── Status message provider ──────────────────────────────────────────────────────
 
-class _ProjectStatusProvider:
-    """Humanises dspy.ReAct tool calls into readable step text for the UI trail."""
+@functools.lru_cache(maxsize=1)
+def _chat_lm():
+    """A dedicated, smaller-output Vertex LM for the Copilot ReAct loop.
+    Reuses the same credentials/location as _configure_dspy but caps max_tokens."""
+    import dspy
+    from app.config import get_settings
+    from app.core.google_credentials import configure_google_genai_env
 
-    def __init__(self, doc_names: dict[str, str]) -> None:
-        self._doc_names = doc_names
-
-    def tool_start_status_message(self, instance: Any, inputs: dict[str, Any]) -> str:
-        name = getattr(instance, "name", "") or ""
-        if name == "list_documents":
-            return "Listing project documents…"
-        if name == "search_sections":
-            q = inputs.get("query", "")[:60]
-            return f'Searching sections for "{q}"…'
-        if name == "read_section":
-            doc_id = inputs.get("doc_id", "")
-            node_id = inputs.get("node_id", "")
-            doc = self._doc_names.get(str(doc_id), doc_id[:8] + "…" if doc_id else "?")
-            return f"Reading {doc} § {node_id}…"
-        if name == "search_wiki":
-            q = inputs.get("query", "")[:60]
-            return f'Searching wiki for "{q}"…'
-        if name == "read_concept":
-            slug = inputs.get("slug", "")
-            return f'Reading concept "{slug}"...'
-        if name == "lookup_facts":
-            q = inputs.get("query", "")[:60]
-            return f'Looking up facts for "{q}"…'
-        return f"Calling {name}…"
-
-    def tool_end_status_message(self, outputs: Any) -> str | None:
-        return None  # step is logged on start; no duplicate on end
-
-    def module_start_status_message(self, instance: Any, inputs: dict[str, Any]) -> str | None:
-        return None
-
-    def module_end_status_message(self, outputs: Any) -> str | None:
-        return None
-
-    def lm_start_status_message(self, instance: Any, inputs: dict[str, Any]) -> str | None:
-        return None
-
-    def lm_end_status_message(self, outputs: Any) -> str | None:
-        return None
+    configure_google_genai_env()
+    settings = get_settings()
+    return dspy.LM(
+        f"vertex_ai/{settings.gemini_model}",
+        max_tokens=_CHAT_MAX_TOKENS,
+        cache=False,
+        vertex_location=settings.gemini_location,
+        vertex_project=settings.gemini_project_id or None,
+    )
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────────
@@ -89,7 +67,13 @@ def _outline_nodes(tree: dict, _depth: int = 0) -> list[dict]:
 
 
 def _build_trace(k: Any, trace: Any, partial: bool) -> dict:
-    from app.services.corpus_index.base import find_node
+    """Build the trace payload sent to the Evidence rail.
+
+    During streaming (partial=True) we OMIT the per-document node outlines — they
+    are static, expensive to recompute, and large to ship over SSE on every step.
+    The full outline is included only on the final (partial=False) trace, which is
+    when the rail's tree map renders the node list.
+    """
     docs_index = {str(d.document_id): d for d in k.docs}
     return {
         "mode": "agent",
@@ -115,7 +99,9 @@ def _build_trace(k: Any, trace: Any, partial: bool) -> dict:
                 "doc_id": did,
                 "doc_name": k.doc_names.get(did, ""),
                 "visited": sorted(nodes),
-                "outline": _outline_nodes(docs_index[did].tree) if did in docs_index else [],
+                # Heavy outline only on the final trace
+                "outline": ([] if partial else
+                            (_outline_nodes(docs_index[did].tree) if did in docs_index else [])),
             }
             for did, nodes in trace.visited.items()
         ],
@@ -213,64 +199,58 @@ def _build_tools_ref(k: Any, trace: Any) -> dict:
 async def _react_stream(
     k: Any, trace: Any, project_name: str, question: str, seed: str, history: list | None
 ) -> AsyncGenerator[dict, None]:
+    """Run the ReAct loop ONCE in a thread and emit each tool's rich trace step live.
+
+    The tools append informative entries (e.g. 'Searched sections for X -> 18 hits')
+    to trace.steps as they execute in the worker thread. We poll that list and emit
+    new entries as SSE step events, so the user watches real progress without a
+    second (expensive) agent run.
+    """
     from app.services.skills.fact_extractor.dspy_extractor import _configure_dspy
     from app.services.skills.project_chat.dspy_chat import build_react
     from app.services.rag.project_tools import build_tools
     from app.services.rag.rag_service import format_conversation
-    import dspy
-    from dspy.streaming import StatusMessage, StreamResponse, StreamListener
 
     _configure_dspy()
-    tools = build_tools(k, trace)
-    react = build_react(tools)
-    provider = _ProjectStatusProvider(k.doc_names)
+    react = build_react(build_tools(k, trace))
+    react.set_lm(_chat_lm())
 
-    program = dspy.streamify(
-        react,
-        stream_listeners=[StreamListener(signature_field_name="answer")],
-        status_message_provider=provider,
-    )
-    streamed = False
-    try:
-        async for chunk in program(
+    loop = asyncio.get_running_loop()
+    fut = loop.run_in_executor(
+        None,
+        lambda: react(
             project_name=project_name,
             seed_context=seed,
             conversation=format_conversation(history),
             question=question,
-        ):
-            if isinstance(chunk, StatusMessage) and chunk.message:
-                yield {"type": "step", "text": chunk.message}
-                yield {"type": "trace", "trace": _build_trace(k, trace, partial=True)}
-            elif isinstance(chunk, StreamResponse) and chunk.chunk:
-                streamed = True
-                yield {"type": "chunk", "text": chunk.chunk}
-    except Exception as exc:
-        log.warning("project ReAct stream failed (%s); falling back to one-shot", exc)
+        ),
+    )
 
-    if not streamed:
-        # One-shot fallback: run the full ReAct in a thread, replay recorded steps
-        loop = asyncio.get_running_loop()
-        tools_fallback = build_tools(k, trace)
-        react_fallback = build_react(tools_fallback)
-        try:
-            pred = await loop.run_in_executor(
-                None,
-                lambda: react_fallback(
-                    project_name=project_name,
-                    seed_context=seed,
-                    conversation=format_conversation(history),
-                    question=question,
-                ),
-            )
-        except Exception as exc:
-            log.error("project ReAct one-shot fallback failed: %s", exc, exc_info=True)
-            yield {"type": "error", "message": "The agent could not complete its research. Please try again."}
-            return
-        for s in trace.steps:
-            yield {"type": "step", "text": s}
-        answer = getattr(pred, "answer", "") or \
-                 "I couldn't find enough in this project's knowledge to answer that."
-        yield {"type": "chunk", "text": answer}
+    emitted = 0
+    # Poll trace.steps while the agent runs; emit new rich steps as they appear.
+    while not fut.done():
+        while emitted < len(trace.steps):
+            yield {"type": "step", "text": trace.steps[emitted]}
+            yield {"type": "trace", "trace": _build_trace(k, trace, partial=True)}
+            emitted += 1
+        await asyncio.sleep(0.25)
+
+    # Flush any steps recorded between the last poll and completion.
+    while emitted < len(trace.steps):
+        yield {"type": "step", "text": trace.steps[emitted]}
+        emitted += 1
+
+    try:
+        pred = await fut
+        answer = (getattr(pred, "answer", "") or "").strip()
+    except Exception as exc:
+        log.error("project ReAct run failed: %s", exc, exc_info=True)
+        yield {"type": "error", "message": "The agent could not complete its research. Please try again."}
+        return
+
+    answer = answer or "I couldn't find enough in this project's knowledge to answer that."
+    yield {"type": "step", "text": "Synthesizing answer…"}
+    yield {"type": "chunk", "text": answer}
 
 
 # ── Public agent ─────────────────────────────────────────────────────────────────

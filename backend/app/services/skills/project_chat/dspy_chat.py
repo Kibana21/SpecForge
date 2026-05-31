@@ -7,14 +7,16 @@ import dspy
 
 
 class ProjectChatSignature(dspy.Signature):
-    """Answer the user's question about THIS project using ONLY the tools provided and
-    the pre-retrieved seed_context. Verify and expand the seed: open sections with
-    read_section, pull concepts with read_concept, check systems with lookup_facts.
-    Prefer specific leaf sections over broad summaries. Ground EVERY claim with an
-    inline citation token — S:<doc_id>:<node_id> for a source section, C:<slug> for
-    a wiki concept, F:<id> for an app fact. Copy ids verbatim from tool output; never
-    invent ids or tokens. If the knowledge base does not cover the question, say so
-    plainly and do not guess."""
+    """Answer the user's question about THIS project using ONLY the tools and seed_context.
+
+    CRITICAL RULES — follow exactly:
+    1. NEVER call any tool with an empty string argument. Every argument must be a
+       real non-empty value copied from seed_context or a previous tool result.
+    2. Read seed_context first — it already contains the most relevant sections and
+       concepts. Use read_section/read_concept to deepen those specific results.
+    3. Use EXACT ids from tool output (e.g. 'S:abc123:0007'); never guess or invent.
+    4. Cite EVERY claim inline: S:<doc_id>:<node_id> (section), C:<slug> (concept),
+       F:<id> (fact). If the knowledge base does not cover the question, say so."""
 
     project_name: str = dspy.InputField()
     seed_context: str = dspy.InputField(
@@ -27,5 +29,5 @@ class ProjectChatSignature(dspy.Signature):
     )
 
 
-def build_react(tools: list, max_iters: int = 6) -> dspy.ReAct:
+def build_react(tools: list, max_iters: int = 4) -> dspy.ReAct:
     return dspy.ReAct(ProjectChatSignature, tools=tools, max_iters=max_iters)

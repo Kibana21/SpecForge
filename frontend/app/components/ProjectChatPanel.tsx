@@ -27,10 +27,15 @@ interface Props {
   onHoverToken: (token: string | null) => void
 }
 
+interface Step {
+  text: string
+  at: number   // ms since the question was asked, for elapsed-time traceability
+}
+
 interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
-  steps?: string[]
+  steps?: Step[]
   citations?: CitationItem[]
   trace?: ProjectAskTrace
   streaming?: boolean
@@ -115,6 +120,7 @@ export function ProjectChatPanel({ projectId, onTrace, hoverToken, onHoverToken 
     setQuestion('')
     setError(null)
     setIsStreaming(true)
+    const askStart = Date.now()
 
     try {
       const res = await authedFetch(`/api/projects/${projectId}/ask`, {
@@ -139,7 +145,7 @@ export function ProjectChatPanel({ projectId, onTrace, hoverToken, onHoverToken 
           try {
             const event = JSON.parse(line.slice(6))
             if (event.type === 'step')
-              updateLastAssistant((m) => ({ ...m, steps: [...(m.steps ?? []), event.text] }))
+              updateLastAssistant((m) => ({ ...m, steps: [...(m.steps ?? []), { text: event.text, at: Date.now() - askStart }] }))
             if (event.type === 'chunk')
               updateLastAssistant((m) => ({ ...m, content: m.content + event.text }))
             if (event.type === 'trace') {
@@ -306,7 +312,10 @@ export function ProjectChatPanel({ projectId, onTrace, hoverToken, onHoverToken 
                                 {pending
                                   ? <Loader2 size={11} className="animate-spin text-[var(--accent)] flex-shrink-0" />
                                   : <Check size={11} className="text-emerald-500 flex-shrink-0" />}
-                                {s}
+                                <span className="flex-1">{s.text}</span>
+                                <span className="text-[10px] text-[var(--text-tertiary)] tabular-nums flex-shrink-0">
+                                  {(s.at / 1000).toFixed(1)}s
+                                </span>
                               </motion.div>
                             )
                           })}

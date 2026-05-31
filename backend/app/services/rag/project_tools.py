@@ -17,6 +17,7 @@ from app.services.corpus_index.base import IndexedDoc, find_node, flatten_outlin
 from app.services.projects.app_context import load_app_facts_for_project
 
 _SECTION_CHARS = 1400   # per-observation budget — keeps agent token use bounded
+_CONCEPT_CHARS = 1600   # cap concept body so re-reads don't bloat the ReAct context
 _STOP = {"the", "and", "for", "with", "that", "this", "what", "how", "are",
          "was", "does", "from", "into", "about", "will", "can", "has", "have"}
 
@@ -89,9 +90,15 @@ def _score(text: str, title: str, terms: set[str], phrase: str) -> float:
 def build_tools(k: ProjectKnowledge, trace: TraceAccumulator) -> list:
     """Return DSPy-compatible callables. dspy.ReAct reads name/__doc__/type-hints."""
 
+    _seen: set[str] = set()   # per-run guard against re-injecting big outputs
+
     def list_documents() -> str:
         """List every project document with its section outline ('[Di] node_id · title — summary').
         Call this first to see what exists; then use read_section to open a node's full text."""
+        if "list_documents" in _seen:
+            # Already returned the full outline once this run — don't bloat context with a repeat
+            return "(already listed above — reuse the outline from the earlier list_documents result)"
+        _seen.add("list_documents")
         trace.steps.append(f"Listed {len(k.docs)} document(s)")
         return flatten_outline(k.docs) or "(no indexed documents)"
 
@@ -99,6 +106,8 @@ def build_tools(k: ProjectKnowledge, trace: TraceAccumulator) -> list:
         """Find the most relevant document sections across ALL project documents for a query.
         Returns 'S:<doc_id>:<node_id> · title — summary' lines; open the best with read_section.
         Cite a section in the answer as S:<doc_id>:<node_id>."""
+        if not query or not query.strip():
+            return "ERROR: query must be a non-empty search term. Example: search_sections('refund SLA')"
         terms, phrase = _terms(query), query.lower().strip()
         scored: list[tuple[float, str, dict]] = []
         for d in k.docs:
@@ -120,6 +129,10 @@ def build_tools(k: ProjectKnowledge, trace: TraceAccumulator) -> list:
     def read_section(doc_id: str, node_id: str) -> str:
         """Read one section's full source text. doc_id and node_id come from list_documents
         or search_sections. Cite it in the answer as S:<doc_id>:<node_id>."""
+        if not doc_id or not doc_id.strip():
+            return "ERROR: doc_id must be a non-empty UUID from list_documents or search_sections."
+        if not node_id or not node_id.strip():
+            return "ERROR: node_id must be a non-empty id from list_documents or search_sections."
         for d in k.docs:
             if str(d.document_id) == doc_id:
                 node = find_node(d.tree, node_id)
@@ -147,6 +160,8 @@ def build_tools(k: ProjectKnowledge, trace: TraceAccumulator) -> list:
         """Search the Project Wiki concepts (cross-document synthesised knowledge).
         Returns 'C:<slug> · Title — brief' lines. Open one with read_concept.
         Cite a concept in the answer as C:<slug>."""
+        if not query or not query.strip():
+            return "ERROR: query must be a non-empty search term. Example: search_wiki('transaction management')"
         terms, phrase = _terms(query), query.lower().strip()
         scored = sorted(
             ((_score(c.brief, c.title, terms, phrase), c) for c in k.concepts),
@@ -161,6 +176,8 @@ def build_tools(k: ProjectKnowledge, trace: TraceAccumulator) -> list:
     def read_concept(slug: str) -> str:
         """Read a Project Wiki concept's full content and the source sections it is grounded in.
         Cite the concept in the answer as C:<slug>; you may also cite its S: sections."""
+        if not slug or not slug.strip():
+            return "ERROR: slug must be a non-empty concept slug from search_wiki. Example: read_concept('transaction-management')"
         for c in k.concepts:
             if c.slug == slug:
                 trace.concepts[slug] = {
@@ -177,7 +194,10 @@ def build_tools(k: ProjectKnowledge, trace: TraceAccumulator) -> list:
                     f"S:{r.get('doc_id')}:{r.get('node_id')} ({r.get('title', '')})"
                     for r in (c.tree_node_refs or [])[:6]
                 )
-                return f"# {c.title}\n{c.content_md}\n\nGrounded in: {refs or '(none)'}"
+                body = c.content_md or ""
+                if len(body) > _CONCEPT_CHARS:
+                    body = body[:_CONCEPT_CHARS] + " …"
+                return f"# {c.title}\n{body}\n\nGrounded in: {refs or '(none)'}"
         return "(concept not found — verify slug from search_wiki)"
 
     def lookup_facts(query: str) -> str:

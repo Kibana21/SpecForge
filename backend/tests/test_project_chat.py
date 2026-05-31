@@ -219,10 +219,7 @@ async def test_ask_empty_project_returns_error(client):
         await db.refresh(project)
         project_id = project.id
 
-    resp = await client.post(
-        f"/api/projects/{project_id}/ask",
-        json={"question": "What is this?"},
-    )
+    resp = await client.post(f"/api/projects/{project_id}/ask", json={"question": "What is this?"})
     assert resp.status_code == 200
     events = _parse_sse(resp.text)
     types = [e["type"] for e in events]
