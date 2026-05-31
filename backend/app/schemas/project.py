@@ -1,7 +1,12 @@
+from __future__ import annotations
+
 from datetime import date, datetime
+from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.schemas.app import AskTurn, AskSessionMessage, AskSessionSave, AskSessionListItem, AskSessionRead
 
 
 class ReuseSelectionIn(BaseModel):
@@ -91,3 +96,22 @@ class ProjectDetail(ProjectRead):
     skill_versions: list = []
     ru_status: str | None = None
     docs_stale_for_ru: bool = False
+
+
+# ── Ask the Project (E2 Copilot) ─────────────────────────────────────────────────
+
+class ProjectAskRequest(BaseModel):
+    question: Annotated[str, Field(min_length=1, max_length=1000)]
+    history: Annotated[list[AskTurn], Field(max_length=20)] = []
+    # No mode/top_k — the agent decides its own retrieval depth
+
+
+# Re-export session schemas so project_ask.py can import from one place
+__all_ask_schemas__ = [
+    "ProjectAskRequest",
+    "AskTurn",
+    "AskSessionMessage",
+    "AskSessionSave",
+    "AskSessionListItem",
+    "AskSessionRead",
+]

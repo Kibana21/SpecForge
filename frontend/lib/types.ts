@@ -530,6 +530,8 @@ export interface CitationItem {
   doc_name: string
   chunk_no: number
   text_excerpt: string
+  token?: string                       // e.g. "S:docid:nodeid" — present in copilot citations
+  kind?: 'section' | 'concept' | 'fact'
 }
 
 export interface TraceConcept { slug: string; title: string; brief: string }
@@ -538,13 +540,26 @@ export interface TraceSection { doc_id: string; doc_name: string; node_id: strin
 export interface TraceChunk { doc_name: string; chunk_no: number; similarity: number; excerpt: string }
 
 export interface DeepTrace {
-  mode: AskMode
+  mode: AskMode | 'agent'
   selected_concepts: TraceConcept[]
   selected_documents: TraceDocument[]
   sections: TraceSection[]
   chunks: TraceChunk[]
   fallback_used: boolean
   context_chars: number
+}
+
+// ── Project Copilot (E2 Ask) ──────────────────────────────────────────────────
+
+export interface TreeMapNode { node_id: string; title: string; depth: number }
+export interface TreeMapDoc { doc_id: string; doc_name: string; visited: string[]; outline: TreeMapNode[] }
+export interface TraceFact { id: string; app: string; kind: string; text: string }
+
+export interface ProjectAskTrace extends DeepTrace {
+  mode: 'agent'
+  facts: TraceFact[]
+  tree_map: TreeMapDoc[]
+  partial?: boolean
 }
 
 export type SSEEvent =

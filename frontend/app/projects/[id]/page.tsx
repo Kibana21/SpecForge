@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
 import {
   AlertTriangle, ArrowLeft, Cpu, History, Pencil, FileText, BookOpen, BookMarked, Layers,
-  CheckSquare, Sparkles, Lock, ChevronRight, Check, Circle, X
+  CheckSquare, Sparkles, Lock, ChevronRight, Check, Circle, X, MessageSquare,
 } from 'lucide-react'
 import { useProjectContext } from '@/lib/context/ProjectContext'
 import type { ExtractedRequirement, GapQuestion, ReviewComment, SpecType, SpecVersion } from '@/lib/types'
@@ -29,11 +29,12 @@ import { DocumentViewer } from '@/app/components/DocumentViewer'
 import { BrdBuilderView } from '@/app/components/brd/BrdBuilderView'
 import { FrsBuilderView } from '@/app/components/frs/FrsBuilderView'
 import { ProjectWiki } from '@/app/components/ProjectWiki'
+import { AskProjectView } from '@/app/components/AskProjectView'
 import type { DocumentRead } from '@/lib/types'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type View = 'interview' | 'wiki' | 'concept-brief' | 'brd' | 'frs' | null
+type View = 'interview' | 'wiki' | 'ask' | 'concept-brief' | 'brd' | 'frs' | null
 
 // ── NavItem helper ────────────────────────────────────────────────────────────
 
@@ -146,7 +147,7 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
   const [editing, setEditing] = useState(false)
   const [view, setView] = useState<View>(() => {
     const v = searchParams.get('view')
-    return (v === 'interview' || v === 'wiki' || v === 'concept-brief' || v === 'brd' || v === 'frs') ? v : null
+    return (v === 'interview' || v === 'wiki' || v === 'ask' || v === 'concept-brief' || v === 'brd' || v === 'frs') ? v : null
   })
   const [selectedDoc, setSelectedDoc] = useState<DocumentRead | null>(null)
   const [staleBannerDismissed, setStaleBannerDismissed] = useState<boolean>(() => {
@@ -357,6 +358,15 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
           onClick={() => setView('wiki')}
         />
 
+        {/* Ask the Project — agentic vectorless copilot */}
+        <NavItem
+          label="Ask"
+          sublabel="Chat with the project"
+          icon={<MessageSquare size={14} />}
+          active={view === 'ask'}
+          onClick={() => setView('ask')}
+        />
+
         {/* 2. Concept Brief */}
         <NavItem
           label="Concept Brief"
@@ -478,6 +488,25 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
           </div>
           <div className="flex-1 overflow-hidden p-4">
             <ProjectWiki projectId={projectId} canWrite />
+          </div>
+        </div>
+      )
+    }
+
+    if (view === 'ask') {
+      return (
+        <div className="flex flex-col h-full overflow-hidden bg-[var(--bg-base)]">
+          <div className="shrink-0 h-12 flex items-center gap-3 border-b border-[var(--border-default)] bg-[var(--bg-surface)] px-4">
+            <button
+              onClick={() => setView(null)}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors"
+            >
+              ← Back
+            </button>
+            <span className="text-sm font-semibold text-[var(--text-primary)]">Ask the Project</span>
+          </div>
+          <div className="flex-1 overflow-hidden p-4">
+            <AskProjectView projectId={projectId} />
           </div>
         </div>
       )

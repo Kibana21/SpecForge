@@ -30,6 +30,7 @@ from app.models.user import User
 from app.models.version_snapshot import VersionSnapshot
 from app.models.wiki import AppWikiConcept, AppWikiSummary
 from app.models.ask_session import AppAskSession
+from app.models.project_ask_session import ProjectAskSession
 from app.models.brd import (
     BrdActor, BrdAssumption, BrdBusinessRequirement, BrdConstraint, BrdDataEntity,
     BrdDecision, BrdDependency, BrdGlossaryEntry, BrdKpi, BrdMilestone, BrdObjective,
@@ -93,6 +94,7 @@ __all__ = [
     "ProjectWikiSummary",
     "ProjectWikiConcept",
     "AppAskSession",
+    "ProjectAskSession",
     "BrdActor",
     "BrdAssumption",
     "BrdBusinessRequirement",

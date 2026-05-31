@@ -238,6 +238,21 @@ export const api = {
       apiFetch<ResolvedFact>(`/api/projects/${id}/facts/by-index/${index}`),
     provenance: (id: string) =>
       apiFetch<ProjectLineage>(`/api/projects/${id}/provenance`),
+    // ── Ask the Project (E2 Copilot) ────────────────────────────────────────
+    listChatSessions: (id: string) =>
+      apiFetch<AskSessionListItem[]>(`/api/projects/${id}/ask/sessions`),
+    getChatSession: (id: string, sid: string) =>
+      apiFetch<AskSessionRead>(`/api/projects/${id}/ask/sessions/${sid}`),
+    saveChatSession: (
+      id: string,
+      body: { id: string | null; title: string; messages: AskSessionMessage[] },
+    ) =>
+      apiFetch<{ id: string; updated_at: string }>(
+        `/api/projects/${id}/ask/sessions`,
+        { method: 'POST', body: JSON.stringify(body) },
+      ),
+    deleteChatSession: (id: string, sid: string) =>
+      apiFetch<void>(`/api/projects/${id}/ask/sessions/${sid}`, { method: 'DELETE' }),
   },
 
   triage: {
