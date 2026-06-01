@@ -1,0 +1,13 @@
+{
+  "requirements": [
+    {"row_key": "NFR-007", "category": "availability", "attribute": "Uptime", "requirement": "The service must meet the agreed monthly availability target.", "priority": "must", "rationale": "Business operations depend on continuous availability.", "measurement": ">= 99.9% availability per calendar month", "brd_refs": ["OBJ-1"], "na": false},
+    {"row_key": "NFR-008", "category": "availability", "attribute": "Recoverability", "requirement": "The system must recover from a major failure within the agreed objectives.", "priority": "should", "rationale": "Limits business disruption from incidents.", "measurement": "RTO < 1 hour; RPO < 15 minutes", "brd_refs": ["OBJ-1"], "na": false}
+  ],
+  "traceability": [
+    {"source_row_key": "NFR-007", "target_kind": "brd_objective", "target_ref": "OBJ-1", "target_label": "Reliability", "confidence": "high"},
+    {"source_row_key": "NFR-008", "target_kind": "brd_objective", "target_ref": "OBJ-1", "target_label": "Continuity", "confidence": "high"}
+  ],
+  "open_questions": [],
+  "completeness": 90,
+  "confidence": "high"
+}

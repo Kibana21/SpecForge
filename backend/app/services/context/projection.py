@@ -16,6 +16,7 @@ class UnitContext:
     discover_qa: str
     combined: str               # convenience: all layers concatenated
     frs_context: str = ""       # populated for artifact_type='test_cases'
+    nfr_context: str = ""       # validated NFR drivers (soft) for frs/test_cases
 
 
 # Per-unit CB element inclusion map: which CB tables to project for each BRD unit
@@ -71,9 +72,21 @@ def project_for_unit(
         # the dedicated FRS section appended below.
         cb_context = bundle.cb.formatted_context
         brd_context = bundle.brd.formatted_context if bundle.brd else "(no BRD)"
+    elif artifact_type == "nfr":
+        # NFR grounds on the entire CB + entire BRD (same corpus as FRS).
+        cb_context = bundle.cb.formatted_context
+        brd_context = bundle.brd.formatted_context if bundle.brd else "(no BRD)"
     else:
         # For unknown artifact types, pass the full CB context
         cb_context = bundle.cb.formatted_context
+
+    # Soft NFR-driver feed: only when a validated NFR exists. With no/unvalidated NFR
+    # this stays "" and nothing is appended, so FRS prompts are byte-identical to before.
+    nfr_context = ""
+    if artifact_type in ("frs", "test_cases"):
+        nfr = getattr(bundle, "nfr", None)
+        if nfr and nfr.nfr_status == "validated" and nfr.requirements:
+            nfr_context = nfr.formatted_context
 
     combined_parts = [
         "=== App Brain ===\n" + bundle.apps.formatted_context,
@@ -93,6 +106,9 @@ def project_for_unit(
         frs_context = bundle.frs.formatted_context if getattr(bundle, "frs", None) else "(no FRS)"
         combined_parts.append(frs_context)
 
+    if nfr_context:
+        combined_parts.append(nfr_context)
+
     combined = "\n\n".join(p for p in combined_parts if p.strip())
 
     return UnitContext(
@@ -103,6 +119,7 @@ def project_for_unit(
         discover_qa=bundle.cb.discover_qa,
         combined=combined,
         frs_context=frs_context,
+        nfr_context=nfr_context,
     )
 
 

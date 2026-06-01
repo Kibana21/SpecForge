@@ -63,6 +63,11 @@ import type {
   TestCasesCoverage,
   TestCasesFindingsResponse,
   TestCaseRow,
+  NfrDetail,
+  NfrReadiness,
+  NfrFindingsResponse,
+  NfrRow,
+  NfrBrdLink,
 } from './types'
 import { tokenStore } from './auth/tokenStore'
 
@@ -590,6 +595,53 @@ export const api = {
         `/api/projects/${projectId}/artifacts/frs/design-all-modules`,
         { method: 'POST', body: JSON.stringify({ skip_designed: skipDesigned }) },
       ),
+  },
+
+  nfr: {
+    get: (projectId: string) =>
+      apiFetch<NfrDetail>(`/api/projects/${projectId}/artifacts/nfr`),
+    readiness: (projectId: string) =>
+      apiFetch<NfrReadiness>(`/api/projects/${projectId}/artifacts/nfr/readiness`, { method: 'POST' }),
+    enhance: (projectId: string, body: { brief_text: string }) =>
+      apiFetch<{ enhanced_brief: string; doc_count: number; app_count: number }>(
+        `/api/projects/${projectId}/artifacts/nfr/enhance`,
+        { method: 'POST', body: JSON.stringify(body) },
+      ),
+    generate: (projectId: string, body?: { brief?: string }) =>
+      apiFetch<NfrDetail>(`/api/projects/${projectId}/artifacts/nfr/generate`, {
+        method: 'POST', body: JSON.stringify(body ?? {}),
+      }),
+    regenerateUnit: (projectId: string, unitKey: string) =>
+      apiFetch<unknown>(`/api/projects/${projectId}/artifacts/nfr/units/${unitKey}/regenerate`, { method: 'POST' }),
+    resetGenerating: (projectId: string) =>
+      apiFetch<{ status: string }>(`/api/projects/${projectId}/artifacts/nfr/reset-generating`, { method: 'POST' }),
+    answer: (projectId: string, body: { answer: string; seq?: number }) =>
+      apiFetch<NfrDetail>(`/api/projects/${projectId}/artifacts/nfr/answer`, {
+        method: 'POST', body: JSON.stringify(body),
+      }),
+    validate: (projectId: string) =>
+      apiFetch<NfrFindingsResponse>(`/api/projects/${projectId}/artifacts/nfr/validate`, { method: 'POST' }),
+    findings: (projectId: string) =>
+      apiFetch<NfrFindingsResponse>(`/api/projects/${projectId}/artifacts/nfr/findings`),
+    addRow: (projectId: string, table: string, fields: Record<string, unknown>, brdLinks?: NfrBrdLink[]) =>
+      apiFetch<NfrRow>(`/api/projects/${projectId}/artifacts/nfr/${table}/add`, {
+        method: 'POST', body: JSON.stringify({ fields, brd_links: brdLinks ?? null }),
+      }),
+    editRow: (projectId: string, table: string, rowId: string, fields: Record<string, unknown>, lock = true) =>
+      apiFetch<NfrRow>(`/api/projects/${projectId}/artifacts/nfr/${table}/${rowId}/edit`, {
+        method: 'POST', body: JSON.stringify({ fields, lock }),
+      }),
+    deleteRow: (projectId: string, table: string, rowId: string) =>
+      apiFetch<{ status: string; row_key: string }>(`/api/projects/${projectId}/artifacts/nfr/${table}/${rowId}/delete`, { method: 'POST' }),
+    unlockRow: (projectId: string, table: string, rowId: string) =>
+      apiFetch<NfrRow>(`/api/projects/${projectId}/artifacts/nfr/${table}/${rowId}/unlock`, { method: 'POST' }),
+    restoreRow: (projectId: string, table: string, rowId: string, version: number) =>
+      apiFetch<NfrRow>(`/api/projects/${projectId}/artifacts/nfr/${table}/${rowId}/restore`, {
+        method: 'POST', body: JSON.stringify({ version }),
+      }),
+    rowHistory: (projectId: string, table: string, rowId: string) =>
+      apiFetch<NfrRow[]>(`/api/projects/${projectId}/artifacts/nfr/${table}/${rowId}/history`),
+    exportUrl: (projectId: string) => `/api/projects/${projectId}/artifacts/nfr/export`,
   },
 
   testcases: {

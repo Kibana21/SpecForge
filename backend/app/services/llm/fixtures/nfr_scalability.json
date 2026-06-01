@@ -1,0 +1,13 @@
+{
+  "requirements": [
+    {"row_key": "NFR-011", "category": "scalability", "attribute": "Peak load", "requirement": "The system must scale to handle peak load without degradation.", "priority": "should", "rationale": "Seasonal/business peaks must be absorbed.", "measurement": "Handles 5x baseline load with p95 latency within budget", "brd_refs": ["OBJ-1"], "na": false},
+    {"row_key": "NFR-012", "category": "scalability", "attribute": "Data growth", "requirement": "The system should sustain performance as data volume grows.", "priority": "could", "rationale": "Data accumulates over the system lifetime.", "measurement": "Scales to 10M records with < 10% latency increase", "brd_refs": ["BR-001"], "na": false}
+  ],
+  "traceability": [
+    {"source_row_key": "NFR-011", "target_kind": "brd_objective", "target_ref": "OBJ-1", "target_label": "Scalability", "confidence": "high"},
+    {"source_row_key": "NFR-012", "target_kind": "brd_business_requirement", "target_ref": "BR-001", "target_label": "Data growth", "confidence": "medium"}
+  ],
+  "open_questions": [],
+  "completeness": 90,
+  "confidence": "high"
+}

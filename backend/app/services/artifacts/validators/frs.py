@@ -319,9 +319,76 @@ async def run_frs_validation(
     # Stage B rules (only fire on specs that have been designed)
     findings.extend(await _validate_stage_b(document_id, doc, db, modules, specs, interfaces))
 
+    # NFR-driver coupling (soft, non-blocking) — see _nfr_driver_findings.
+    findings.extend(await _nfr_driver_findings(document_id, doc, specs, db))
+
     # Sort: critical → major → minor → coverage → warnings
     findings.sort(key=lambda f: _GROUP_ORDER.get(f["group"], 99))
     return findings
+
+
+async def _nfr_driver_findings(
+    document_id: uuid.UUID, doc: ArtifactDocument, specs: list[Any], db: AsyncSession
+) -> list[dict]:
+    """Soft, non-blocking (minor) findings about FRS↔NFR coupling.
+
+    Because FRS is NOT gated on NFR, a validated NFR may arrive after FRS, or an
+    NFR referenced by an existing nfr_driver trace may be deleted. We surface both
+    as MINOR findings (never block FRS validation) and never auto-mutate the FRS —
+    the user re-generates the affected module to refresh its traceability.
+    """
+    from app.models.nfr import NfrRequirement
+
+    out: list[dict] = []
+    nfr_doc = (
+        await db.execute(
+            select(ArtifactDocument).where(
+                ArtifactDocument.project_id == doc.project_id,
+                ArtifactDocument.artifact_type == "nfr",
+            )
+        )
+    ).scalar_one_or_none()
+    if nfr_doc is None or nfr_doc.status != "validated":
+        return out  # nothing to couple to
+
+    nfr_keys = set((
+        await db.execute(
+            select(NfrRequirement.row_key).where(
+                NfrRequirement.document_id == nfr_doc.id,
+                NfrRequirement.is_current.is_(True),
+                NfrRequirement.status == "active",
+            )
+        )
+    ).scalars().all())
+
+    driver_traces = (
+        await db.execute(
+            select(FrsTraceability).where(
+                FrsTraceability.document_id == document_id,
+                FrsTraceability.target_kind == "nfr_driver",
+            )
+        )
+    ).scalars().all()
+
+    designed = [s for s in specs if (s.completeness or 0) > 0]
+    if designed and not driver_traces:
+        out.append(_finding(
+            "nfr_drivers_missing",
+            "NFRs are validated but no FRS spec traces to an NFR driver. "
+            "Consider regenerating affected modules to capture nfr_driver traceability.",
+            "minor",
+            suggested_fix="Regenerate the modules whose design is shaped by an NFR.",
+        ))
+
+    for t in driver_traces:
+        if t.target_ref not in nfr_keys:
+            out.append(_finding(
+                "nfr_drivers_stale",
+                f"FRS {t.source_row_key} traces to NFR '{t.target_ref}', which no longer exists.",
+                "minor", row_key=t.source_row_key, target_ref=t.target_ref,
+                suggested_fix="Regenerate this spec's module to refresh its NFR traceability.",
+            ))
+    return out
 
 
 # ─── Stage B validation ──────────────────────────────────────────────────────

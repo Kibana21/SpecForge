@@ -1,0 +1,15 @@
+{
+  "requirements": [
+    {"row_key": "NFR-004", "category": "security", "attribute": "Confidentiality", "requirement": "All data must be encrypted in transit and at rest.", "priority": "must", "rationale": "Sensitive business data must be protected from disclosure.", "measurement": "TLS 1.2+ in transit; AES-256 (or equivalent) at rest; 100% of stores", "brd_refs": ["BR-001"], "na": false},
+    {"row_key": "NFR-005", "category": "security", "attribute": "Auditability", "requirement": "All state-changing actions must be recorded in an immutable audit trail.", "priority": "must", "rationale": "Compliance and forensics require a complete record.", "measurement": "100% of create/update/delete actions audit-logged with actor + timestamp", "brd_refs": ["OBJ-1"], "na": false},
+    {"row_key": "NFR-006", "category": "security", "attribute": "Compliance", "requirement": "The system must meet the applicable regulatory baseline for the business domain.", "priority": "should", "rationale": "Legal and contractual obligations apply.", "measurement": "Passes the agreed compliance control checklist before go-live", "brd_refs": ["BR-001"], "na": false}
+  ],
+  "traceability": [
+    {"source_row_key": "NFR-004", "target_kind": "brd_business_requirement", "target_ref": "BR-001", "target_label": "Data protection", "confidence": "high"},
+    {"source_row_key": "NFR-005", "target_kind": "brd_objective", "target_ref": "OBJ-1", "target_label": "Auditability", "confidence": "high"},
+    {"source_row_key": "NFR-006", "target_kind": "brd_business_requirement", "target_ref": "BR-001", "target_label": "Compliance", "confidence": "medium"}
+  ],
+  "open_questions": [],
+  "completeness": 90,
+  "confidence": "high"
+}

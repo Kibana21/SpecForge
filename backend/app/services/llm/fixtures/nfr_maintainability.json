@@ -1,0 +1,13 @@
+{
+  "requirements": [
+    {"row_key": "NFR-013", "category": "maintainability", "attribute": "Observability", "requirement": "All services must emit structured logs, metrics, and traces.", "priority": "should", "rationale": "Operability and fast incident resolution.", "measurement": "100% of services expose structured logs + metrics + traces", "brd_refs": ["OBJ-1"], "na": false},
+    {"row_key": "NFR-014", "category": "maintainability", "attribute": "Change effort", "requirement": "Standard changes should be deployable with low effort and risk.", "priority": "could", "rationale": "Sustains delivery velocity.", "measurement": "Standard change deployable within 1 business day via the pipeline", "brd_refs": ["OBJ-1"], "na": false}
+  ],
+  "traceability": [
+    {"source_row_key": "NFR-013", "target_kind": "brd_objective", "target_ref": "OBJ-1", "target_label": "Operability", "confidence": "high"},
+    {"source_row_key": "NFR-014", "target_kind": "brd_objective", "target_ref": "OBJ-1", "target_label": "Maintainability", "confidence": "medium"}
+  ],
+  "open_questions": [],
+  "completeness": 90,
+  "confidence": "high"
+}

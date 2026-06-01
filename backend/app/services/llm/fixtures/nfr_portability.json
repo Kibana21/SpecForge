@@ -1,0 +1,11 @@
+{
+  "requirements": [
+    {"row_key": "NFR-015", "category": "portability", "attribute": "Browser compatibility", "requirement": "The web UI must function on the supported browser matrix.", "priority": "should", "rationale": "Users access via diverse browsers.", "measurement": "Supports the latest 2 versions of Chrome, Edge, Safari, and Firefox", "brd_refs": ["BR-001"], "na": false}
+  ],
+  "traceability": [
+    {"source_row_key": "NFR-015", "target_kind": "brd_business_requirement", "target_ref": "BR-001", "target_label": "Browser support", "confidence": "high"}
+  ],
+  "open_questions": [],
+  "completeness": 90,
+  "confidence": "high"
+}

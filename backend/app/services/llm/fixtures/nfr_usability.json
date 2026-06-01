@@ -1,0 +1,13 @@
+{
+  "requirements": [
+    {"row_key": "NFR-009", "category": "usability", "attribute": "Accessibility", "requirement": "User interfaces must meet the agreed accessibility standard.", "priority": "must", "rationale": "Accessibility is a legal and inclusion requirement.", "measurement": "Conforms to WCAG 2.2 AA (automated + manual audit)", "brd_refs": ["BR-001"], "na": false},
+    {"row_key": "NFR-010", "category": "usability", "attribute": "Task efficiency", "requirement": "Core user tasks should be completable with minimal friction.", "priority": "could", "rationale": "Efficiency drives adoption and satisfaction.", "measurement": "Primary task completable in <= 3 interactions", "brd_refs": ["OBJ-1"], "na": false}
+  ],
+  "traceability": [
+    {"source_row_key": "NFR-009", "target_kind": "brd_business_requirement", "target_ref": "BR-001", "target_label": "Accessible UI", "confidence": "high"},
+    {"source_row_key": "NFR-010", "target_kind": "brd_objective", "target_ref": "OBJ-1", "target_label": "Usability", "confidence": "medium"}
+  ],
+  "open_questions": [],
+  "completeness": 90,
+  "confidence": "high"
+}

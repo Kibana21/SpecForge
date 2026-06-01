@@ -1573,6 +1573,54 @@ async def _generate_frs(project_id: str, brief: str | None) -> dict:
             raise
 
 
+# ── NFR Celery tasks ─────────────────────────────────────────────────────────
+
+@celery_app.task(name="workers.tasks.generate_nfr", bind=True, max_retries=2, default_retry_delay=10)
+def generate_nfr(self, project_id: str, brief: str | None = None) -> dict:
+    return _run_async(_generate_nfr(project_id, brief))
+
+
+async def _generate_nfr(project_id: str, brief: str | None) -> dict:
+    from uuid import UUID as _UUID
+    from sqlalchemy import select as _select
+    from app.db import AsyncSessionLocal
+    from app.models.artifact import ArtifactDocument
+    from app.services.artifacts.nfr_orchestrator import run_nfr_generation
+
+    try:
+        await run_nfr_generation(_UUID(project_id), brief)
+        return {"ok": True}
+    except Exception:
+        log.exception("generate_nfr failed project_id=%s", project_id)
+        async with AsyncSessionLocal() as db2:
+            doc = (await db2.execute(
+                _select(ArtifactDocument).where(
+                    ArtifactDocument.project_id == _UUID(project_id),
+                    ArtifactDocument.artifact_type == "nfr",
+                )
+            )).scalar_one_or_none()
+            if doc and doc.status == "generating":
+                doc.status = "in_interview"
+                await db2.commit()
+        raise
+
+
+@celery_app.task(name="workers.tasks.regenerate_nfr_unit", bind=True, max_retries=2, default_retry_delay=10)
+def regenerate_nfr_unit(self, project_id: str, unit_key: str) -> dict:
+    return _run_async(_regenerate_nfr_unit(project_id, unit_key))
+
+
+async def _regenerate_nfr_unit(project_id: str, unit_key: str) -> dict:
+    from uuid import UUID as _UUID
+    from app.services.artifacts.nfr_orchestrator import regenerate_nfr_unit as _regen
+    try:
+        await _regen(_UUID(project_id), unit_key)
+        return {"ok": True}
+    except Exception:
+        log.exception("regenerate_nfr_unit failed project_id=%s unit=%s", project_id, unit_key)
+        raise
+
+
 # ── Stage B Celery tasks ─────────────────────────────────────────────────────
 
 

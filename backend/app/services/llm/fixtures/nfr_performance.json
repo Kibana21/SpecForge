@@ -1,0 +1,15 @@
+{
+  "requirements": [
+    {"row_key": "NFR-001", "category": "performance", "attribute": "Response time", "requirement": "Interactive API responses must meet the stated latency budget under expected concurrency.", "priority": "must", "rationale": "Slow responses directly harm task completion and adoption.", "measurement": "p95 API latency < 300ms at 200 concurrent users", "brd_refs": ["OBJ-1"], "na": false},
+    {"row_key": "NFR-002", "category": "performance", "attribute": "Throughput", "requirement": "The system must sustain the expected request volume without queue buildup.", "priority": "should", "rationale": "Peak business periods must not degrade service.", "measurement": ">= 1000 requests/second sustained for 10 minutes", "brd_refs": ["BR-001"], "na": false},
+    {"row_key": "NFR-003", "category": "performance", "attribute": "Resource efficiency", "requirement": "Compute utilisation should remain within headroom at peak load.", "priority": "could", "rationale": "Headroom protects against spikes and controls cost.", "measurement": "< 70% CPU utilisation at peak load", "brd_refs": ["OBJ-1"], "na": false}
+  ],
+  "traceability": [
+    {"row_key": "", "source_row_key": "NFR-001", "target_kind": "brd_objective", "target_ref": "OBJ-1", "target_label": "Responsive experience", "confidence": "high"},
+    {"row_key": "", "source_row_key": "NFR-002", "target_kind": "brd_business_requirement", "target_ref": "BR-001", "target_label": "Throughput", "confidence": "high"},
+    {"row_key": "", "source_row_key": "NFR-003", "target_kind": "brd_objective", "target_ref": "OBJ-1", "target_label": "Efficiency", "confidence": "medium"}
+  ],
+  "open_questions": [],
+  "completeness": 90,
+  "confidence": "high"
+}

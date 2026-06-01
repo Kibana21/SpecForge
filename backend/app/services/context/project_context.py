@@ -138,6 +138,31 @@ class FrsLayer:
     formatted_context: str           # full FRS projection block for prompts
 
 
+# ── NFR layer (loaded for FRS/test_cases so validated NFRs can feed FRS) ──────
+
+@dataclass
+class NfrLayer:
+    """All validated NFR rows + traceability; ready for FRS prompt injection.
+
+    Loaded (optionally, may be empty) for FRS + test_cases generation so validated
+    NFRs can softly drive FRS design. NFR is NEVER a hard gate on FRS.
+    """
+    nfr_document_id: str | None
+    nfr_status: str | None           # in_interview | validated | None
+    nfr_validated_at: str | None
+    nfr_snapshot_key: str | None
+    requirements: list[dict]
+    risks: list[dict]
+    tradeoffs: list[dict]
+    open_questions: list[dict]
+    decisions: list[dict]
+    references: list[dict]
+    glossary: list[dict]
+    text_blocks: list[dict]
+    traceability: list[dict]
+    formatted_context: str
+
+
 # ── Readiness ─────────────────────────────────────────────────────────────────
 
 @dataclass
@@ -154,6 +179,8 @@ class BundleReadiness:
     brd_status: str | None
     frs_ready: bool         # True unless artifact_type=='test_cases'; else frs_status=='validated'
     frs_status: str | None
+    nfr_ready: bool         # tracked for frs/test_cases (informational — NEVER blocks)
+    nfr_status: str | None
     can_generate: bool
     blocking_reason: str | None
 
@@ -168,8 +195,9 @@ class ProjectContextBundle:
     apps: AppLayer
     docs: DocsLayer
     cb: CbLayer
-    brd: BrdLayer | None            # populated when artifact_type in ('frs', 'test_cases')
+    brd: BrdLayer | None            # populated when artifact_type in ('frs', 'test_cases', 'nfr')
     frs: "FrsLayer | None"          # populated only when artifact_type == 'test_cases'
+    nfr: "NfrLayer | None"          # populated for frs/test_cases (soft NFR-driver feed)
     intake: "IntakeLayer"           # validated RU + resolved clarifications + wiki concepts
     readiness: BundleReadiness
     snapshot_timestamp: str     # ISO-8601 when the bundle was assembled
@@ -217,7 +245,9 @@ async def gather_project_context(
     intake_layer = await build_intake_layer(project_id, db)
 
     brd_layer: BrdLayer | None = None
-    if artifact_type in ("frs", "test_cases"):
+    # NFR is generated from the same corpus as FRS (apps + docs + validated CB + BRD),
+    # so it also loads the BRD layer (and gates on a validated BRD via readiness).
+    if artifact_type in ("frs", "test_cases", "nfr"):
         from app.services.context.brd_layer import build_brd_layer
         brd_layer = await build_brd_layer(project_id, db)
 
@@ -226,8 +256,15 @@ async def gather_project_context(
         from app.services.context.frs_layer import build_frs_layer
         frs_layer = await build_frs_layer(project_id, db)
 
+    # FRS/test_cases additionally load the (possibly empty) NFR layer so validated
+    # NFRs can softly drive FRS design. This is purely additive — see projection.py.
+    nfr_layer: "NfrLayer | None" = None
+    if artifact_type in ("frs", "test_cases"):
+        from app.services.context.nfr_layer import build_nfr_layer
+        nfr_layer = await build_nfr_layer(project_id, db)
+
     readiness = _compute_readiness(
-        apps_layer, docs_layer, cb_layer, brd_layer, frs_layer,
+        apps_layer, docs_layer, cb_layer, brd_layer, frs_layer, nfr_layer,
         artifact_type=artifact_type,
     )
 
@@ -240,6 +277,7 @@ async def gather_project_context(
         cb=cb_layer,
         brd=brd_layer,
         frs=frs_layer,
+        nfr=nfr_layer,
         intake=intake_layer,
         readiness=readiness,
         snapshot_timestamp=datetime.now(timezone.utc).isoformat(),
@@ -252,15 +290,18 @@ def _compute_readiness(
     cb: CbLayer,
     brd: BrdLayer | None,
     frs: "FrsLayer | None" = None,
+    nfr: "NfrLayer | None" = None,
     *,
     artifact_type: str = "brd",
 ) -> BundleReadiness:
     docs_all_ready = docs.pending_count == 0 and docs.failed_count == 0
     cb_ready = cb.cb_status == "validated"
-    # The BRD gate applies to FRS + test_cases (both need a validated BRD).
-    brd_ready = (artifact_type not in ("frs", "test_cases")) or (brd is not None and brd.brd_status == "validated")
+    # The BRD gate applies to FRS + test_cases + nfr (all need a validated BRD).
+    brd_ready = (artifact_type not in ("frs", "test_cases", "nfr")) or (brd is not None and brd.brd_status == "validated")
     # The FRS gate applies only to test_cases (needs a validated FRS).
     frs_ready = (artifact_type != "test_cases") or (frs is not None and frs.frs_status == "validated")
+    # NFR is a SOFT input to FRS — tracked but NEVER part of the blocking gate.
+    nfr_ready = (artifact_type not in ("frs", "test_cases")) or (nfr is not None and nfr.nfr_status == "validated")
 
     blocking: str | None = None
     if docs.pending_count > 0:
@@ -289,6 +330,8 @@ def _compute_readiness(
         brd_status=brd.brd_status if brd else None,
         frs_ready=frs_ready,
         frs_status=frs.frs_status if frs else None,
+        nfr_ready=nfr_ready,
+        nfr_status=nfr.nfr_status if nfr else None,
         can_generate=(docs_all_ready and cb_ready and brd_ready and frs_ready),
         blocking_reason=blocking,
     )

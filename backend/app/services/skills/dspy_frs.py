@@ -500,6 +500,13 @@ class FrsDesignModuleSignature(dspy.Signature):
     - Each scenario → ≥1 FR (target_kind='within_frs')
     - Optionally: spec → app_fact, doc_section, discover_qa, nfr_driver
 
+    NFR DRIVERS:
+    If a '=== Validated NFR Drivers ===' block is present in the context, then for
+    each FRS spec whose design is materially shaped by a specific NFR (a latency,
+    availability, security, scalability, etc. driver) emit a traceability row with
+    target_kind='nfr_driver' and target_ref=<the NFR-nnn row_key>. If that block is
+    absent, do NOT emit nfr_driver traces — never fabricate them.
+
     SECTION-OMISSION RULE:
     Omit only sections that are genuinely not relevant. Justify omission in
     narrative with a one-line note:

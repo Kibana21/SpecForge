@@ -16,7 +16,7 @@ from app.models.base import uuid_pk
 
 # ── Shared enums (created in migration 0015) ──────────────────────────────────
 
-ArtifactType = Enum("concept_brief", "brd", "frs", "test_cases", name="artifact_type", create_type=False)
+ArtifactType = Enum("concept_brief", "brd", "frs", "test_cases", "nfr", name="artifact_type", create_type=False)
 ArtifactStatus = Enum("in_interview", "validated", "generating", "in_discover", name="artifact_status", create_type=False)
 ArtifactRowStatus = Enum("active", "removed", name="artifact_row_status", create_type=False)
 ArtifactRowSource = Enum("ai", "human", "regeneration", name="artifact_row_source", create_type=False)

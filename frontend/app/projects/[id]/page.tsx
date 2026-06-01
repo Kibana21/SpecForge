@@ -6,7 +6,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
   AlertTriangle, ArrowLeft, Cpu, History, Pencil, FileText, BookOpen, BookMarked, Layers,
-  CheckSquare, Sparkles, Lock, ChevronRight, Check, Circle, X, MessageSquare,
+  CheckSquare, Sparkles, Lock, ChevronRight, Check, Circle, X, MessageSquare, Gauge,
 } from 'lucide-react'
 import { useProjectContext } from '@/lib/context/ProjectContext'
 import type { ExtractedRequirement, GapQuestion, ReviewComment, SpecType, SpecVersion } from '@/lib/types'
@@ -30,6 +30,7 @@ import { InterviewPanel } from '@/app/components/InterviewPanel'
 import { DocumentViewer } from '@/app/components/DocumentViewer'
 import { BrdBuilderView } from '@/app/components/brd/BrdBuilderView'
 import { FrsBuilderView } from '@/app/components/frs/FrsBuilderView'
+import { NfrBuilderView } from '@/app/components/nfr/NfrBuilderView'
 import { TestCasesBuilderView } from '@/app/components/testcases/TestCasesBuilderView'
 import { ProjectWiki } from '@/app/components/ProjectWiki'
 import { AskProjectView } from '@/app/components/AskProjectView'
@@ -37,7 +38,7 @@ import type { DocumentRead } from '@/lib/types'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type View = 'interview' | 'wiki' | 'ask' | 'concept-brief' | 'brd' | 'frs' | 'test-cases' | null
+type View = 'interview' | 'wiki' | 'ask' | 'concept-brief' | 'brd' | 'nfr' | 'frs' | 'test-cases' | null
 
 // ── NavItem helper ────────────────────────────────────────────────────────────
 
@@ -150,7 +151,7 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
   const [editing, setEditing] = useState(false)
   const [view, setView] = useState<View>(() => {
     const v = searchParams.get('view')
-    return (v === 'interview' || v === 'wiki' || v === 'ask' || v === 'concept-brief' || v === 'brd' || v === 'frs' || v === 'test-cases') ? v : null
+    return (v === 'interview' || v === 'wiki' || v === 'ask' || v === 'concept-brief' || v === 'brd' || v === 'nfr' || v === 'frs' || v === 'test-cases') ? v : null
   })
   const [selectedDoc, setSelectedDoc] = useState<DocumentRead | null>(null)
   const [staleBannerDismissed, setStaleBannerDismissed] = useState<boolean>(() => {
@@ -181,6 +182,14 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
   const { data: tcDetail } = useSWR(
     `tc-detail-${projectId}`,
     () => api.testcases.get(projectId),
+    {
+      revalidateOnFocus: false,
+      refreshInterval: (data) => (data?.document?.status === 'generating' ? 2000 : 0),
+    },
+  )
+  const { data: nfrDetail } = useSWR(
+    `nfr-detail-${projectId}`,
+    () => api.nfr.get(projectId),
     {
       revalidateOnFocus: false,
       refreshInterval: (data) => (data?.document?.status === 'generating' ? 2000 : 0),
@@ -309,6 +318,22 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
     : 'Draft · in progress'
 
   const brdValidated = brdStatus === 'validated'
+
+  // NFR — standalone, unlocks once the BRD is validated (parallel to FRS).
+  const nfrStatus = nfrDetail?.document?.status ?? null
+  function nfrStatusBadge() {
+    if (!nfrStatus) return null
+    if (nfrStatus === 'generating') return <span className="text-[9px] rounded px-1.5 py-0.5 bg-blue-100 text-blue-700 font-semibold animate-pulse">Generating…</span>
+    if (nfrStatus === 'validated') return <span className="text-[9px] rounded px-1.5 py-0.5 bg-emerald-100 text-emerald-700 font-semibold">Validated ✓</span>
+    if (nfrStatus === 'in_interview') return <span className="text-[9px] rounded px-1.5 py-0.5 bg-amber-100 text-amber-700 font-semibold">Draft</span>
+    return null
+  }
+  const nfrSublabel = !nfrStatus
+    ? (brdValidated ? 'Non-Functional Requirements' : 'Unlocks after BRD')
+    : nfrStatus === 'generating' ? 'Generating…'
+    : nfrStatus === 'validated' ? 'Validated'
+    : 'Draft · in progress'
+
   const frsStatus = frsDetail?.document?.status ?? null
   const frsStageAApproved = Boolean(frsDetail?.document?.unit_status?.['_stage_a_approved'])
 
@@ -354,6 +379,7 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
     : view === 'ask' ? 'Ask'
     : view === 'concept-brief' ? 'Concept Brief'
     : view === 'brd' ? 'BRD'
+    : view === 'nfr' ? 'NFR'
     : view === 'frs' ? 'FRS'
     : view === 'test-cases' ? 'Test Cases'
     : 'Overview'
@@ -428,6 +454,17 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
           locked={!cbValidated}
           badge={brdStatusBadge()}
           onClick={cbValidated ? () => setView('brd') : undefined}
+        />
+
+        {/* 3.5 NFR — standalone, unlocks with BRD (parallel to FRS) */}
+        <NavItem
+          label="NFR"
+          sublabel={nfrSublabel}
+          icon={<Gauge size={14} />}
+          active={view === 'nfr'}
+          locked={!brdValidated}
+          badge={nfrStatusBadge()}
+          onClick={brdValidated ? () => setView('nfr') : undefined}
         />
 
         {/* 4. FRS */}
@@ -569,6 +606,15 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
     if (view === 'brd') {
       return (
         <BrdBuilderView
+          projectId={projectId}
+          onBack={() => setView(null)}
+        />
+      )
+    }
+
+    if (view === 'nfr') {
+      return (
+        <NfrBuilderView
           projectId={projectId}
           onBack={() => setView(null)}
         />
@@ -721,6 +767,14 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
                     label="BRD"
                     sublabel={brdSublabel}
                     onClick={cbValidated ? () => setView('brd') : undefined}
+                  />
+                  <ProgressStep
+                    done={nfrStatus === 'validated'}
+                    inProgress={!!nfrStatus && nfrStatus !== 'validated'}
+                    locked={!brdValidated}
+                    label="NFR"
+                    sublabel={nfrSublabel}
+                    onClick={brdValidated ? () => setView('nfr') : undefined}
                   />
                   <ProgressStep
                     done={frsStatus === 'validated'}

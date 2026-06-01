@@ -1,0 +1,23 @@
+{
+  "risks": [
+    {"row_key": "NFR-R-001", "risk_id": "NFR-R-001", "description": "Peak-load performance target may be hard to meet on the current architecture.", "affected_attribute": "Performance / Scalability", "impact": "high", "likelihood": "medium", "mitigation": "Load test early; introduce caching/horizontal scaling if needed.", "owner": "Solution Architect", "risk_status": "open"}
+  ],
+  "tradeoffs": [
+    {"row_key": "NFR-TD-001", "tradeoff": "Strong consistency vs. availability under partition", "options_considered": ["Strong consistency", "Eventual consistency"], "decision": "Favour availability with eventual consistency for non-critical reads", "rationale": "Uptime target outweighs strict read freshness for these paths.", "decided_on": "", "decision_maker": "Solution Architect"}
+  ],
+  "open_questions_list": [
+    {"row_key": "NFR-OQ-001", "question": "What is the confirmed monthly availability SLA with the business sponsor?", "owner": "Product Owner", "due_date": "", "oq_status": "open"}
+  ],
+  "decisions": [
+    {"row_key": "NFR-PD-001", "description": "Confirm the regulatory baseline applicable to the data domain.", "owner": "Compliance Reviewer", "target_date": "", "decision_status": "pending"}
+  ],
+  "references": [
+    {"row_key": "NFR-REF-001", "ref_type": "standard", "title": "WCAG 2.2 AA", "location": "https://www.w3.org/TR/WCAG22/", "notes": "Accessibility baseline for the UI."}
+  ],
+  "glossary": [
+    {"row_key": "NFR-G-001", "term": "RTO / RPO", "definition": "Recovery Time Objective / Recovery Point Objective — targets for restoring service and bounding data loss after an incident."}
+  ],
+  "open_questions": [],
+  "completeness": 90,
+  "confidence": "high"
+}

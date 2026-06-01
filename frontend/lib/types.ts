@@ -1444,3 +1444,104 @@ export interface TestCasesFindingsResponse {
   findings: TestCasesFinding[]
   locked_row_count?: number
 }
+
+// ── NFR (E5) ────────────────────────────────────────────────────────────────
+
+export type NfrPriority = 'must' | 'should' | 'could' | 'wont'
+export type NfrCategory =
+  | 'performance' | 'security' | 'availability' | 'usability'
+  | 'scalability' | 'maintainability' | 'portability'
+export type NfrTraceKind =
+  | 'brd_objective' | 'brd_business_requirement' | 'brd_kpi' | 'brd_risk'
+  | 'brd_text_block' | 'app_fact' | 'doc_section' | 'discover_qa' | 'within_nfr'
+
+export interface NfrRow {
+  id: string
+  row_key: string
+  version: number
+  is_current: boolean
+  is_locked: boolean
+  status: string
+  source: string
+  created_at: string
+  // requirement typed cols (other sections carry their own keys too)
+  category?: NfrCategory
+  attribute?: string
+  requirement?: string
+  priority?: NfrPriority
+  rationale?: string
+  measurement?: string
+  brd_refs?: string[]
+  na?: boolean
+  [key: string]: unknown
+}
+
+export interface NfrTraceRef {
+  id: string
+  source_table: string
+  source_row_key: string
+  target_kind: NfrTraceKind
+  target_ref: string
+  target_label: string
+  confidence: string
+}
+
+export interface NfrRadarAxis {
+  category: NfrCategory
+  count: number
+  weighted: number
+  by_priority: Record<NfrPriority, number>
+}
+
+export interface NfrDocument {
+  id: string
+  project_id: string
+  artifact_type: 'nfr'
+  status: 'in_interview' | 'generating' | 'validated'
+  unit_status: Record<string, { completeness?: number; confidence?: string } | string | boolean | null> | null
+  validated_at: string | null
+  validated_by: string | null
+  validated_snapshot_key: string | null
+  created_at: string
+  updated_at: string | null
+}
+
+export interface NfrDetail {
+  document: NfrDocument | null
+  sections: Record<string, NfrRow[]>
+  traceability_by_source: Record<string, NfrTraceRef[]>
+  radar: NfrRadarAxis[]
+  messages: Array<{ id: string; role: string; content: string; meta: Record<string, unknown>; seq: number; created_at: string }>
+  sources: Array<{ id: string; source_document_id: string; filename: string; parse_status: string; included: boolean }>
+}
+
+export interface NfrReadiness {
+  can_generate: boolean
+  blocking_reason: string | null
+  docs_all_ready: boolean
+  cb_ready: boolean
+  cb_status: string | null
+  brd_ready: boolean
+  brd_status: string | null
+  docs: Array<{ id: string; filename: string; indexing_status: string; page_count: number | null }>
+}
+
+export interface NfrFinding {
+  check_id: string
+  description: string
+  group: 'critical' | 'major' | 'minor' | 'warnings'
+  row_key: string | null
+  suggested_fix: string
+}
+
+export interface NfrFindingsResponse {
+  ok?: boolean
+  summary?: { total: number; critical: number; major: number; minor: number; warnings: number; blocking: number }
+  findings: NfrFinding[]
+}
+
+export interface NfrBrdLink {
+  target_kind: NfrTraceKind
+  target_ref: string
+  target_label?: string
+}

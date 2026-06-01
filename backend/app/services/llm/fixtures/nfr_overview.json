@@ -1,0 +1,9 @@
+{
+  "text_blocks": [
+    {"row_key": "NFR-TB-overview", "block_kind": "overview", "content": "This document defines the non-functional requirements (quality attributes) for the initiative. It establishes the performance, security, availability, usability, scalability, maintainability, and portability targets the delivered system must satisfy, each traceable to the validated BRD objectives and business requirements."},
+    {"row_key": "NFR-TB-objectives", "block_kind": "objectives", "content": "1. Guarantee a responsive, reliable experience under expected and peak load. 2. Protect data confidentiality, integrity, and auditability in line with regulatory obligations. 3. Keep the system observable, scalable, and maintainable across its supported environments."}
+  ],
+  "open_questions": [],
+  "completeness": 90,
+  "confidence": "high"
+}

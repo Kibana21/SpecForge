@@ -107,6 +107,24 @@
   --frs-phase-b-bar:   #2563EB;
   --frs-phase-b-done:  var(--accent);
   --frs-phase-queue:   #E5E7EB;
+
+  /* ── NFR (E5) — category accents ───────────────────────────── */
+  --nfr-performance:    #B45309;
+  --nfr-security:       #BE123C;
+  --nfr-availability:   #047857;
+  --nfr-usability:      #BE185D;
+  --nfr-scalability:    #6D28D9;
+  --nfr-maintainability:#0369A1;
+  --nfr-portability:    #1D4ED8;
+  /* MoSCoW bands */
+  --nfr-must:   #DC2626;
+  --nfr-should: #D97706;
+  --nfr-could:  #2563EB;
+  --nfr-wont:   #9CA3AF;
+  /* Quality Radar */
+  --nfr-radar-grid: #E5E7EB;
+  --nfr-radar-fill: rgba(16, 185, 129, 0.16);
+  --nfr-radar-axis: #94A3B8;
 }
 
 * {

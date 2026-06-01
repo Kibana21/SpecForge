@@ -48,6 +48,10 @@ from app.models.frs import (
 from app.models.test_cases import (
     TestSuite, TestPlan, TestCase, TestCaseTraceability,
 )
+from app.models.nfr import (
+    NfrRequirement, NfrRisk, NfrTradeoff, NfrOpenQuestion, NfrDecision,
+    NfrReference, NfrGlossary, NfrTextBlock, NfrTraceability,
+)
 
 __all__ = [
     "ArtifactDocument",
@@ -138,4 +142,13 @@ __all__ = [
     "TestPlan",
     "TestCase",
     "TestCaseTraceability",
+    "NfrRequirement",
+    "NfrRisk",
+    "NfrTradeoff",
+    "NfrOpenQuestion",
+    "NfrDecision",
+    "NfrReference",
+    "NfrGlossary",
+    "NfrTextBlock",
+    "NfrTraceability",
 ]
