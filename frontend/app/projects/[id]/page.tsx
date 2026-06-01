@@ -2,6 +2,8 @@
 import { useState, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import {
   AlertTriangle, ArrowLeft, Cpu, History, Pencil, FileText, BookOpen, BookMarked, Layers,
   CheckSquare, Sparkles, Lock, ChevronRight, Check, Circle, X, MessageSquare,
@@ -341,6 +343,21 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
     : tcStatus === 'in_interview' ? 'Draft · in review'
     : 'Generate from FRS'
 
+  // # of the 5 SDLC stages (RU · CB · BRD · FRS · Test Cases) that are validated.
+  const stagesValidated = [
+    ruValidated, cbValidated, brdValidated, frsStatus === 'validated', tcStatus === 'validated',
+  ].filter(Boolean).length
+
+  // Current module — drives the header breadcrumb (a common banner across modules).
+  const viewLabel = view === 'interview' ? 'Requirement Understanding'
+    : view === 'wiki' ? 'Project Wiki'
+    : view === 'ask' ? 'Ask'
+    : view === 'concept-brief' ? 'Concept Brief'
+    : view === 'brd' ? 'BRD'
+    : view === 'frs' ? 'FRS'
+    : view === 'test-cases' ? 'Test Cases'
+    : 'Overview'
+
   // 'in_discover' | 'generating' | 'in_interview' (=generated, chatting) | 'validated' | null (not started)
   function cbStatusBadge() {
     if (!cbStatus) return null
@@ -615,12 +632,9 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
           </div>
         )}
         <div className="flex-1 overflow-y-auto p-8">
-        <div className="max-w-xl mx-auto space-y-6">
+        <div className="max-w-5xl mx-auto space-y-6">
           <div>
             <h2 className="text-2xl font-bold text-[var(--text-primary)] leading-tight">{project.name}</h2>
-            {project.description && (
-              <p className="mt-1.5 text-sm text-[var(--text-secondary)] leading-relaxed">{project.description}</p>
-            )}
             <div className="mt-3 flex flex-wrap gap-2 text-xs text-[var(--text-tertiary)]">
               {project.business_unit && (
                 <span className="rounded-md bg-[var(--bg-elevated)] px-2 py-1">{project.business_unit}</span>
@@ -633,48 +647,99 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
             </div>
           </div>
 
-          {project.apps_in_scope && project.apps_in_scope.length > 0 && (
-            <div>
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">Apps in scope</p>
-              <div className="flex flex-wrap gap-1.5">
-                {project.apps_in_scope.map((app) => (
-                  <span key={app.app_id} className="rounded-full border border-[var(--border-default)] bg-[var(--bg-surface)] px-3 py-1 text-xs text-[var(--text-secondary)]">
-                    {app.name}
-                  </span>
-                ))}
+          <div className="grid gap-6 lg:grid-cols-5">
+            {/* Left — overview + apps (uses the wide canvas) */}
+            <div className="space-y-5 lg:col-span-3">
+              {/* Overview hero card: accent rail, rendered markdown, at-a-glance stats */}
+              <div className="overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--bg-surface)] shadow-[var(--shadow-card)]">
+                <div className="h-1 bg-gradient-to-r from-[var(--accent)] via-emerald-400 to-emerald-200" />
+                <div className="p-5">
+                  <div className="mb-3 flex items-center gap-2">
+                    <span className="grid h-7 w-7 place-items-center rounded-lg bg-[var(--accent-subtle)] text-[var(--accent)]">
+                      <FileText size={14} />
+                    </span>
+                    <p className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">Overview</p>
+                  </div>
+                  {project.description ? (
+                    <div className="text-sm leading-relaxed text-[var(--text-secondary)] [&_a]:font-medium [&_a]:text-[var(--accent)] [&_a]:no-underline hover:[&_a]:underline [&_p]:mb-2 [&_strong]:font-semibold [&_strong]:text-[var(--text-primary)] [&_ul]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:mb-0.5">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{project.description}</ReactMarkdown>
+                    </div>
+                  ) : (
+                    <p className="text-sm italic text-[var(--text-tertiary)]">No description yet — add one from the header ✎.</p>
+                  )}
+                </div>
+                <div className="grid grid-cols-3 divide-x divide-[var(--border-default)] border-t border-[var(--border-default)] bg-[var(--bg-elevated)]/40">
+                  <OverviewStat label="Documents" value={String(project.documents.length)} />
+                  <OverviewStat label="Apps in scope" value={String(project.apps_in_scope?.length ?? 0)} />
+                  <OverviewStat label="Stages validated" value={`${stagesValidated}/5`} />
+                </div>
               </div>
-            </div>
-          )}
 
-          <div>
-            <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">Project Progress</p>
-            <div className="space-y-2">
-              <ProgressStep
-                done={project.documents.length > 0}
-                label="Upload source documents"
-                sublabel={project.documents.length > 0 ? `${project.documents.length} document${project.documents.length !== 1 ? 's' : ''} uploaded` : 'Use the Documents panel to upload'}
-              />
-              <ProgressStep
-                done={cbStatus === 'validated'}
-                inProgress={!!cbStatus && cbStatus !== 'validated'}
-                label="Concept Brief"
-                sublabel={cbSublabel}
-                onClick={() => setView('concept-brief')}
-              />
-              <ProgressStep
-                done={ruValidated}
-                inProgress={!ruValidated}
-                label="Requirement Understanding"
-                sublabel={ruValidated ? 'Validated' : 'Interview required before generating BRD'}
-                onClick={() => setView('interview')}
-              />
-              <ProgressStep
-                done={false}
-                locked={!cbValidated}
-                label="BRD"
-                sublabel={!cbValidated ? 'Unlocks after Concept Brief is validated' : 'Ready to build'}
-                onClick={cbValidated ? () => setView('brd') : undefined}
-              />
+              {project.apps_in_scope && project.apps_in_scope.length > 0 && (
+                <div>
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">Apps in scope</p>
+                  <div className="flex flex-wrap gap-2">
+                    {project.apps_in_scope.map((app) => (
+                      <span key={app.app_id} className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-[var(--bg-surface)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-secondary)]">
+                        <Cpu size={12} className="text-[var(--text-tertiary)]" />
+                        {app.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Right — the full SDLC chain with live status */}
+            <div className="lg:col-span-2">
+              <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] p-4">
+                <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">Project Progress</p>
+                <div className="space-y-2">
+                  <ProgressStep
+                    done={project.documents.length > 0}
+                    label="Upload source documents"
+                    sublabel={project.documents.length > 0 ? `${project.documents.length} document${project.documents.length !== 1 ? 's' : ''} uploaded` : 'Use the Documents panel to upload'}
+                  />
+                  <ProgressStep
+                    done={ruValidated}
+                    inProgress={!ruValidated}
+                    label="Requirement Understanding"
+                    sublabel={ruValidated ? 'Validated' : 'Pending — open the interview'}
+                    onClick={() => setView('interview')}
+                  />
+                  <ProgressStep
+                    done={cbValidated}
+                    inProgress={!!cbStatus && !cbValidated}
+                    label="Concept Brief"
+                    sublabel={cbSublabel}
+                    onClick={() => setView('concept-brief')}
+                  />
+                  <ProgressStep
+                    done={brdValidated}
+                    inProgress={!!brdStatus && !brdValidated}
+                    locked={!cbValidated}
+                    label="BRD"
+                    sublabel={brdSublabel}
+                    onClick={cbValidated ? () => setView('brd') : undefined}
+                  />
+                  <ProgressStep
+                    done={frsStatus === 'validated'}
+                    inProgress={!!frsStatus && frsStatus !== 'validated'}
+                    locked={!brdValidated}
+                    label="FRS"
+                    sublabel={frsSublabel}
+                    onClick={brdValidated ? () => setView('frs') : undefined}
+                  />
+                  <ProgressStep
+                    done={tcStatus === 'validated'}
+                    inProgress={!!tcStatus && tcStatus !== 'validated'}
+                    locked={frsStatus !== 'validated'}
+                    label="Test Cases"
+                    sublabel={tcSublabel}
+                    onClick={frsStatus === 'validated' ? () => setView('test-cases') : undefined}
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -688,43 +753,62 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       {/* Project header */}
-      <header className="h-14 shrink-0 flex items-center justify-between px-4 border-b border-[var(--border-default)] bg-[var(--bg-surface)]">
-        <div className="flex items-center gap-3 min-w-0">
+      <header className="h-14 shrink-0 flex items-center justify-between gap-3 px-3 border-b border-[var(--border-default)] bg-[var(--bg-surface)]">
+        {/* Left — back + breadcrumb (Project ▸ current module) */}
+        <div className="flex items-center gap-2 min-w-0">
           <button
             onClick={() => router.push('/')}
             className="shrink-0 p-1.5 rounded-lg text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"
-            aria-label="Back to dashboard"
+            title="All projects"
+            aria-label="Back to all projects"
           >
             <ArrowLeft size={16} />
           </button>
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              <h1 className="text-sm font-semibold text-[var(--text-primary)] truncate leading-none">
-                {project.name}
-              </h1>
-              <button
-                onClick={() => setEditing(true)}
-                title="Edit project"
-                className="shrink-0 rounded-md p-1 text-[var(--text-tertiary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-              >
-                <Pencil size={12} />
-              </button>
-            </div>
-            {project.description && (
-              <p className="text-[11px] text-[var(--text-secondary)] mt-0.5 truncate">
-                {project.description}
-              </p>
-            )}
-          </div>
+          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-[var(--accent-subtle)] text-xs font-bold text-[var(--accent)]">
+            {project.name.slice(0, 1).toUpperCase()}
+          </span>
+          <button
+            onClick={() => setView(null)}
+            title="Project overview"
+            className="max-w-[220px] shrink truncate text-sm font-semibold text-[var(--text-primary)] transition-colors hover:text-[var(--accent)]"
+          >
+            {project.name}
+          </button>
+          <button
+            onClick={() => setEditing(true)}
+            title="Edit project"
+            className="shrink-0 rounded-md p-1 text-[var(--text-tertiary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+          >
+            <Pencil size={11} />
+          </button>
+          <ChevronRight size={14} className="shrink-0 text-[var(--text-tertiary)]" />
+          <span className="shrink-0 text-sm font-medium text-[var(--text-secondary)]">{viewLabel}</span>
         </div>
-        <button
-          onClick={() => openVersionPanel(`project:${projectId}`)}
-          className="flex items-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-[var(--bg-surface)] px-2.5 py-1.5 text-xs text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"
-          title="Version history"
-        >
-          <History size={12} />
-          History
-        </button>
+
+        {/* Right — at-a-glance meta + history */}
+        <div className="flex shrink-0 items-center gap-2">
+          {project.business_unit && (
+            <span className="hidden items-center rounded-full bg-[var(--bg-elevated)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] lg:inline-flex">
+              {project.business_unit}
+            </span>
+          )}
+          <span
+            title="SDLC stages validated (RU · Concept Brief · BRD · FRS · Test Cases)"
+            className={`hidden items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium sm:inline-flex ${
+              stagesValidated === 5 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+            }`}
+          >
+            <Check size={11} /> {stagesValidated}/5 validated
+          </span>
+          <button
+            onClick={() => openVersionPanel(`project:${projectId}`)}
+            className="flex items-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-[var(--bg-surface)] px-2.5 py-1.5 text-xs text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"
+            title="Version history"
+          >
+            <History size={12} />
+            History
+          </button>
+        </div>
       </header>
 
       {editing && (
@@ -750,6 +834,15 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
 }
 
 // ── ProgressStep ──────────────────────────────────────────────────────────────
+
+function OverviewStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="px-3 py-2.5 text-center">
+      <div className="text-lg font-bold leading-none text-[var(--text-primary)]">{value}</div>
+      <div className="mt-1 text-[10px] uppercase tracking-wide text-[var(--text-tertiary)]">{label}</div>
+    </div>
+  )
+}
 
 function ProgressStep({
   done, inProgress, locked, label, sublabel, onClick,
