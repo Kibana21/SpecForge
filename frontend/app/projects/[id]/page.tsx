@@ -28,13 +28,14 @@ import { InterviewPanel } from '@/app/components/InterviewPanel'
 import { DocumentViewer } from '@/app/components/DocumentViewer'
 import { BrdBuilderView } from '@/app/components/brd/BrdBuilderView'
 import { FrsBuilderView } from '@/app/components/frs/FrsBuilderView'
+import { TestCasesBuilderView } from '@/app/components/testcases/TestCasesBuilderView'
 import { ProjectWiki } from '@/app/components/ProjectWiki'
 import { AskProjectView } from '@/app/components/AskProjectView'
 import type { DocumentRead } from '@/lib/types'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type View = 'interview' | 'wiki' | 'ask' | 'concept-brief' | 'brd' | 'frs' | null
+type View = 'interview' | 'wiki' | 'ask' | 'concept-brief' | 'brd' | 'frs' | 'test-cases' | null
 
 // ── NavItem helper ────────────────────────────────────────────────────────────
 
@@ -147,7 +148,7 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
   const [editing, setEditing] = useState(false)
   const [view, setView] = useState<View>(() => {
     const v = searchParams.get('view')
-    return (v === 'interview' || v === 'wiki' || v === 'ask' || v === 'concept-brief' || v === 'brd' || v === 'frs') ? v : null
+    return (v === 'interview' || v === 'wiki' || v === 'ask' || v === 'concept-brief' || v === 'brd' || v === 'frs' || v === 'test-cases') ? v : null
   })
   const [selectedDoc, setSelectedDoc] = useState<DocumentRead | null>(null)
   const [staleBannerDismissed, setStaleBannerDismissed] = useState<boolean>(() => {
@@ -173,6 +174,14 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
         if (data?.document?.unit_status?.['_current_unit']) return 2000
         return 0
       },
+    },
+  )
+  const { data: tcDetail } = useSWR(
+    `tc-detail-${projectId}`,
+    () => api.testcases.get(projectId),
+    {
+      revalidateOnFocus: false,
+      refreshInterval: (data) => (data?.document?.status === 'generating' ? 2000 : 0),
     },
   )
   const { openVersionPanel } = useProjectContext()
@@ -316,6 +325,22 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
     : frsStageAApproved ? 'Stage 1 approved · Stage 2 ready'
     : 'Draft · in progress'
 
+  // Test Cases status (mirrors the others so the nav reflects validated/draft).
+  const tcStatus = tcDetail?.document?.status ?? null
+  const tcRepairing = Boolean((tcDetail?.document?.unit_status as any)?._repair?.active)
+  function tcStatusBadge() {
+    if (frsStatus !== 'validated') return null
+    if (tcStatus === 'generating') return <span className="text-[9px] rounded px-1.5 py-0.5 bg-blue-100 text-blue-700 font-semibold animate-pulse">{tcRepairing ? 'Fixing…' : 'Generating…'}</span>
+    if (tcStatus === 'validated') return <span className="text-[9px] rounded px-1.5 py-0.5 bg-emerald-100 text-emerald-700 font-semibold">Validated ✓</span>
+    if (tcStatus === 'in_interview') return <span className="text-[9px] rounded px-1.5 py-0.5 bg-amber-100 text-amber-700 font-semibold">Draft</span>
+    return null
+  }
+  const tcSublabel = frsStatus !== 'validated' ? 'Locked — validate FRS first'
+    : tcStatus === 'generating' ? (tcRepairing ? 'Fixing your tests…' : 'Generating test cases…')
+    : tcStatus === 'validated' ? 'Validated'
+    : tcStatus === 'in_interview' ? 'Draft · in review'
+    : 'Generate from FRS'
+
   // 'in_discover' | 'generating' | 'in_interview' (=generated, chatting) | 'validated' | null (not started)
   function cbStatusBadge() {
     if (!cbStatus) return null
@@ -399,13 +424,15 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
           onClick={brdValidated ? () => setView('frs') : undefined}
         />
 
-        {/* 5. Test Cases — unlocks after FRS validated (Stage B complete) */}
+        {/* 5. Test Cases — unlocks after FRS validated */}
         <NavItem
           label="Test Cases"
-          sublabel={frsStatus === 'validated' ? 'Coming soon — FRS validated ✓' : 'Coming soon'}
+          sublabel={tcSublabel}
           icon={<CheckSquare size={14} />}
-          comingSoon
-          locked
+          active={view === 'test-cases'}
+          locked={frsStatus !== 'validated'}
+          badge={tcStatusBadge()}
+          onClick={frsStatus === 'validated' ? () => setView('test-cases') : undefined}
         />
       </div>
     </aside>
@@ -534,6 +561,15 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
     if (view === 'frs') {
       return (
         <FrsBuilderView
+          projectId={projectId}
+          onBack={() => setView(null)}
+        />
+      )
+    }
+
+    if (view === 'test-cases') {
+      return (
+        <TestCasesBuilderView
           projectId={projectId}
           onBack={() => setView(null)}
         />

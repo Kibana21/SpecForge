@@ -1904,3 +1904,214 @@ async def _run_project_chat(
             await redis.aclose()
         except Exception:
             pass
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Test Cases (E3) — Stage A (plan_journeys) + Stage B (author_plan per spec)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+import contextlib as _contextlib
+
+
+@_contextlib.asynccontextmanager
+async def _tc_project_lock(project_id: str):
+    """Per-project Redis lock so only ONE test-case generation runs at a time.
+
+    Celery prefork has multiple worker processes, so duplicate queued tasks could
+    otherwise run concurrently on the same project — each resetting progress and
+    re-authoring (the '16/34 → 0/34' stomp). Duplicates that can't acquire the
+    lock skip. Degrades to no-lock if Redis is unreachable. TTL bounds a crashed
+    holder; released in finally on the happy + error paths.
+    """
+    from redis.asyncio import Redis
+    from app.config import get_settings
+    import uuid as _uuid
+
+    redis = Redis.from_url(get_settings().redis_url, decode_responses=True)
+    key = f"tc_gen_lock:{project_id}"
+    token = _uuid.uuid4().hex
+    owned = False
+    try:
+        try:
+            owned = bool(await redis.set(key, token, nx=True, ex=3600))
+            acquired = owned
+        except Exception:
+            acquired = True  # Redis unavailable → don't block generation
+        yield acquired
+    finally:
+        if owned:
+            try:
+                if (await redis.get(key)) == token:
+                    await redis.delete(key)
+            except Exception:
+                pass
+        try:
+            await redis.aclose()
+        except Exception:
+            pass
+
+
+async def _reset_tc_status_if_stuck(project_id: str) -> None:
+    from uuid import UUID as _UUID
+    from sqlalchemy import select as _select
+    from app.db import AsyncSessionLocal
+    from app.models.artifact import ArtifactDocument
+    async with AsyncSessionLocal() as db2:
+        doc = (await db2.execute(
+            _select(ArtifactDocument).where(
+                ArtifactDocument.project_id == _UUID(project_id),
+                ArtifactDocument.artifact_type == "test_cases",
+            )
+        )).scalar_one_or_none()
+        if doc and doc.status == "generating":
+            doc.status = "in_interview"
+            await db2.commit()
+
+
+@celery_app.task(name="workers.tasks.generate_test_cases", bind=True, max_retries=0,
+                 time_limit=5400, soft_time_limit=5340)
+def generate_test_cases(self, project_id: str) -> dict:
+    return _run_async(_generate_test_cases(project_id))
+
+
+async def _generate_test_cases(project_id: str) -> dict:
+    from uuid import UUID as _UUID
+    from app.db import AsyncSessionLocal
+    from app.models.project import Project
+    from app.services.artifacts.tc_orchestrator import generate_tc_all
+
+    async with _tc_project_lock(project_id) as acquired:
+        if not acquired:
+            log.warning("generate_test_cases skipped — generation already running for %s", project_id)
+            return {"ok": True, "skipped": "already_running"}
+        async with AsyncSessionLocal() as db:
+            project = await db.get(Project, _UUID(project_id))
+            if project is None:
+                log.error("generate_test_cases project_id=%s not found", project_id)
+                return {"ok": False, "error": "project_not_found"}
+            try:
+                await generate_tc_all(project, db, run_stage_b=True)
+                return {"ok": True}
+            except Exception:
+                log.exception("generate_test_cases failed project_id=%s", project_id)
+                await _reset_tc_status_if_stuck(project_id)
+                raise
+
+
+@celery_app.task(name="workers.tasks.design_all_test_plans", bind=True, max_retries=0,
+                 time_limit=5400, soft_time_limit=5340)
+def design_all_test_plans(self, project_id: str, skip_designed: bool = True,
+                          module_row_key: str | None = None) -> dict:
+    return _run_async(_design_all_test_plans(project_id, skip_designed, module_row_key))
+
+
+async def _design_all_test_plans(project_id: str, skip_designed: bool,
+                                 module_row_key: str | None = None) -> dict:
+    from uuid import UUID as _UUID
+    from app.db import AsyncSessionLocal
+    from app.models.project import Project
+    from app.services.artifacts.tc_orchestrator import run_tc_stage_b
+
+    async with _tc_project_lock(project_id) as acquired:
+        if not acquired:
+            log.warning("design_all_test_plans skipped — generation already running for %s", project_id)
+            return {"ok": True, "skipped": "already_running"}
+        async with AsyncSessionLocal() as db:
+            project = await db.get(Project, _UUID(project_id))
+            if project is None:
+                return {"ok": False, "error": "project_not_found"}
+            try:
+                await run_tc_stage_b(project, db, skip_designed=skip_designed, module_row_key=module_row_key)
+                return {"ok": True}
+            except Exception:
+                log.exception("design_all_test_plans failed project_id=%s", project_id)
+                await _reset_tc_status_if_stuck(project_id)
+                raise
+
+
+@celery_app.task(name="workers.tasks.regenerate_test_cases_plan", bind=True, max_retries=2,
+                 default_retry_delay=30, time_limit=900, soft_time_limit=840)
+def regenerate_test_cases_plan(self, project_id: str, spec_row_key: str) -> dict:
+    return _run_async(_regenerate_test_cases_plan(project_id, spec_row_key))
+
+
+async def _regenerate_test_cases_plan(project_id: str, spec_row_key: str) -> dict:
+    from uuid import UUID as _UUID
+    from app.db import AsyncSessionLocal
+    from app.models.project import Project
+    from app.services.artifacts.tc_orchestrator import regenerate_tc_plan
+
+    async with AsyncSessionLocal() as db:
+        project = await db.get(Project, _UUID(project_id))
+        if project is None:
+            return {"ok": False, "error": "project_not_found"}
+        try:
+            await regenerate_tc_plan(project, spec_row_key, db)
+            return {"ok": True}
+        except Exception:
+            log.exception("regenerate_test_cases_plan failed project_id=%s spec=%s", project_id, spec_row_key)
+            raise
+
+
+@celery_app.task(name="workers.tasks.regen_thin_test_cases", bind=True, max_retries=0,
+                 time_limit=5400, soft_time_limit=5340)
+def regen_thin_test_cases(self, project_id: str) -> dict:
+    """Re-author only the specs that still fail validation (the 'thin' ones).
+
+    The API runs cleanup_tc_refs inline before dispatching this, so by the time
+    we run, orphan_case is already cleared and the only remaining regen-fixable
+    findings are richness/coverage gaps — exactly the specs we re-author here.
+    """
+    return _run_async(_regen_thin_test_cases(project_id))
+
+
+async def _regen_thin_test_cases(project_id: str) -> dict:
+    from uuid import UUID as _UUID
+    from app.db import AsyncSessionLocal
+    from app.models.project import Project
+    from app.services.artifacts.tc_orchestrator import regen_thin_tc
+
+    async with _tc_project_lock(project_id) as acquired:
+        if not acquired:
+            log.warning("regen_thin_test_cases skipped — generation already running for %s", project_id)
+            return {"ok": True, "skipped": "already_running"}
+        async with AsyncSessionLocal() as db:
+            project = await db.get(Project, _UUID(project_id))
+            if project is None:
+                return {"ok": False, "error": "project_not_found"}
+            try:
+                await regen_thin_tc(project, db)
+                return {"ok": True}
+            except Exception:
+                log.exception("regen_thin_test_cases failed project_id=%s", project_id)
+                await _reset_tc_status_if_stuck(project_id)
+                raise
+
+
+@celery_app.task(name="workers.tasks.gap_fill_test_cases", bind=True, max_retries=0,
+                 time_limit=5400, soft_time_limit=5340)
+def gap_fill_test_cases(self, project_id: str, spec_row_key: str | None = None) -> dict:
+    return _run_async(_gap_fill_test_cases(project_id, spec_row_key))
+
+
+async def _gap_fill_test_cases(project_id: str, spec_row_key: str | None = None) -> dict:
+    from uuid import UUID as _UUID
+    from app.db import AsyncSessionLocal
+    from app.models.project import Project
+    from app.services.artifacts.tc_orchestrator import gap_fill_tc
+
+    async with _tc_project_lock(project_id) as acquired:
+        if not acquired:
+            log.warning("gap_fill_test_cases skipped — generation already running for %s", project_id)
+            return {"ok": True, "skipped": "already_running"}
+        async with AsyncSessionLocal() as db:
+            project = await db.get(Project, _UUID(project_id))
+            if project is None:
+                return {"ok": False, "error": "project_not_found"}
+            try:
+                await gap_fill_tc(project, db, spec_row_key=spec_row_key)
+                return {"ok": True}
+            except Exception:
+                log.exception("gap_fill_test_cases failed project_id=%s", project_id)
+                await _reset_tc_status_if_stuck(project_id)
+                raise

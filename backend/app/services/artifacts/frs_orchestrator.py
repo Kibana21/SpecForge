@@ -1493,6 +1493,65 @@ async def _emit_design_messages(
 FIGMA_SKIP_SENTINEL = "__none__"
 
 
+async def _ensure_sentinel_screen(
+    document_id: uuid.UUID, spec_row_key: str, db: AsyncSession,
+    *, user_id: uuid.UUID | None = None, force: bool = False,
+) -> bool:
+    """Ensure the spec has an ACTIVE sentinel ('UI design TBD') screen.
+
+    Robust to every prior state — no active screens, a soft-removed sentinel from
+    a botched run, or live screens with empty links. Returns True if it changed
+    anything, False if no change was needed.
+
+    force=False (bulk skip): leave specs that already have a real Figma link
+    untouched. force=True (explicit per-spec skip): override a real link with the
+    sentinel — the user is deliberately opting out.
+
+    Does NOT use upsert_frs_rows (whose doc-wide soft-delete would clobber other
+    specs' screens); reactivates via versioned edit or inserts directly.
+    """
+    from app.models.frs import FrsScreen
+
+    rows = (
+        await db.execute(select(FrsScreen).where(
+            FrsScreen.document_id == document_id,
+            FrsScreen.row_key.like(f"{spec_row_key}-SCR-%"),
+            FrsScreen.is_current.is_(True),
+        ))
+    ).scalars().all()
+    active = [r for r in rows if r.status == "active"]
+
+    if not force and any(r.figma_link and r.figma_link != FIGMA_SKIP_SENTINEL for r in active):
+        return False  # has a real link and we're not forcing
+    if all(r.figma_link == FIGMA_SKIP_SENTINEL for r in active) and active:
+        return False  # every active screen is already a sentinel
+
+    if active:
+        changed = False
+        for r in active:
+            if not r.is_locked:
+                await edit_frs_row(document_id, "frs_screens", r.id,
+                                   {"figma_link": FIGMA_SKIP_SENTINEL}, db, user_id=user_id)
+                changed = True
+        return changed
+
+    # No active screen — reactivate a soft-removed one (versioned) or insert fresh.
+    removed = next((r for r in rows if r.status == "removed" and not r.is_locked), None)
+    if removed is not None:
+        await edit_frs_row(document_id, "frs_screens", removed.id,
+                           {"figma_link": FIGMA_SKIP_SENTINEL}, db, user_id=user_id)
+        return True
+    db.add(FrsScreen(
+        document_id=document_id, row_key=f"{spec_row_key}-SCR-1", version=1,
+        is_current=True, is_locked=False, status="active", source="human", created_by=user_id,
+        spec_row_key=spec_row_key, screen_name="UI design TBD", figma_link=FIGMA_SKIP_SENTINEL,
+        purpose="Placeholder — UI specification deferred (no Figma yet).",
+        user_roles=[], layout="", navigation="", interactive_behavior="",
+    ))
+    await db.flush()
+    return True
+
+
 async def _load_spec_row(
     document_id: uuid.UUID, spec_row_key: str, db: AsyncSession,
 ) -> Any:
@@ -1552,15 +1611,10 @@ async def set_figma_link(
     screens = await _current_screens_for_spec(doc.id, spec_row_key, db)
 
     if link == FIGMA_SKIP_SENTINEL:
-        # User opted out → mark every screen with the sentinel, no regen
-        for s in screens:
-            if s.is_locked:
-                continue
-            await edit_frs_row(
-                doc.id, "frs_screens", s.id,
-                {"figma_link": FIGMA_SKIP_SENTINEL},
-                db, user_id=user_id,
-            )
+        # User opted out → ensure an active sentinel screen exists (creating a
+        # placeholder when the spec's UI was blocked at Stage B and has no screens
+        # yet), so the validator sees a non-blocking skip instead of staying blocked.
+        await _ensure_sentinel_screen(doc.id, spec_row_key, db, user_id=user_id, force=True)
         log.info(
             "frs.figma_link.set",
             extra={
@@ -1573,7 +1627,7 @@ async def set_figma_link(
             "spec_row_key": spec_row_key,
             "link": FIGMA_SKIP_SENTINEL,
             "regenerated": False,
-            "screen_count": len(screens),
+            "screen_count": max(len(screens), 1),
         }
 
     # Real link → write it onto each screen (or create a placeholder)
@@ -1633,6 +1687,71 @@ async def set_figma_link(
         "regenerated": True,
         "screen_count": len(screens) or 1,
     }
+
+
+async def skip_ui_pending(project: Project, db: AsyncSession) -> dict[str, Any]:
+    """Bulk "Skip — UI design TBD": mark every UI-pending spec as skipped.
+
+    A spec is UI-pending when its module exposes a ui_surface interface but the
+    spec has no real Figma link. For each such spec we record the __none__
+    sentinel (creating a placeholder screen when none exist) so the validator's
+    blocking `figma_link_missing` becomes the non-blocking `figma_link_skipped`.
+    Locked + already-skipped specs are left untouched. Returns {skipped, specs}.
+    """
+    from app.models.frs import FrsModuleInterface, FrsScreen, FrsSpec
+
+    doc = await _ensure_frs_document(project.id, db)
+    specs = (
+        await db.execute(select(FrsSpec).where(
+            FrsSpec.document_id == doc.id, FrsSpec.is_current.is_(True), FrsSpec.status == "active",
+        ))
+    ).scalars().all()
+    ui_modules = {
+        i.module_row_key for i in (
+            await db.execute(select(FrsModuleInterface).where(
+                FrsModuleInterface.document_id == doc.id,
+                FrsModuleInterface.is_current.is_(True),
+                FrsModuleInterface.status == "active",
+                FrsModuleInterface.interface_kind == "ui_surface",
+            ))
+        ).scalars().all()
+    }
+
+    skipped: list[str] = []
+    for spec in specs:
+        if spec.module_row_key not in ui_modules:
+            continue
+        if await _ensure_sentinel_screen(doc.id, spec.row_key, db, user_id=None):
+            skipped.append(spec.row_key)
+
+    return {"skipped": len(skipped), "specs": skipped}
+
+
+async def clean_dangling_deps(project: Project, db: AsyncSession) -> dict[str, Any]:
+    """Strip depends_on entries that point to non-existent FRS specs.
+
+    Clears blocking `depends_on_missing` findings (e.g. a stub referencing a
+    cross-cutting FRS that was never generated). Versioned edit, reversible.
+    Returns {cleaned, specs}.
+    """
+    from app.models.frs import FrsSpec
+
+    doc = await _ensure_frs_document(project.id, db)
+    specs = (
+        await db.execute(select(FrsSpec).where(
+            FrsSpec.document_id == doc.id, FrsSpec.is_current.is_(True), FrsSpec.status == "active",
+        ))
+    ).scalars().all()
+    valid_keys = {s.row_key for s in specs}
+    cleaned: list[str] = []
+    for spec in specs:
+        deps = spec.depends_on or []
+        kept = [d for d in deps if d in valid_keys]
+        if len(kept) != len(deps) and not spec.is_locked:
+            await edit_frs_row(doc.id, "frs_specs", spec.id, {"depends_on": kept}, db)
+            cleaned.append(spec.row_key)
+
+    return {"cleaned": len(cleaned), "specs": cleaned}
 
 
 async def regenerate_frs_spec(

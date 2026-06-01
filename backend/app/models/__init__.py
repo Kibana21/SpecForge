@@ -45,6 +45,9 @@ from app.models.frs import (
     FrsBusinessRule, FrsAcceptanceScenario, FrsFunctionalRequirement,
     FrsTraceability,
 )
+from app.models.test_cases import (
+    TestSuite, TestPlan, TestCase, TestCaseTraceability,
+)
 
 __all__ = [
     "ArtifactDocument",
@@ -131,4 +134,8 @@ __all__ = [
     "FrsAcceptanceScenario",
     "FrsFunctionalRequirement",
     "FrsTraceability",
+    "TestSuite",
+    "TestPlan",
+    "TestCase",
+    "TestCaseTraceability",
 ]

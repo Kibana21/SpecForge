@@ -58,6 +58,11 @@ import type {
   UnderstandingDetail,
   ProjectLineage,
   ResolvedFact,
+  TestCasesDetail,
+  TestCasesReadiness,
+  TestCasesCoverage,
+  TestCasesFindingsResponse,
+  TestCaseRow,
 } from './types'
 import { tokenStore } from './auth/tokenStore'
 
@@ -571,6 +576,11 @@ export const api = {
         `/api/projects/${projectId}/artifacts/frs/specs/${specRowKey}/figma-link`,
         { method: 'POST', body: JSON.stringify(body) },
       ),
+    skipUiPending: (projectId: string, clearDanglingDeps = true) =>
+      apiFetch<{ skipped_ui: number; cleared_deps: number; detail: FrsDetail }>(
+        `/api/projects/${projectId}/artifacts/frs/skip-ui-pending`,
+        { method: 'POST', body: JSON.stringify({ clear_dangling_deps: clearDanglingDeps }) },
+      ),
     coverage: (projectId: string) =>
       apiFetch<FrsCoverage>(`/api/projects/${projectId}/artifacts/frs/coverage`),
     exportBundle: (projectId: string) =>
@@ -580,6 +590,67 @@ export const api = {
         `/api/projects/${projectId}/artifacts/frs/design-all-modules`,
         { method: 'POST', body: JSON.stringify({ skip_designed: skipDesigned }) },
       ),
+  },
+
+  testcases: {
+    get: (projectId: string) =>
+      apiFetch<TestCasesDetail>(`/api/projects/${projectId}/artifacts/test_cases`),
+    readiness: (projectId: string) =>
+      apiFetch<TestCasesReadiness>(`/api/projects/${projectId}/artifacts/test_cases/readiness`, { method: 'POST' }),
+    generate: (projectId: string) =>
+      apiFetch<TestCasesDetail>(`/api/projects/${projectId}/artifacts/test_cases/generate`, {
+        method: 'POST', body: JSON.stringify({}),
+      }),
+    designAllPlans: (
+      projectId: string,
+      opts?: { skipDesigned?: boolean; moduleRowKey?: string },
+    ) =>
+      apiFetch<TestCasesDetail>(`/api/projects/${projectId}/artifacts/test_cases/design-all-plans`, {
+        method: 'POST',
+        body: JSON.stringify({
+          skip_designed: opts?.skipDesigned ?? true,
+          module_row_key: opts?.moduleRowKey,
+        }),
+      }),
+    regeneratePlan: (projectId: string, specRowKey: string) =>
+      apiFetch<TestCasesDetail>(`/api/projects/${projectId}/artifacts/test_cases/plans/${specRowKey}/regenerate`, { method: 'POST' }),
+    gapFill: (projectId: string, specRowKey?: string) =>
+      apiFetch<TestCasesDetail>(
+        specRowKey
+          ? `/api/projects/${projectId}/artifacts/test_cases/plans/${specRowKey}/gap-fill`
+          : `/api/projects/${projectId}/artifacts/test_cases/gap-fill`,
+        { method: 'POST' },
+      ),
+    repair: (projectId: string) =>
+      apiFetch<{ cleanup: { cases_cleaned: number; refs_removed: number; traces_removed: number }; detail: TestCasesDetail }>(
+        `/api/projects/${projectId}/artifacts/test_cases/repair`, { method: 'POST' },
+      ),
+    resetGenerating: (projectId: string) =>
+      apiFetch<{ status: string }>(`/api/projects/${projectId}/artifacts/test_cases/reset-generating`, { method: 'POST' }),
+    coverage: (projectId: string) =>
+      apiFetch<TestCasesCoverage>(`/api/projects/${projectId}/artifacts/test_cases/coverage`),
+    findings: (projectId: string) =>
+      apiFetch<TestCasesFindingsResponse>(`/api/projects/${projectId}/artifacts/test_cases/findings`),
+    validate: (projectId: string) =>
+      apiFetch<TestCasesFindingsResponse>(`/api/projects/${projectId}/artifacts/test_cases/validate`, { method: 'POST' }),
+    addCase: (projectId: string, planRowKey: string, body: Record<string, unknown>) =>
+      apiFetch<{ row_key: string }>(`/api/projects/${projectId}/artifacts/test_cases/plans/${planRowKey}/cases`, {
+        method: 'POST', body: JSON.stringify(body),
+      }),
+    editRow: (
+      projectId: string, table: string, rowId: string,
+      fields: Record<string, unknown>, opts?: { lock?: boolean; expected_version?: number },
+    ) =>
+      apiFetch<{ id: string; row_key: string; version: number }>(
+        `/api/projects/${projectId}/artifacts/test_cases/${table}/${rowId}/edit`,
+        { method: 'POST', body: JSON.stringify({ fields, ...opts }) },
+      ),
+    deleteRow: (projectId: string, table: string, rowId: string) =>
+      apiFetch<{ deleted: boolean }>(`/api/projects/${projectId}/artifacts/test_cases/${table}/${rowId}/delete`, { method: 'POST' }),
+    unlockRow: (projectId: string, table: string, rowId: string) =>
+      apiFetch<{ unlocked: boolean }>(`/api/projects/${projectId}/artifacts/test_cases/${table}/${rowId}/unlock`, { method: 'POST' }),
+    rowHistory: (projectId: string, table: string, rowId: string) =>
+      apiFetch<{ versions: TestCaseRow[] }>(`/api/projects/${projectId}/artifacts/test_cases/${table}/${rowId}/history`),
   },
 
   apps: {

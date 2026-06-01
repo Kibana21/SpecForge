@@ -305,3 +305,30 @@ async def test_validator_summary_counts_blocking_correctly(client):
     data = res.json()["data"]
     summary = data["summary"]
     assert summary["blocking"] == summary["critical"] + summary["major"]
+
+
+async def test_skip_ui_pending_unblocks_validation(client):
+    """Bulk skip-ui-pending sentinels all UI-pending specs + clears dangling deps,
+    turning blocking figma/depends_on findings into non-blocking warnings."""
+    project_id, detail = await _setup_designed(client)
+    # Introduce a dangling dependency so depends_on_missing is blocking too.
+    spec = _get_spec(detail, "M001-FRS001")
+    await client.post(
+        f"/api/projects/{project_id}/artifacts/frs/frs_specs/{spec['id']}/edit",
+        json={"fields": {"depends_on": ["GHOST-FRS-999"]}, "lock": False},
+    )
+    before = (await client.get(f"/api/projects/{project_id}/artifacts/frs/findings")).json()["data"]
+    assert before["summary"]["blocking"] > 0
+
+    res = await client.post(f"/api/projects/{project_id}/artifacts/frs/skip-ui-pending", json={})
+    assert res.status_code == 200, res.text
+    body = res.json()["data"]
+    assert body["skipped_ui"] >= 1
+    assert body["cleared_deps"] >= 1
+
+    after = (await client.get(f"/api/projects/{project_id}/artifacts/frs/findings")).json()["data"]
+    # No figma_link_missing or depends_on_missing remain; they became warnings/cleared.
+    ids = {f["check_id"] for f in after["findings"]}
+    assert "figma_link_missing" not in ids
+    assert "depends_on_missing" not in ids
+    assert after["summary"]["blocking"] < before["summary"]["blocking"]

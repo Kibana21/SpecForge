@@ -12,9 +12,10 @@ class UnitContext:
     app_brain: str
     doc_sections: str           # from depth_search() — caller provides this
     cb_context: str
-    brd_context: str            # populated for artifact_type='frs'
+    brd_context: str            # populated for artifact_type in ('frs','test_cases')
     discover_qa: str
     combined: str               # convenience: all layers concatenated
+    frs_context: str = ""       # populated for artifact_type='test_cases'
 
 
 # Per-unit CB element inclusion map: which CB tables to project for each BRD unit
@@ -63,6 +64,13 @@ def project_for_unit(
         # FRS modularize grounds on the entire CB + entire BRD (full corpus rule).
         cb_context = bundle.cb.formatted_context
         brd_context = bundle.brd.formatted_context if bundle.brd else "(no BRD)"
+    elif artifact_type == "test_cases":
+        # Test-case generation grounds on the entire FRS + BRD + CB (full corpus
+        # rule). The FRS is the keystone; BRD provides outcome framing for the
+        # transitive must-BR rollup. frs_context lands in the combined block via
+        # the dedicated FRS section appended below.
+        cb_context = bundle.cb.formatted_context
+        brd_context = bundle.brd.formatted_context if bundle.brd else "(no BRD)"
     else:
         # For unknown artifact types, pass the full CB context
         cb_context = bundle.cb.formatted_context
@@ -79,6 +87,12 @@ def project_for_unit(
     combined_parts.append(cb_context)
     if brd_context:
         combined_parts.append(brd_context)
+
+    frs_context = ""
+    if artifact_type == "test_cases":
+        frs_context = bundle.frs.formatted_context if getattr(bundle, "frs", None) else "(no FRS)"
+        combined_parts.append(frs_context)
+
     combined = "\n\n".join(p for p in combined_parts if p.strip())
 
     return UnitContext(
@@ -88,6 +102,7 @@ def project_for_unit(
         brd_context=brd_context,
         discover_qa=bundle.cb.discover_qa,
         combined=combined,
+        frs_context=frs_context,
     )
 
 

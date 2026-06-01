@@ -886,6 +886,37 @@ async def set_frs_figma_link_endpoint(
     })
 
 
+class _SkipUiIn(BaseModel):
+    clear_dangling_deps: bool = True
+
+
+@router.post("/projects/{project_id}/artifacts/frs/skip-ui-pending")
+async def skip_ui_pending_endpoint(
+    project_id: UUID,
+    body: _SkipUiIn = Body(default_factory=_SkipUiIn),
+    project: Project = Depends(get_project_or_404),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Bulk 'Skip — UI design TBD' across all UI-pending specs so the FRS can be
+    validated without Figma links. Also clears dangling depends_on refs by default.
+    In-process (no regen); safe to re-run (idempotent)."""
+    from app.services.artifacts.frs_orchestrator import clean_dangling_deps, skip_ui_pending
+
+    skip_result = await skip_ui_pending(project, db)
+    dep_result = {"cleaned": 0, "specs": []}
+    if body.clear_dangling_deps:
+        dep_result = await clean_dangling_deps(project, db)
+    await db.commit()
+    return ok({
+        "skipped_ui": skip_result["skipped"],
+        "skipped_specs": skip_result["specs"],
+        "cleared_deps": dep_result["cleaned"],
+        "cleared_dep_specs": dep_result["specs"],
+        "detail": await get_frs_detail(project_id, db),
+    })
+
+
 @router.get("/projects/{project_id}/artifacts/frs/coverage")
 async def get_frs_coverage(
     project_id: UUID,

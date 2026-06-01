@@ -1254,3 +1254,193 @@ export interface FrsFigmaLinkResponse {
   screen_count: number
   detail?: FrsDetail
 }
+
+// ── Test Cases (E3) ──────────────────────────────────────────────────────────
+
+export type TcTestType = 'functional' | 'integration' | 'e2e' | 'negative' | 'edge_case' | 'responsive'
+export type TcPriority = 'P0' | 'P1' | 'P2' | 'P3'
+export type TcSourceKind =
+  | 'acceptance_scenario' | 'functional_requirement' | 'business_rule'
+  | 'independent_test' | 'screen' | 'manual'
+export type TcTraceKind =
+  | 'frs_spec' | 'frs_acceptance_scenario' | 'frs_functional_requirement'
+  | 'frs_business_rule' | 'frs_screen' | 'brd_business_requirement' | 'within_test_cases'
+
+export interface TcTraceRow {
+  source_table: string
+  source_row_key: string
+  target_kind: TcTraceKind
+  target_ref: string
+  target_label: string
+  confidence: string
+}
+
+export interface TcObservability { kind: string; signal: string; assertion: string }
+export interface TcStep { step: string; expected?: string }
+
+export interface TestCaseRow {
+  id: string
+  row_key: string
+  version: number
+  is_current: boolean
+  is_locked: boolean
+  status: 'active' | 'removed'
+  source: 'ai' | 'human' | 'regeneration'
+  created_at: string
+  plan_row_key: string
+  spec_row_key: string
+  module_row_key: string
+  title: string
+  test_type: TcTestType
+  source_kind: TcSourceKind
+  source_ref: string | null
+  given: string
+  when: string
+  then: string
+  steps: TcStep[]
+  preconditions: string
+  key_assertions: string[]
+  test_data: Record<string, unknown>
+  expected_result: string
+  expected_observability: TcObservability[]
+  viewports: string[]
+  auth_required: boolean
+  auth_role: string | null
+  priority: TcPriority
+  fr_refs: string[]
+  scenario_refs: string[]
+  br_refs: string[]
+  traceability?: TcTraceRow[]
+}
+
+export interface TestPlanRow {
+  id: string
+  row_key: string
+  version: number
+  is_locked: boolean
+  source: string
+  suite_row_key: string
+  spec_row_key: string
+  module_row_key: string
+  title: string
+  preconditions: string
+  test_data_notes: string
+  coverage_targets: Record<string, string[]>
+  outcomes_summary: string
+  priority: TcPriority
+  summary: string
+  completeness: number
+  confidence: string
+  cases: TestCaseRow[]
+  traceability?: TcTraceRow[]
+}
+
+export interface TestSuiteRow {
+  id: string
+  row_key: string
+  is_locked: boolean
+  module_row_key: string
+  title: string
+  journey_overview: string
+  test_strategy: string
+  outcomes_summary: string
+  completeness: number
+  confidence: string
+  plans: TestPlanRow[]
+}
+
+export interface TestCasesDocument {
+  id: string
+  project_id: string
+  artifact_type: string
+  status: 'in_interview' | 'generating' | 'validated' | string | null
+  unit_status: Record<string, unknown>
+  validated_at: string | null
+  created_at: string
+  updated_at: string | null
+}
+
+export interface TestCasesDetail {
+  document: TestCasesDocument | null
+  suites: TestSuiteRow[]
+  messages: Array<{ id: string; seq: number; role: string; content: string; meta: Record<string, unknown>; created_at: string }>
+  sources: Array<{ id: string; source_document_id: string | null; included: boolean }>
+}
+
+export interface TestCasesReadiness {
+  can_generate: boolean
+  blocking_reason: string | null
+  frs_ready: boolean
+  frs_status: string | null
+  brd_ready: boolean
+  brd_status: string | null
+  cb_ready: boolean
+  frs_module_count: number
+  frs_spec_count: number
+}
+
+export interface TcCoverageElement {
+  kind: string
+  frs_row_key: string
+  is_negative: boolean
+  covered_by: string[]
+}
+export interface TcCoverageSpec {
+  spec_row_key: string
+  title: string
+  priority: TcPriority
+  pct: number
+  negative_ok: boolean
+  elements: TcCoverageElement[]
+}
+export interface TcModuleOutcomes {
+  outcomes_proven: string[]
+  risk_coverage: { negative: number; edge: number }
+  type_distribution: Record<string, number>
+  uncovered_outcomes: string[]
+}
+export interface TcCoverageModule {
+  module_row_key: string
+  title: string
+  pct: number
+  plan_count: number
+  case_count: number
+  specs: TcCoverageSpec[]
+  outcomes: TcModuleOutcomes
+}
+export interface TcBrdChainEntry {
+  br_row_key: string
+  title?: string
+  priority: string
+  implementing_specs: string[]
+  tested: boolean
+  reason: string
+}
+export interface TestCasesCoverage {
+  project_pct: number
+  modules: TcCoverageModule[]
+  brd_chain: TcBrdChainEntry[]
+  outcomes: Record<string, TcModuleOutcomes>
+  summary: {
+    total_elements: number
+    covered: number
+    must_br_total: number
+    must_br_tested: number
+    must_br_untested: number
+  }
+}
+
+export interface TestCasesFinding {
+  check_id: string
+  description: string
+  group: 'critical' | 'major' | 'minor' | 'coverage' | 'warnings'
+  row_key: string | null
+  suggested_fix: string
+  target_ref: string | null
+}
+export interface TestCasesFindingsResponse {
+  ok?: boolean
+  summary: { total: number; blocking: number; critical?: number; major?: number; minor?: number; coverage?: number; warnings?: number }
+  findings: TestCasesFinding[]
+  locked_row_count?: number
+}

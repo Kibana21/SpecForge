@@ -34,6 +34,33 @@ class Settings(BaseSettings):
     gemini_project_id: str = ""
     gemini_location: str = "global"  # Gemini 3.x text models are served only from `global`
 
+    # Test Cases (E3): FRS specs authored concurrently in Stage B (spec-level
+    # parallelism). Higher = faster wall-clock; lower if Vertex returns 429s.
+    tc_parallel_specs: int = 6
+    # Test Cases use a dedicated LM with a SMALL "thinking" budget ("low") — fast
+    # like "disable" but with enough reasoning to keep instruction-following tight
+    # (e.g. no accidental language drift). Options: "disable" | "low" | "medium" |
+    # "" (full). Scoped to test-case generation only; BRD/FRS keep their default LM.
+    tc_reasoning_effort: str = "low"
+    # Output budget for the test-cases LM. With a thinking budget (reasoning_effort
+    # != "disable") the model's thinking tokens count toward this cap, so it must
+    # be generous or the structured case payload gets truncated mid-JSON.
+    tc_max_tokens: int = 40000
+    # Quality for the repair / "Clean up & fix" pass: ChainOfThought (an explicit
+    # reasoning pass) so re-authored cases are rich (≥2 assertions, concrete
+    # expected_result) instead of thin. "medium" reasoning is the sweet spot —
+    # markedly richer than the fast bulk path (low + Predict) yet far fewer
+    # tokens/call than "high", so it won't blow Vertex's tokens-per-minute quota
+    # at concurrency. Bump to "high" only if your quota is generous.
+    tc_reasoning_effort_high: str = "medium"
+    tc_max_tokens_high: int = 48000
+    # Concurrency for the repair pass. It runs alone (no bulk gen competing for
+    # Vertex), but ChainOfThought calls are token-heavy, so going too wide trips
+    # Vertex's per-minute quota → calls hang behind retries (looks "stuck"), which
+    # is SLOWER, not faster. 8 is a stable-fast default. Capped at the thin-spec
+    # count at run time. Tunable via TC_REPAIR_PARALLEL_SPECS (raise if quota allows).
+    tc_repair_parallel_specs: int = 8
+
     # Embedding (kept for project/app similarity only)
     embedding_model: str = "text-embedding-004"
     embedding_dimensions: int = 768

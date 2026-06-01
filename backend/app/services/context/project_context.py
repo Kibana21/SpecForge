@@ -109,6 +109,35 @@ class BrdLayer:
     formatted_context: str           # full BRD projection block for prompts
 
 
+# ── FRS layer (populated when artifact_type=='test_cases') ────────────────────
+
+@dataclass
+class FrsLayer:
+    """All validated FRS rows + traceability; ready for Test-Case prompt injection.
+
+    Loaded for test-case generation. Test cases trace into FRS specs / acceptance
+    scenarios / functional requirements / business rules / screens, and roll up
+    transitively to BRD business requirements via the FRS→BR traceability rows.
+    """
+    frs_document_id: str | None
+    frs_status: str | None           # in_interview | validated | None
+    frs_validated_at: str | None
+    frs_snapshot_key: str | None
+    # All current, active rows keyed by table
+    modules: list[dict]
+    specs: list[dict]                # KEYSTONE — full spec text + sub-section prose
+    acceptance_scenarios: list[dict]
+    functional_requirements: list[dict]
+    business_rules: list[dict]
+    screens: list[dict]
+    ui_components: list[dict]
+    endpoints: list[dict]
+    data_entities: list[dict]
+    module_actors: list[dict]
+    traceability: list[dict]         # all FrsTraceability rows (incl. FRS→BR)
+    formatted_context: str           # full FRS projection block for prompts
+
+
 # ── Readiness ─────────────────────────────────────────────────────────────────
 
 @dataclass
@@ -123,6 +152,8 @@ class BundleReadiness:
     cb_status: str | None
     brd_ready: bool         # True for non-FRS artifacts; or when brd_status == "validated"
     brd_status: str | None
+    frs_ready: bool         # True unless artifact_type=='test_cases'; else frs_status=='validated'
+    frs_status: str | None
     can_generate: bool
     blocking_reason: str | None
 
@@ -137,7 +168,8 @@ class ProjectContextBundle:
     apps: AppLayer
     docs: DocsLayer
     cb: CbLayer
-    brd: BrdLayer | None            # populated only when artifact_type == 'frs'
+    brd: BrdLayer | None            # populated when artifact_type in ('frs', 'test_cases')
+    frs: "FrsLayer | None"          # populated only when artifact_type == 'test_cases'
     intake: "IntakeLayer"           # validated RU + resolved clarifications + wiki concepts
     readiness: BundleReadiness
     snapshot_timestamp: str     # ISO-8601 when the bundle was assembled
@@ -185,12 +217,17 @@ async def gather_project_context(
     intake_layer = await build_intake_layer(project_id, db)
 
     brd_layer: BrdLayer | None = None
-    if artifact_type == "frs":
+    if artifact_type in ("frs", "test_cases"):
         from app.services.context.brd_layer import build_brd_layer
         brd_layer = await build_brd_layer(project_id, db)
 
+    frs_layer: "FrsLayer | None" = None
+    if artifact_type == "test_cases":
+        from app.services.context.frs_layer import build_frs_layer
+        frs_layer = await build_frs_layer(project_id, db)
+
     readiness = _compute_readiness(
-        apps_layer, docs_layer, cb_layer, brd_layer,
+        apps_layer, docs_layer, cb_layer, brd_layer, frs_layer,
         artifact_type=artifact_type,
     )
 
@@ -202,6 +239,7 @@ async def gather_project_context(
         docs=docs_layer,
         cb=cb_layer,
         brd=brd_layer,
+        frs=frs_layer,
         intake=intake_layer,
         readiness=readiness,
         snapshot_timestamp=datetime.now(timezone.utc).isoformat(),
@@ -213,14 +251,16 @@ def _compute_readiness(
     docs: DocsLayer,
     cb: CbLayer,
     brd: BrdLayer | None,
+    frs: "FrsLayer | None" = None,
     *,
     artifact_type: str = "brd",
 ) -> BundleReadiness:
     docs_all_ready = docs.pending_count == 0 and docs.failed_count == 0
     cb_ready = cb.cb_status == "validated"
-    # For non-FRS artifacts the BRD gate doesn't apply (always True);
-    # for FRS, the BRD must exist and be validated.
-    brd_ready = (artifact_type != "frs") or (brd is not None and brd.brd_status == "validated")
+    # The BRD gate applies to FRS + test_cases (both need a validated BRD).
+    brd_ready = (artifact_type not in ("frs", "test_cases")) or (brd is not None and brd.brd_status == "validated")
+    # The FRS gate applies only to test_cases (needs a validated FRS).
+    frs_ready = (artifact_type != "test_cases") or (frs is not None and frs.frs_status == "validated")
 
     blocking: str | None = None
     if docs.pending_count > 0:
@@ -232,6 +272,9 @@ def _compute_readiness(
     elif not brd_ready:
         brd_status_str = brd.brd_status if brd else "not started"
         blocking = f"BRD not yet validated (status: {brd_status_str})"
+    elif not frs_ready:
+        frs_status_str = frs.frs_status if frs else "not started"
+        blocking = f"FRS not yet validated (status: {frs_status_str})"
 
     return BundleReadiness(
         apps_ready=True,  # App Brain is always available (may be empty)
@@ -244,6 +287,8 @@ def _compute_readiness(
         cb_status=cb.cb_status,
         brd_ready=brd_ready,
         brd_status=brd.brd_status if brd else None,
-        can_generate=(docs_all_ready and cb_ready and brd_ready),
+        frs_ready=frs_ready,
+        frs_status=frs.frs_status if frs else None,
+        can_generate=(docs_all_ready and cb_ready and brd_ready and frs_ready),
         blocking_reason=blocking,
     )

@@ -65,6 +65,27 @@ export function FrsFindingsDrawer({
     })
   }
 
+  const skippable = list.filter(
+    (f) => f.check_id === 'figma_link_missing' || f.check_id === 'depends_on_missing',
+  ).length
+
+  async function handleSkipUi() {
+    setSubmitting(true)
+    try {
+      const res = await api.frs.skipUiPending(projectId)
+      toast.success(
+        `Skipped ${res.skipped_ui} UI-pending spec(s)` +
+        (res.cleared_deps ? ` · cleared ${res.cleared_deps} dangling dependency(ies)` : '') +
+        ' — re-checking findings…',
+      )
+      onRefresh()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Skip failed')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   async function handleValidate() {
     if (blocking > 0) return
     setSubmitting(true)
@@ -184,8 +205,19 @@ export function FrsFindingsDrawer({
           )}
         </div>
 
-        {/* Footer — Validate button */}
-        <div className="shrink-0 border-t border-[var(--border-default)] px-4 py-3 space-y-1">
+        {/* Footer — Skip-UI + Validate buttons */}
+        <div className="shrink-0 border-t border-[var(--border-default)] px-4 py-3 space-y-2">
+          {skippable > 0 && (
+            <button
+              onClick={handleSkipUi}
+              disabled={submitting}
+              title="Mark all UI-pending specs as 'UI design TBD' and clear dangling dependencies so the FRS can be validated without Figma links."
+              className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border-strong)] bg-[var(--bg-surface)] px-3 py-2 text-sm font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {submitting ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+              Skip pending UI (design TBD) · {skippable}
+            </button>
+          )}
           <button
             onClick={handleValidate}
             disabled={blocking > 0 || submitting}

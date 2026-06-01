@@ -36,9 +36,11 @@ async def create_project(
     from app.models.understanding import RequirementUnderstanding
 
     # Allocate a human id (PRJ-0001) — mirrors spec version_number allocation.
+    # Only numeric PRJ-NNNN ids feed the sequence; ignore non-numeric ids
+    # (e.g. demo seeds like PRJ-QA01) so CAST never sees a non-integer suffix.
     max_num = await db.scalar(sa_text(
         "SELECT COALESCE(MAX(CAST(SUBSTRING(human_id FROM 5) AS INTEGER)), 0) "
-        "FROM projects WHERE human_id LIKE 'PRJ-%'"
+        "FROM projects WHERE human_id ~ '^PRJ-[0-9]+$'"
     ))
     human_id = f"PRJ-{(max_num or 0) + 1:04d}"
 
